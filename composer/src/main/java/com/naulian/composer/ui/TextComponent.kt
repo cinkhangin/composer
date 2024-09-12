@@ -20,6 +20,7 @@ fun TextComponent(
             val paragraphContent = buildContentPair(node)
             onClickLink?.let { onClick ->
                 ClickableText(
+                    modifier = modifier,
                     text = paragraphContent.annotatedString,
                     style = style,
                 ) { offset ->
@@ -32,6 +33,7 @@ fun TextComponent(
                 }
             } ?: run {
                 Text(
+                    modifier = modifier,
                     text = paragraphContent.annotatedString,
                     style = style
                 )

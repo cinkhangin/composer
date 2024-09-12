@@ -24,7 +24,7 @@ val CPS_SAMPLE = """
     this is ~strikethrough~ text.
     date: %dd/MM/yyyy%
     
-    Current time : mdx.time
+    Current time : ${dollarSign}time
     
     "this is quote text -author"
     
@@ -32,9 +32,9 @@ val CPS_SAMPLE = """
     .kt
     fun main(varargs args: String) {
         println("Hello World!")
-        val millis = System.currentTimeMillis()
-        println("Current time in millis: ${dollarSign}millis")
-        // output : mdx.millis
+        val currentMillis = System.currentTimeMillis()
+        println("Current time in millis: ${dollarSign}currentMillis")
+        // output : ${dollarSign}millis
     }
     }
     

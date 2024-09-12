@@ -28,6 +28,7 @@ import com.naulian.composer.IElementType
 import com.naulian.composer.CPSNode
 import com.naulian.composer.Parser
 import com.naulian.composer.CPS_SAMPLE
+import com.naulian.composer.adhocMap
 import com.naulian.glow_compose.hexToColor
 
 @Composable
@@ -101,7 +102,13 @@ fun AnnotatedString.Builder.handleText(
                 return map
             }
 
-            else -> append(node.literal)
+            else -> {
+                var text = node.literal
+                adhocMap.forEach {
+                    text = text.replace(it.key, it.value)
+                }
+                append(text)
+            }
         }
         return map
     }
