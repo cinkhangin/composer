@@ -14,7 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.composer.ui.theme.ModifyTheme
-import com.naulian.composer.CPS_SAMPLE
+import com.naulian.composer.COMPOSER_SAMPLE
 import com.naulian.composer.ui.ComposerUI
 
 class MainActivity : ComponentActivity() {
@@ -40,7 +40,7 @@ fun MainContent() {
         item {
             ComposerUI(
                 modifier = Modifier.padding(16.dp),
-                source = CPS_SAMPLE,
+                source = COMPOSER_SAMPLE,
                 onClickLink = {
                     Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
                 }

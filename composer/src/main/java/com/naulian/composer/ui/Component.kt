@@ -4,27 +4,27 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.sp
-import com.naulian.composer.CPSNode
+import com.naulian.composer.ComposerNode
 
 
 data class Component(
     val fontFamily: FontFamily,
     val textStyle: TextStyle = TextStyle(fontFamily = fontFamily),
     val text: @Composable (
-        node: CPSNode,
+        node: ComposerNode,
         style: TextStyle,
-        onClickLink: (String) -> Unit
+        onClickLink: ((String) -> Unit)?
     ) -> Unit,
-    val paragraph: @Composable (CPSNode, onClickLink: ((String) -> Unit)?) -> Unit,
-    val header: @Composable (CPSNode) -> Unit,
-    val quote: @Composable (CPSNode) -> Unit,
-    val codeBlock: @Composable (CPSNode) -> Unit,
-    val image: @Composable (CPSNode) -> Unit,
-    val youtube: @Composable (CPSNode) -> Unit,
-    val video: @Composable (CPSNode) -> Unit,
-    val divider: @Composable (CPSNode) -> Unit,
-    val table: @Composable (CPSNode) -> Unit,
-    val elements: @Composable (CPSNode) -> Unit,
+    val paragraph: @Composable (ComposerNode, onClickLink: ((String) -> Unit)?) -> Unit,
+    val header: @Composable (ComposerNode) -> Unit,
+    val quote: @Composable (ComposerNode) -> Unit,
+    val codeBlock: @Composable (ComposerNode) -> Unit,
+    val image: @Composable (ComposerNode) -> Unit,
+    val youtube: @Composable (ComposerNode) -> Unit,
+    val video: @Composable (ComposerNode) -> Unit,
+    val divider: @Composable (ComposerNode) -> Unit,
+    val table: @Composable (ComposerNode) -> Unit,
+    val elements: @Composable (ComposerNode) -> Unit,
 )
 
 
@@ -36,39 +36,39 @@ fun components(
         lineHeight = 20.sp,
     ),
     text: @Composable (
-        node: CPSNode, style: TextStyle,
-        onClickLink: ((String) -> Unit)?
+        node: ComposerNode, style: TextStyle, onClickLink: ((String) -> Unit)?
     ) -> Unit = { node, style, onClickLink ->
         TextComponent(node = node, style = style, onClickLink = onClickLink)
     },
     paragraph: @Composable (
-        node: CPSNode, onClickLink: ((String) -> Unit)?
+        node: ComposerNode,
+        onClickLink: ((String) -> Unit)?
     ) -> Unit = { node, onClickLink ->
         text(node, textStyle, onClickLink)
     },
-    header: @Composable (CPSNode) -> Unit = { node ->
+    header: @Composable (ComposerNode) -> Unit = { node ->
         HeaderComponent(node = node, textStyle) { content, style -> text(content, style) {} }
     },
-    quote: @Composable (CPSNode) -> Unit = { node ->
+    quote: @Composable (ComposerNode) -> Unit = { node ->
         QuoteComponent(node = node) { content ->
             text(content, textStyle) {}
         } //update universal link click
     },
-    codeBlock: @Composable (CPSNode) -> Unit = { node ->
+    codeBlock: @Composable (ComposerNode) -> Unit = { node ->
         CodeComponent(node = node, textStyle = textStyle)
     },
-    image: @Composable (CPSNode) -> Unit = { node ->
+    image: @Composable (ComposerNode) -> Unit = { node ->
         ImageComponent(node = node)
     },
-    youtube: @Composable (CPSNode) -> Unit = { },
-    video: @Composable (CPSNode) -> Unit = { },
-    divider: @Composable (CPSNode) -> Unit = { node ->
+    youtube: @Composable (ComposerNode) -> Unit = { },
+    video: @Composable (ComposerNode) -> Unit = { },
+    divider: @Composable (ComposerNode) -> Unit = { node ->
         DividerComponent(node = node)
     },
-    table: @Composable (CPSNode) -> Unit = { node ->
+    table: @Composable (ComposerNode) -> Unit = { node ->
         TableComponent(node = node) { textNode -> text(textNode, textStyle) {} }
     },
-    elements: @Composable (CPSNode) -> Unit = { node ->
+    elements: @Composable (ComposerNode) -> Unit = { node ->
         ElementComponent(node = node) { textNode -> text(textNode, textStyle) {} }
     }
 ) = Component(

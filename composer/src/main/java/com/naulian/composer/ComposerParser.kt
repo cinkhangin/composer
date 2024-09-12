@@ -1,10 +1,8 @@
 package com.naulian.composer
 
-class Parser(private val source: String) {
-
-    fun parse(): CPSNode {
-        val nodes = CPSLexer(source).tokenize()
-        //nodes.forEach(::println)
+class ComposerParser(private val source: String) {
+    fun parse(): ComposerNode {
+        val nodes = ComposerLexer(source).tokenize()
         val astBuilder = ASTBuilder(nodes)
         val treeNode = astBuilder.build()
         val typedNode = astBuilder.buildTyped(treeNode)
@@ -13,11 +11,11 @@ class Parser(private val source: String) {
 }
 
 fun main() {
-    val node = Parser(CPS_SAMPLE).parse()
+    val node = ComposerParser(COMPOSER_SAMPLE).parse()
     printNode(node)
 }
 
-private fun printNode(node: CPSNode, level: Int = 0) {
+private fun printNode(node: ComposerNode, level: Int = 0) {
     if (node.children.isEmpty()) {
         if (level > 0) {
             repeat(level) {

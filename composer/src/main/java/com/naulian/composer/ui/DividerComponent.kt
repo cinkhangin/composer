@@ -13,11 +13,11 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.text.isDigitsOnly
 import com.naulian.composer.IElementType
-import com.naulian.composer.CPSNode
+import com.naulian.composer.ComposerNode
 
 
 @Composable
-fun DividerComponent(node: CPSNode) {
+fun DividerComponent(node: ComposerNode) {
     when (node.literal) {
         "" -> {}
         "br" -> Spacer(modifier = Modifier.height(1.dp))
@@ -37,9 +37,9 @@ fun DividerComponent(node: CPSNode) {
 private fun DividerPreview() {
     MaterialTheme {
         Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
-            DividerComponent(node = CPSNode(IElementType.DIVIDER, "line"))
-            DividerComponent(node = CPSNode(IElementType.DIVIDER, "20"))
-            DividerComponent(node = CPSNode(IElementType.DIVIDER, "dash"))
+            DividerComponent(node = ComposerNode(IElementType.DIVIDER, "line"))
+            DividerComponent(node = ComposerNode(IElementType.DIVIDER, "20"))
+            DividerComponent(node = ComposerNode(IElementType.DIVIDER, "dash"))
         }
     }
 }

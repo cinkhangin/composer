@@ -11,14 +11,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.naulian.composer.CPSNode
+import com.naulian.composer.ComposerNode
 import com.naulian.composer.IElementType
 
 @Composable
 fun ElementComponent(
     modifier: Modifier = Modifier,
-    node: CPSNode,
-    textContent: @Composable (CPSNode) -> Unit
+    node: ComposerNode,
+    textContent: @Composable (ComposerNode) -> Unit
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         node.children.forEach { element ->
@@ -54,9 +54,9 @@ fun ElementComponent(
 @Composable
 fun ElementText(
     modifier: Modifier = Modifier,
-    elementNode: CPSNode,
+    elementNode: ComposerNode,
     bullet: String,
-    textContent: @Composable (CPSNode) -> Unit
+    textContent: @Composable (ComposerNode) -> Unit
 ) {
     Row(modifier = modifier.fillMaxWidth()) {
         Text(text = bullet)

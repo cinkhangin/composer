@@ -5,12 +5,12 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.naulian.composer.IElementType
-import com.naulian.composer.CPSNode
+import com.naulian.composer.ComposerNode
 
 @Composable
 fun HeaderComponent(
-    node: CPSNode, textStyle: TextStyle,
-    textComponent: @Composable (CPSNode, TextStyle) -> Unit
+    node: ComposerNode, textStyle: TextStyle,
+    textComponent: @Composable (ComposerNode, TextStyle) -> Unit
 ) {
     val sizePair = when (node.type) {
         IElementType.H1 -> 36.sp to 42.sp

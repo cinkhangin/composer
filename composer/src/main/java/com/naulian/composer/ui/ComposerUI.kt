@@ -1,5 +1,6 @@
 package com.naulian.composer.ui
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,20 +15,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.naulian.anhance.millisOfNow
+import com.naulian.composer.COMPOSER_SAMPLE
+import com.naulian.composer.ComposerNode
+import com.naulian.composer.ComposerParser
 import com.naulian.composer.IElementType
-import com.naulian.composer.CPSNode
-import com.naulian.composer.Parser
-import com.naulian.composer.CPS_SAMPLE
 import com.naulian.composer.adhocMap
 import com.naulian.glow_compose.hexToColor
 
@@ -40,11 +44,11 @@ fun ComposerUI(
     contentSpacing: Dp = 12.dp
 ) {
     var node by remember {
-        mutableStateOf(CPSNode())
+        mutableStateOf(ComposerNode())
     }
 
     LaunchedEffect(key1 = source) {
-        node = Parser(source).parse()
+        node = ComposerParser(source).parse()
     }
 
     Column(
@@ -56,11 +60,16 @@ fun ComposerUI(
 }
 
 @Composable
-fun HandleNode(node: CPSNode, components: Component, onClickLink: ((String) -> Unit)?) {
+fun HandleNode(node: ComposerNode, components: Component, onClickLink: ((String) -> Unit)?) {
     node.children.forEach {
         when (it.type) {
             IElementType.PARAGRAPH -> components.paragraph(it, onClickLink)
-            IElementType.H1, IElementType.H2, IElementType.H3, IElementType.H4, IElementType.H5, IElementType.H6 -> {
+            IElementType.H1,
+            IElementType.H2,
+            IElementType.H3,
+            IElementType.H4,
+            IElementType.H5,
+            IElementType.H6 -> {
                 components.header(it)
             }
 
@@ -73,33 +82,33 @@ fun HandleNode(node: CPSNode, components: Component, onClickLink: ((String) -> U
             IElementType.ELEMENT -> components.elements(it)
 
             IElementType.TABLE -> components.table(it)
-            else -> components.text(it, components.textStyle) {}
+            else -> components.text(it, components.textStyle){}
         }
     }
 }
 
 
 @Composable
-fun AnnotatedString.Builder.handleText(
-    node: CPSNode,
-    linkMap: Map<String, String> = emptyMap()
-): Map<String, String> {
-
-    val map = hashMapOf<String, String>()
-    linkMap.forEach { map[it.key] = it.value }
-
+fun AnnotatedString.Builder.HandleText(
+    node: ComposerNode,
+    onClickLink: ((String) -> Unit)?
+) {
     if (node.children.isEmpty()) {
         when (node.type) {
             IElementType.LINK, IElementType.HYPER_LINK -> {
-                pushStyle(style = SpanStyle(color = Color.Blue))
-                val tag = "link$millisOfNow"
                 val (hyper, link) = node.getHyperLink()
-                pushStringAnnotation(tag, "link")
-                append(hyper.ifEmpty { link })
-                pop() // annotation
-                pop() //style
-                map[tag] = link
-                return map
+                withLink(
+                    LinkAnnotation.Clickable(
+                        tag = "link$millisOfNow",
+                        styles = TextLinkStyles(SpanStyle(color = Color.Blue)),
+                        linkInteractionListener = {
+                            onClickLink?.invoke(link)
+                        }
+                    )
+                ) {
+                    append(hyper.ifEmpty { link })
+                }
+                return
             }
 
             else -> {
@@ -110,7 +119,7 @@ fun AnnotatedString.Builder.handleText(
                 append(text)
             }
         }
-        return map
+        return
     }
 
     val spanStyle = when (node.type) {
@@ -124,27 +133,10 @@ fun AnnotatedString.Builder.handleText(
 
     pushStyle(style = spanStyle)
     node.children.forEach { child ->
-        val innerMap = handleText(node = child, map)
-        innerMap.forEach { map[it.key] = it.value }
+        HandleText(node = child, onClickLink)
     }
     pop()
-    return map
 }
-
-
-@Composable
-fun buildContentPair(node: CPSNode): ParagraphContent {
-    var linkMap = mapOf<String, String>()
-    val annotatedString = buildAnnotatedString {
-        linkMap = handleText(node = node)
-    }
-    return ParagraphContent(annotatedString, linkMap)
-}
-
-data class ParagraphContent(
-    val annotatedString: AnnotatedString = emptyAnnotatedString,
-    val linkMap: Map<String, String> = emptyMap()
-)
 
 @Preview(heightDp = 1500)
 @Composable
@@ -153,7 +145,7 @@ private fun ComposerUIPreview() {
         Surface(color = Color.White) {
             ComposerUI(
                 modifier = Modifier.padding(16.dp),
-                source = CPS_SAMPLE
+                source = COMPOSER_SAMPLE
             )
         }
     }

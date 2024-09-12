@@ -3,17 +3,17 @@ package com.naulian.composer
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-class ParserTest {
+class ComposerParserTest {
 
     @Test
     fun plainTextTest() {
         val source = "plain text"
-        val actual = Parser(source).parse().children
+        val actual = ComposerParser(source).parse().children
         val expected = listOf(
-            CPSNode(
+            ComposerNode(
                 type = IElementType.PARAGRAPH,
                 children = listOf(
-                    CPSNode(type = IElementType.TEXT, literal = "plain text")
+                    ComposerNode(type = IElementType.TEXT, literal = "plain text")
                 )
             )
         )
@@ -23,16 +23,16 @@ class ParserTest {
     @Test
     fun headerTest() {
         val source = "#1 header"
-        val actual = Parser(source).parse().children
+        val actual = ComposerParser(source).parse().children
         val expected = listOf(
-            CPSNode(
+            ComposerNode(
                 type = IElementType.H1,
                 literal = "",
                 children = listOf(
-                    CPSNode(
+                    ComposerNode(
                         type = IElementType.PARAGRAPH,
                         children = listOf(
-                            CPSNode(type = IElementType.TEXT, literal = "header")
+                            ComposerNode(type = IElementType.TEXT, literal = "header")
                         )
                     )
                 )
@@ -47,28 +47,28 @@ class ParserTest {
             #1 header 1
             #2 header 2
         """.trimIndent()
-        val actual = Parser(source).parse().children
+        val actual = ComposerParser(source).parse().children
         val expected = listOf(
-            CPSNode(
+            ComposerNode(
                 type = IElementType.H1,
                 literal = "",
                 children = listOf(
-                    CPSNode(
+                    ComposerNode(
                         type = IElementType.PARAGRAPH,
                         children = listOf(
-                            CPSNode(type = IElementType.TEXT, literal = "header 1")
+                            ComposerNode(type = IElementType.TEXT, literal = "header 1")
                         )
                     )
                 )
             ),
-            CPSNode(
+            ComposerNode(
                 type = IElementType.H2,
                 literal = "",
                 children = listOf(
-                    CPSNode(
+                    ComposerNode(
                         type = IElementType.PARAGRAPH,
                         children = listOf(
-                            CPSNode(type = IElementType.TEXT, literal = "header 2")
+                            ComposerNode(type = IElementType.TEXT, literal = "header 2")
                         )
                     )
                 )
@@ -80,18 +80,18 @@ class ParserTest {
     @Test
     fun headerWithStyleTest() {
         val source = "#1 ~header underline~"
-        val actual = Parser(source).parse().children
+        val actual = ComposerParser(source).parse().children
         val expected = listOf(
-            CPSNode(
+            ComposerNode(
                 type = IElementType.H1,
                 literal = "",
                 children = listOf(
-                    CPSNode(
+                    ComposerNode(
                         type = IElementType.PARAGRAPH, children = listOf(
-                            CPSNode(
+                            ComposerNode(
                                 type = IElementType.STRIKE,
                                 children = listOf(
-                                    CPSNode(
+                                    ComposerNode(
                                         type = IElementType.TEXT,
                                         literal = "header underline"
                                     )
@@ -110,19 +110,19 @@ class ParserTest {
         val source = """
             "this is a quote text &-author&"
         """.trimIndent()
-        val actual = Parser(source).parse().children
+        val actual = ComposerParser(source).parse().children
         val expected = listOf(
-            CPSNode(
+            ComposerNode(
                 type = IElementType.QUOTATION,
                 literal = "",
                 children = listOf(
-                    CPSNode(
+                    ComposerNode(
                         type = IElementType.PARAGRAPH, children = listOf(
-                            CPSNode(type = IElementType.TEXT, literal = "this is a quote text "),
-                            CPSNode(
+                            ComposerNode(type = IElementType.TEXT, literal = "this is a quote text "),
+                            ComposerNode(
                                 type = IElementType.BOLD,
                                 children = listOf(
-                                    CPSNode(type = IElementType.TEXT, literal = "-author")
+                                    ComposerNode(type = IElementType.TEXT, literal = "-author")
                                 )
                             )
                         )
@@ -145,9 +145,9 @@ class ParserTest {
                 main()
             }
         """.trimIndent()
-        val actual = Parser(source).parse().children
+        val actual = ComposerParser(source).parse().children
         val expected = listOf(
-            CPSNode(
+            ComposerNode(
                 type = IElementType.CODE,
                 literal = """
                     .py
@@ -167,9 +167,9 @@ class ParserTest {
         val source = """
             =line=
         """.trimIndent()
-        val actual = Parser(source).parse().children
+        val actual = ComposerParser(source).parse().children
         val expected = listOf(
-            CPSNode(
+            ComposerNode(
                 type = IElementType.DIVIDER,
                 literal = "line"
             )
@@ -185,57 +185,57 @@ class ParserTest {
             true |false|true
             ]
         """.trimIndent()
-        val actual = Parser(source).parse().children
+        val actual = ComposerParser(source).parse().children
         val expected = listOf(
-            CPSNode(
+            ComposerNode(
                 type = IElementType.TABLE,
                 children = listOf(
-                    CPSNode(
+                    ComposerNode(
                         type = IElementType.TABLE_COLOMN,
                         children = listOf(
-                            CPSNode(
+                            ComposerNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    CPSNode(type = IElementType.TEXT, literal = "a    ")
+                                    ComposerNode(type = IElementType.TEXT, literal = "a    ")
                                 )
                             ),
-                            CPSNode(type = IElementType.PIPE, literal = "|"),
-                            CPSNode(
+                            ComposerNode(type = IElementType.PIPE, literal = "|"),
+                            ComposerNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    CPSNode(type = IElementType.TEXT, literal = "b    ")
+                                    ComposerNode(type = IElementType.TEXT, literal = "b    ")
                                 )
                             ),
-                            CPSNode(type = IElementType.PIPE, literal = "|"),
-                            CPSNode(
+                            ComposerNode(type = IElementType.PIPE, literal = "|"),
+                            ComposerNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    CPSNode(type = IElementType.TEXT, literal = "c"),
+                                    ComposerNode(type = IElementType.TEXT, literal = "c"),
                                 )
                             )
                         )
                     ),
-                    CPSNode(
+                    ComposerNode(
                         type = IElementType.TABLE_COLOMN,
                         children = listOf(
-                            CPSNode(
+                            ComposerNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    CPSNode(type = IElementType.TEXT, literal = "true "),
+                                    ComposerNode(type = IElementType.TEXT, literal = "true "),
                                 )
                             ),
-                            CPSNode(type = IElementType.PIPE, literal = "|"),
-                            CPSNode(
+                            ComposerNode(type = IElementType.PIPE, literal = "|"),
+                            ComposerNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    CPSNode(type = IElementType.TEXT, literal = "false"),
+                                    ComposerNode(type = IElementType.TEXT, literal = "false"),
                                 )
                             ),
-                            CPSNode(type = IElementType.PIPE, literal = "|"),
-                            CPSNode(
+                            ComposerNode(type = IElementType.PIPE, literal = "|"),
+                            ComposerNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    CPSNode(type = IElementType.TEXT, literal = "true"),
+                                    ComposerNode(type = IElementType.TEXT, literal = "true"),
                                 )
                             )
                         )
@@ -251,16 +251,16 @@ class ParserTest {
         val source = """
             <color this text#FF0000>
         """.trimIndent()
-        val actual = Parser(source).parse().children
+        val actual = ComposerParser(source).parse().children
         val expected = listOf(
-            CPSNode(
+            ComposerNode(
                 type = IElementType.PARAGRAPH,
                 children = listOf(
-                    CPSNode(
+                    ComposerNode(
                         type = IElementType.COLORED,
                         literal = "#FF0000",
                         children = listOf(
-                            CPSNode(type = IElementType.TEXT, literal = "color this text"),
+                            ComposerNode(type = IElementType.TEXT, literal = "color this text"),
                         )
                     )
                 )
@@ -274,12 +274,12 @@ class ParserTest {
         val source = """
             `the syntax ~should~ be ignore here`
         """.trimIndent()
-        val actual = Parser(source).parse().children
+        val actual = ComposerParser(source).parse().children
         val expected = listOf(
-            CPSNode(
+            ComposerNode(
                 type = IElementType.PARAGRAPH,
                 children = listOf(
-                    CPSNode(
+                    ComposerNode(
                         type = IElementType.IGNORE,
                         literal = "the syntax ~should~ be ignore here",
                     )
@@ -297,40 +297,40 @@ class ParserTest {
             *o unchecked item
             *x checked item
         """.trimIndent()
-        val actual = Parser(source).parse().children
+        val actual = ComposerParser(source).parse().children
         val expected = listOf(
-            CPSNode(
+            ComposerNode(
                 type = IElementType.ELEMENT,
                 children = listOf(
-                    CPSNode(
+                    ComposerNode(
                         type = IElementType.ELEMENT_BULLET,
                         children = listOf(
-                            CPSNode(
+                            ComposerNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    CPSNode(type = IElementType.TEXT, literal = "unordered item"),
+                                    ComposerNode(type = IElementType.TEXT, literal = "unordered item"),
                                 )
                             )
                         )
                     ),
-                    CPSNode(
+                    ComposerNode(
                         type = IElementType.ELEMENT_UNCHECKED,
                         children = listOf(
-                            CPSNode(
+                            ComposerNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    CPSNode(type = IElementType.TEXT, literal = "unchecked item"),
+                                    ComposerNode(type = IElementType.TEXT, literal = "unchecked item"),
                                 )
                             )
                         )
                     ),
-                    CPSNode(
+                    ComposerNode(
                         type = IElementType.ELEMENT_CHECKED,
                         children = listOf(
-                            CPSNode(
+                            ComposerNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    CPSNode(type = IElementType.TEXT, literal = "checked item"),
+                                    ComposerNode(type = IElementType.TEXT, literal = "checked item"),
                                 )
                             )
                         )

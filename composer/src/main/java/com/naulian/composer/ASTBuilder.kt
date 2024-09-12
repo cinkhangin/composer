@@ -27,27 +27,27 @@ private val elementTypes = listOf(
     IElementType.ELEMENT_CHECKED
 )
 
-class ASTBuilder(private val nodes: List<CPSNode>) {
+class ASTBuilder(private val nodes: List<ComposerNode>) {
 
-    fun buildTyped(node: CPSNode = CPSNode(children = nodes)): CPSNode {
+    fun buildTyped(node: ComposerNode = ComposerNode(children = nodes)): ComposerNode {
         if (node.children.isEmpty()) {
             return node
         }
 
         var index = 0
         val children = node.children
-        val childNodes = mutableListOf<CPSNode>()
+        val childNodes = mutableListOf<ComposerNode>()
         while (children.getOrNull(index) != null && children[index].type != IElementType.EOF) {
             val current = children[index]
             when (current.type) {
                 in textTypes -> {
                     val start = index
-                    while (children.getOrNull(index) != null && children[index].type in textTypes && children[index] != CPSNode.EOF) {
+                    while (children.getOrNull(index) != null && children[index].type in textTypes && children[index] != ComposerNode.EOF) {
                         index++
                     }
 
                     val subChild = children.subList(start, index)
-                    val paragraphNode = CPSNode(
+                    val paragraphNode = ComposerNode(
                         type = IElementType.PARAGRAPH,
                         children = subChild.trimWhiteSpaces()
                     )
@@ -63,7 +63,7 @@ class ASTBuilder(private val nodes: List<CPSNode>) {
                         children.getOrNull(index) != null
                         && (children[index].type in elementTypes
                                 || children[index].type == IElementType.NEWLINE)
-                        && children[index] != CPSNode.EOF
+                        && children[index] != ComposerNode.EOF
                     ) {
                         index++
                     }
@@ -71,7 +71,7 @@ class ASTBuilder(private val nodes: List<CPSNode>) {
                         .filter { it.type != IElementType.NEWLINE }
                         .map { buildTyped(it) }
 
-                    val elementNode = CPSNode(
+                    val elementNode = ComposerNode(
                         type = IElementType.ELEMENT,
                         children = subChild.trimWhiteSpaces()
                     )
@@ -94,21 +94,21 @@ class ASTBuilder(private val nodes: List<CPSNode>) {
         return node.copy(children = childNodes)
     }
 
-    fun build(node: CPSNode = CPSNode(children = nodes)): CPSNode {
+    fun build(node: ComposerNode = ComposerNode(children = nodes)): ComposerNode {
         if (node.children.isEmpty()) {
             return node
         }
 
         var index = 0
         val children = node.children
-        val childNodes = mutableListOf<CPSNode>()
+        val childNodes = mutableListOf<ComposerNode>()
         while (children.getOrNull(index) != null && children[index].type != IElementType.EOF) {
             val current = children[index]
             when (current.type) {
                 IElementType.HEADER -> {
                     index++
                     val start = index
-                    while (children.getOrNull(index) != null && children[index].type != IElementType.NEWLINE && children[index] != CPSNode.EOF) {
+                    while (children.getOrNull(index) != null && children[index].type != IElementType.NEWLINE && children[index] != ComposerNode.EOF) {
                         index++
                     }
                     val subChild = children.subList(start, index)
@@ -122,7 +122,7 @@ class ASTBuilder(private val nodes: List<CPSNode>) {
                         "#6" -> IElementType.H6
                         else -> IElementType.TEXT
                     }
-                    val h1Node = CPSNode(
+                    val h1Node = ComposerNode(
                         type = nodeType,
                         children = subChild.trimWhiteSpaces()
                     )
@@ -133,7 +133,7 @@ class ASTBuilder(private val nodes: List<CPSNode>) {
                 IElementType.BLOCK_SYMBOL -> {
                     index++
                     val start = index
-                    while (children.getOrNull(index) != null && children[index].literal != current.literal && children[index] != CPSNode.EOF) {
+                    while (children.getOrNull(index) != null && children[index].literal != current.literal && children[index] != ComposerNode.EOF) {
                         index++
                     }
                     val subChild = children.subList(start, index)
@@ -147,7 +147,7 @@ class ASTBuilder(private val nodes: List<CPSNode>) {
                         "\"" -> IElementType.QUOTATION
                         else -> IElementType.TEXT
                     }
-                    val blockNode = CPSNode(
+                    val blockNode = ComposerNode(
                         type = nodeType,
                         children = subChild.trimWhiteSpaces()
                     )
@@ -158,18 +158,18 @@ class ASTBuilder(private val nodes: List<CPSNode>) {
                 IElementType.TABLE_START -> {
                     index++
                     val start = index
-                    while (children.getOrNull(index) != null && children[index].type != IElementType.TABLE_END && children[index] != CPSNode.EOF) {
+                    while (children.getOrNull(index) != null && children[index].type != IElementType.TABLE_END && children[index] != ComposerNode.EOF) {
                         index++
                     }
                     val subChild = children.subList(start, index).trimWhiteSpaces()
                     index++ // skip the closing symbol
 
-                    val tableColumns = mutableListOf<CPSNode>()
-                    var cols = mutableListOf<CPSNode>()
+                    val tableColumns = mutableListOf<ComposerNode>()
+                    var cols = mutableListOf<ComposerNode>()
 
                     subChild.forEach {
                         if (it.type == IElementType.NEWLINE) {
-                            val colNode = CPSNode(
+                            val colNode = ComposerNode(
                                 type = IElementType.TABLE_COLOMN,
                                 children = cols.trimWhiteSpaces()
                             )
@@ -180,7 +180,7 @@ class ASTBuilder(private val nodes: List<CPSNode>) {
                     }
 
                     if (cols.isNotEmpty()) {
-                        val colNode = CPSNode(
+                        val colNode = ComposerNode(
                             type = IElementType.TABLE_COLOMN,
                             children = cols.trimWhiteSpaces()
                         )
@@ -189,7 +189,7 @@ class ASTBuilder(private val nodes: List<CPSNode>) {
                         cols = mutableListOf()
                     }
 
-                    val tableNode = CPSNode(
+                    val tableNode = ComposerNode(
                         type = IElementType.TABLE,
                         children = tableColumns
                     )
@@ -199,7 +199,7 @@ class ASTBuilder(private val nodes: List<CPSNode>) {
                 IElementType.COLOR_START -> {
                     index++
                     val start = index
-                    while (children.getOrNull(index) != null && children[index].type != IElementType.COLOR_END && children[index] != CPSNode.EOF) {
+                    while (children.getOrNull(index) != null && children[index].type != IElementType.COLOR_END && children[index] != ComposerNode.EOF) {
                         index++
                     }
 
@@ -213,7 +213,7 @@ class ASTBuilder(private val nodes: List<CPSNode>) {
                     }
 
                     index++ // skip the closing symbol
-                    val coloredNode = CPSNode(
+                    val coloredNode = ComposerNode(
                         type = IElementType.COLORED,
                         literal = colorValue,
                         children = subChild.trimWhiteSpaces()
@@ -225,7 +225,7 @@ class ASTBuilder(private val nodes: List<CPSNode>) {
                 IElementType.ELEMENT -> {
                     index++
                     val start = index
-                    while (children.getOrNull(index) != null && children[index].type != IElementType.NEWLINE && children[index] != CPSNode.EOF) {
+                    while (children.getOrNull(index) != null && children[index].type != IElementType.NEWLINE && children[index] != ComposerNode.EOF) {
                         index++
                     }
                     val subChild = children.subList(start, index)
@@ -236,7 +236,7 @@ class ASTBuilder(private val nodes: List<CPSNode>) {
                         else -> IElementType.ELEMENT
                     }
 
-                    val elementNode = CPSNode(
+                    val elementNode = ComposerNode(
                         type = nodeType,
                         children = subChild.trimWhiteSpaces()
                     )
@@ -254,7 +254,7 @@ class ASTBuilder(private val nodes: List<CPSNode>) {
         return node.copy(children = childNodes)
     }
 
-    private fun List<CPSNode>.trimWhiteSpaces(): List<CPSNode> {
+    private fun List<ComposerNode>.trimWhiteSpaces(): List<ComposerNode> {
         if (isEmpty()) {
             return emptyList()
         }

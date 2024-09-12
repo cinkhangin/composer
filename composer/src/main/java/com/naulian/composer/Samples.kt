@@ -1,6 +1,8 @@
 package com.naulian.composer
 
-val CPS_SAMPLE = """
+
+val filename = "filename.composer"
+val COMPOSER_SAMPLE = """
     #1 heading 1
     #2 heading 2
     #3 heading 3

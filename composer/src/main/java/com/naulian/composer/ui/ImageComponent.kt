@@ -16,10 +16,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.naulian.composer.IElementType
-import com.naulian.composer.CPSNode
+import com.naulian.composer.ComposerNode
 
 @Composable
-fun ImageComponent(modifier: Modifier = Modifier, node: CPSNode) {
+fun ImageComponent(modifier: Modifier = Modifier, node: ComposerNode) {
     var isError by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -43,7 +43,7 @@ fun ImageComponent(modifier: Modifier = Modifier, node: CPSNode) {
 @Composable
 private fun ImageBlockPreview() {
     MaterialTheme {
-        val node = CPSNode(
+        val node = ComposerNode(
             type = IElementType.IMAGE,
             literal = "https://picsum.photos/id/67/300/200",
         )

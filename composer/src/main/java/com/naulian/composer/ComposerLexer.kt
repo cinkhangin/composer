@@ -1,23 +1,23 @@
 package com.naulian.composer
 
-private const val CPS_END_CHAR = Char.MIN_VALUE
-private const val CPS_SYMBOL_CHARS = "\"</>&|#{%}[~]\\`(*)_\n"
-private const val CPS_WHITESPACES = " \n"
+private const val COMPOSER_END_CHAR = Char.MIN_VALUE
+private const val COMPOSER_SYMBOL_CHARS = "\"</>&|#{%}[~]\\`(*)_\n"
+private const val COMPOSER_WHITESPACES = " \n"
 
-class CPSLexer(input: String) {
+class ComposerLexer(input: String) {
     private var cursor = 0
     private val source = input
 
     private val Char.isNotSpaceChar get() = this != ' '
-    private val Char.isNotEndChar get() = this != CPS_END_CHAR
-    private val Char.isNotSymbols get() = this !in CPS_SYMBOL_CHARS
+    private val Char.isNotEndChar get() = this != COMPOSER_END_CHAR
+    private val Char.isNotSymbols get() = this !in COMPOSER_SYMBOL_CHARS
 
-    private val charNotEndChar get() = char() != CPS_END_CHAR
+    private val charNotEndChar get() = char() != COMPOSER_END_CHAR
 
     private fun char() = source.getOrElse(cursor) { Char.MIN_VALUE }
 
-    fun tokenize(): List<CPSNode> {
-        val tokens = mutableListOf<CPSNode>()
+    fun tokenize(): List<ComposerNode> {
+        val tokens = mutableListOf<ComposerNode>()
         var current = next()
         while (current.type != IElementType.EOF) {
             tokens.add(current)
@@ -30,10 +30,10 @@ class CPSLexer(input: String) {
         cursor += amount
     }
 
-    fun next(): CPSNode {
+    fun next(): ComposerNode {
         //println(char())
         return when (val char = char()) {
-            in CPS_WHITESPACES -> createWhiteSpaceToken()
+            in COMPOSER_WHITESPACES -> createWhiteSpaceToken()
             '&' -> createSymbolToken(IElementType.BLOCK_SYMBOL)
             '/' -> createSymbolToken(IElementType.BLOCK_SYMBOL)
             '_' -> createSymbolToken(IElementType.BLOCK_SYMBOL)
@@ -55,7 +55,7 @@ class CPSLexer(input: String) {
                 val end = cursor
                 advance()
                 val value = source.subSequence(start, end)
-                CPSNode(IElementType.IGNORE, value.toString())
+                ComposerNode(IElementType.IGNORE, value.toString())
             }
 
             '%' -> createBlockToken(IElementType.DATETIME, char)
@@ -64,13 +64,13 @@ class CPSLexer(input: String) {
             '#' -> createHeaderToken()
             '*' -> createElementToken()
             '\\' -> createEscapedToken()
-            in CPS_SYMBOL_CHARS -> createSymbolToken(IElementType.TEXT) //prevent memory leak
-            Char.MIN_VALUE -> CPSNode.EOF
+            in COMPOSER_SYMBOL_CHARS -> createSymbolToken(IElementType.TEXT) //prevent memory leak
+            Char.MIN_VALUE -> ComposerNode.EOF
             else -> createTextToken()
         }
     }
 
-    private fun createWhiteSpaceToken(): CPSNode {
+    private fun createWhiteSpaceToken(): ComposerNode {
         val start = cursor
         while (char().isWhitespace()) {
             advance()
@@ -78,37 +78,37 @@ class CPSLexer(input: String) {
         val end = cursor
         val literal = source.subSequence(start, end)
         return when {
-            literal.contains("\n") -> CPSNode.create(IElementType.NEWLINE, literal)
-            else -> CPSNode.create(IElementType.WHITESPACE, literal)
+            literal.contains("\n") -> ComposerNode.create(IElementType.NEWLINE, literal)
+            else -> ComposerNode.create(IElementType.WHITESPACE, literal)
         }
     }
 
-    private fun createHeaderToken(): CPSNode {
+    private fun createHeaderToken(): ComposerNode {
         advance()
-        if (char() == CPS_END_CHAR) {
+        if (char() == COMPOSER_END_CHAR) {
             // early return
-            return CPSNode(IElementType.TEXT, "#")
+            return ComposerNode(IElementType.TEXT, "#")
         }
 
         val start = cursor
         advanceWhile { it.isNotSpaceChar && it.isNotEndChar && it.isNotSymbols }
         return when (val value = source.subSequence(start, cursor)) {
-            in "123456" -> CPSNode(IElementType.HEADER, "#$value")
-            else -> CPSNode(IElementType.COLOR_HEX, "#$value")
+            in "123456" -> ComposerNode(IElementType.HEADER, "#$value")
+            else -> ComposerNode(IElementType.COLOR_HEX, "#$value")
         }
     }
 
-    private fun createEscapedToken(): CPSNode {
+    private fun createEscapedToken(): ComposerNode {
         advance()
-        if (char() == CPS_END_CHAR) {
-            return CPSNode.EOF
+        if (char() == COMPOSER_END_CHAR) {
+            return ComposerNode.EOF
         }
         val literal = char().toString()
         advance()
-        return CPSNode(IElementType.ESCAPE, literal)
+        return ComposerNode(IElementType.ESCAPE, literal)
     }
 
-    private fun createCodeToken(): CPSNode {
+    private fun createCodeToken(): ComposerNode {
         advance() //skip opening bracket
         val start = cursor
         var level = 0
@@ -131,10 +131,10 @@ class CPSLexer(input: String) {
         adhocMap.forEach {
             code = code.replace(it.key, it.value)
         }
-        return CPSNode(IElementType.CODE, code)
+        return ComposerNode(IElementType.CODE, code)
     }
 
-    private fun createLinkToken(): CPSNode {
+    private fun createLinkToken(): ComposerNode {
         advance() //skip opening parenthesis
         val start = cursor
         while (char() != ')' && charNotEndChar) {
@@ -145,7 +145,7 @@ class CPSLexer(input: String) {
         advance() //skip closing parenthesis
 
         if (!value.contains("http")) {
-            return CPSNode(IElementType.TEXT, "($value)")
+            return ComposerNode(IElementType.TEXT, "($value)")
         }
 
         if (value.contains("@")) {
@@ -154,43 +154,43 @@ class CPSLexer(input: String) {
             val link = value.str().replace("$hyper@", "")
 
             return when (hyper) {
-                "img" -> CPSNode(IElementType.IMAGE, link)
-                "ytb" -> CPSNode(IElementType.YOUTUBE, link)
-                "vid" -> CPSNode(IElementType.VIDEO, link)
-                else -> CPSNode(IElementType.HYPER_LINK, value)
+                "img" -> ComposerNode(IElementType.IMAGE, link)
+                "ytb" -> ComposerNode(IElementType.YOUTUBE, link)
+                "vid" -> ComposerNode(IElementType.VIDEO, link)
+                else -> ComposerNode(IElementType.HYPER_LINK, value)
             }
         }
 
-        return CPSNode(IElementType.LINK, value)
+        return ComposerNode(IElementType.LINK, value)
     }
 
-    private fun createElementToken(): CPSNode {
+    private fun createElementToken(): ComposerNode {
         advance()
-        if (char() == CPS_END_CHAR) {
+        if (char() == COMPOSER_END_CHAR) {
             // early return
-            return CPSNode(IElementType.TEXT, "*")
+            return ComposerNode(IElementType.TEXT, "*")
         }
 
         val start = cursor
         advanceWhile { it.isNotSpaceChar && it.isNotEndChar && it.isNotSymbols }
         val value = source.subSequence(start, cursor)
-        return CPSNode(IElementType.ELEMENT, "*$value")
+        return ComposerNode(IElementType.ELEMENT, "*$value")
     }
 
-    private fun createTextToken(): CPSNode {
+    private fun createTextToken(): ComposerNode {
         val start = cursor
         advanceWhile { it.isNotSymbols && it.isNotEndChar }
         val literal = source.subSequence(start, cursor).toString()
-        return CPSNode.create(IElementType.TEXT, literal)
+        return ComposerNode.create(IElementType.TEXT, literal)
     }
 
-    private fun createSymbolToken(type: String): CPSNode {
+    private fun createSymbolToken(type: String): ComposerNode {
         val value = char().toString()
         advance()
-        return CPSNode(type, value)
+        return ComposerNode(type, value)
     }
 
-    private fun createBlockToken(type: String, char: Char): CPSNode {
+    private fun createBlockToken(type: String, char: Char): ComposerNode {
         advance() //skip the opening char
         val start = cursor
         var prevChar = char()
@@ -206,13 +206,13 @@ class CPSLexer(input: String) {
             IElementType.DATETIME -> {
                 try {
                     val value = formattedDateTime(blockValue)
-                    CPSNode(type, value)
+                    ComposerNode(type, value)
                 } catch (e: Exception) {
-                    CPSNode(IElementType.TEXT, blockValue)
+                    ComposerNode(IElementType.TEXT, blockValue)
                 }
             }
 
-            else -> CPSNode(type, blockValue)
+            else -> ComposerNode(type, blockValue)
         }
     }
 

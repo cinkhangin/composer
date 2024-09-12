@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
 import com.naulian.anhance.copyString
-import com.naulian.composer.CPSNode
+import com.naulian.composer.ComposerNode
 import com.naulian.glow.CodeTheme
 import com.naulian.glow.Theme
 import com.naulian.glow_compose.Glow
@@ -43,7 +43,7 @@ val emptyAnnotatedString = buildAnnotatedString { }
 @Composable
 fun CodeComponent(
     modifier: Modifier = Modifier,
-    node: CPSNode, textStyle: TextStyle
+    node: ComposerNode, textStyle: TextStyle
 ) {
     val (lang, code) = node.getLangCodePair()
     when (lang) {

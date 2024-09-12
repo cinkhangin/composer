@@ -17,12 +17,12 @@ import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
 import com.naulian.composer.IElementType
-import com.naulian.composer.CPSNode
+import com.naulian.composer.ComposerNode
 
 @Composable
 fun QuoteComponent(
     modifier: Modifier = Modifier,
-    node: CPSNode, textComponent: @Composable (CPSNode) -> Unit
+    node: ComposerNode, textComponent: @Composable (ComposerNode) -> Unit
 ) {
     ConstraintLayout(
         modifier = modifier
@@ -73,11 +73,11 @@ fun QuoteComponentPreview() {
         Surface(color = Color.LightGray) {
             QuoteComponent(
                 modifier = Modifier.padding(16.dp),
-                node = CPSNode(
+                node = ComposerNode(
                     type = IElementType.QUOTATION,
                     literal = "",
                     children = listOf(
-                        CPSNode(
+                        ComposerNode(
                             type = IElementType.PARAGRAPH,
                             literal = "This is a Quote - author",
                             children = emptyList()

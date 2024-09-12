@@ -35,7 +35,6 @@ object IElementType {
     const val IGNORE = "ignore"
     const val COLORED = "colored"
     const val DIVIDER = "divider"
-    const val ILLEGAL = "illegal"
     const val EOF = "eof"
     const val ROOT = "root"
     const val H1 = "h1"

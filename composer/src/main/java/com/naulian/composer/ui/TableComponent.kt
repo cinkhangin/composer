@@ -6,13 +6,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.naulian.composer.IElementType
-import com.naulian.composer.CPSNode
+import com.naulian.composer.ComposerNode
 import com.naulian.modify.table.Table
 
 @Composable
 fun TableComponent(
-    node: CPSNode,
-    textContent: @Composable (CPSNode) -> Unit
+    node: ComposerNode,
+    textContent: @Composable (ComposerNode) -> Unit
 ) {
     val data = node.getTableData()
     Table(data = data) { child ->
