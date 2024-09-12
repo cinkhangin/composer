@@ -12,8 +12,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.text.isDigitsOnly
-import com.naulian.composer.IElementType
 import com.naulian.composer.ComposerNode
+import com.naulian.composer.IElementType
 
 
 @Composable

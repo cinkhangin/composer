@@ -1,7 +1,5 @@
 package com.naulian.composer
 
-
-val filename = "filename.composer"
 val COMPOSER_SAMPLE = """
     #1 heading 1
     #2 heading 2

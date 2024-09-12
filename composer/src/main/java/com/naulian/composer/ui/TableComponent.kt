@@ -5,8 +5,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.naulian.composer.IElementType
 import com.naulian.composer.ComposerNode
+import com.naulian.composer.IElementType
 import com.naulian.modify.table.Table
 
 @Composable

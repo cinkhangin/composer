@@ -16,8 +16,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
-import com.naulian.composer.IElementType
 import com.naulian.composer.ComposerNode
+import com.naulian.composer.IElementType
 
 @Composable
 fun QuoteComponent(
