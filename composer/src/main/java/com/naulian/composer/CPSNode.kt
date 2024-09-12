@@ -1,14 +1,17 @@
 package com.naulian.composer
 
-data class Node(
+import com.naulian.composer.ui.ParagraphContent
+
+data class CPSNode(
     val type: String = IElementType.ROOT,
     val literal: String = "",
-    val children: List<Node> = emptyList()
+    val children: List<CPSNode> = emptyList()
 ) {
     companion object {
-        val EOF = Node(IElementType.EOF, "")
+        val EOF = CPSNode(IElementType.EOF, "")
+        val node = ParagraphContent()
 
-        fun create(type: String, literal: CharSequence) = Node(type, literal.toString())
+        fun create(type: String, literal: CharSequence) = CPSNode(type, literal.toString())
     }
 
     fun getHyperLink(): Pair<String, String> {
@@ -22,7 +25,7 @@ data class Node(
         return "" to literal
     }
 
-    fun getTableData(): List<List<Node>> {
+    fun getTableData(): List<List<CPSNode>> {
         return children.map { col ->
             col.children.filterNot { it.type == IElementType.PIPE }
         }

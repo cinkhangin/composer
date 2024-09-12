@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -31,13 +32,36 @@ import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
 import com.naulian.anhance.copyString
+import com.naulian.composer.CPSNode
 import com.naulian.glow.CodeTheme
 import com.naulian.glow.Theme
 import com.naulian.glow_compose.Glow
-import com.naulian.glow_compose.R
 import com.naulian.glow_compose.font
 
 val emptyAnnotatedString = buildAnnotatedString { }
+
+@Composable
+fun CodeComponent(
+    modifier: Modifier = Modifier,
+    node: CPSNode, textStyle: TextStyle
+) {
+    val (lang, code) = node.getLangCodePair()
+    when (lang) {
+        "comment" -> {}
+        else -> CodeSnippet(
+            modifier = modifier
+                .fillMaxWidth()
+                .background(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = MaterialTheme.shapes.small
+                )
+                .clip(MaterialTheme.shapes.small),
+            textStyle = textStyle,
+            source = code,
+            language = lang
+        )
+    }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -81,7 +105,7 @@ private fun CodeSnippetPreview() {
             tertiary = Color(0xFFE8EAF6)
         )
     ) {
-        Surface(color = Color.LightGray) {
+        Surface(color = Color.White) {
             CodeSnippet(
                 modifier = Modifier
                     .padding(16.dp)
@@ -105,7 +129,7 @@ fun CodeComponent(
     language: String = "txt",
     codeName: String = "",
     codeTheme: Theme = CodeTheme.defaultLight,
-    actionIcon: Int = R.drawable.ic_copy,
+    actionIcon: Int? = null,
     onClickAction: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -145,10 +169,10 @@ fun CodeComponent(
                     bottom.linkTo(name.bottom)
                 }
             ) {
-                Icon(
-                    painter = painterResource(id = actionIcon),
-                    contentDescription = null
-                )
+
+                actionIcon?.let {
+                    Icon(painter = painterResource(id = it), contentDescription = null)
+                }
             }
 
             CodeSnippet(

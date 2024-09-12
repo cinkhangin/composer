@@ -12,17 +12,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
+import com.naulian.composer.IElementType
+import com.naulian.composer.CPSNode
 
 @Composable
 fun QuoteComponent(
     modifier: Modifier = Modifier,
-    quote: String,
-    fontFamily: FontFamily = FontFamily.Default
+    node: CPSNode, textComponent: @Composable (CPSNode) -> Unit
 ) {
     ConstraintLayout(
         modifier = modifier
@@ -33,7 +33,7 @@ fun QuoteComponent(
             )
             .clip(MaterialTheme.shapes.small)
     ) {
-        val (accent, text) = createRefs()
+        val (accent, content) = createRefs()
         Box(
             modifier = Modifier
                 .width(8.dp)
@@ -47,32 +47,46 @@ fun QuoteComponent(
         )
         Box(
             modifier = Modifier
-                .constrainAs(text) {
+                .constrainAs(content) {
                     start.linkTo(accent.end)
                     end.linkTo(parent.end)
                     top.linkTo(parent.top)
                     bottom.linkTo(parent.bottom)
                     width = Dimension.fillToConstraints
                 }
+                .padding(12.dp)
         ) {
-            Text(
-                text = quote,
-                modifier = Modifier.padding(12.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                fontFamily = fontFamily
-            )
+            node.children.forEach {
+                when (it.type) {
+                    IElementType.PARAGRAPH -> textComponent(it)
+                    else -> {}
+                }
+            }
         }
     }
 }
 
 @Preview
 @Composable
-fun QuoteBlockPreview() {
+fun QuoteComponentPreview() {
     MaterialTheme {
         Surface(color = Color.LightGray) {
             QuoteComponent(
                 modifier = Modifier.padding(16.dp),
-                quote = "This is a Quote\n- author"
+                node = CPSNode(
+                    type = IElementType.QUOTATION,
+                    literal = "",
+                    children = listOf(
+                        CPSNode(
+                            type = IElementType.PARAGRAPH,
+                            literal = "This is a Quote - author",
+                            children = emptyList()
+                        )
+                    )
+                ),
+                textComponent = {
+                    Text(it.literal)
+                }
             )
         }
     }

@@ -1,23 +1,23 @@
 package com.naulian.composer
 
-private const val MDX_END_CHAR = Char.MIN_VALUE
-private const val MDX_SYMBOL_CHARS = "\"</>&|#{%}[~]\\`(*)_\n"
-private const val MDX_WHITESPACES = " \n"
+private const val CPS_END_CHAR = Char.MIN_VALUE
+private const val CPS_SYMBOL_CHARS = "\"</>&|#{%}[~]\\`(*)_\n"
+private const val CPS_WHITESPACES = " \n"
 
-class Lexer(input: String) {
+class CPSLexer(input: String) {
     private var cursor = 0
     private val source = input
 
     private val Char.isNotSpaceChar get() = this != ' '
-    private val Char.isNotEndChar get() = this != MDX_END_CHAR
-    private val Char.isNotSymbols get() = this !in MDX_SYMBOL_CHARS
+    private val Char.isNotEndChar get() = this != CPS_END_CHAR
+    private val Char.isNotSymbols get() = this !in CPS_SYMBOL_CHARS
 
-    private val charNotEndChar get() = char() != MDX_END_CHAR
+    private val charNotEndChar get() = char() != CPS_END_CHAR
 
     private fun char() = source.getOrElse(cursor) { Char.MIN_VALUE }
 
-    fun tokenize(): List<Node> {
-        val tokens = mutableListOf<Node>()
+    fun tokenize(): List<CPSNode> {
+        val tokens = mutableListOf<CPSNode>()
         var current = next()
         while (current.type != IElementType.EOF) {
             tokens.add(current)
@@ -30,10 +30,10 @@ class Lexer(input: String) {
         cursor += amount
     }
 
-    fun next(): Node {
+    fun next(): CPSNode {
         //println(char())
         return when (val char = char()) {
-            in MDX_WHITESPACES -> createWhiteSpaceToken()
+            in CPS_WHITESPACES -> createWhiteSpaceToken()
             '&' -> createSymbolToken(IElementType.BLOCK_SYMBOL)
             '/' -> createSymbolToken(IElementType.BLOCK_SYMBOL)
             '_' -> createSymbolToken(IElementType.BLOCK_SYMBOL)
@@ -55,7 +55,7 @@ class Lexer(input: String) {
                 val end = cursor
                 advance()
                 val value = source.subSequence(start, end)
-                Node(IElementType.IGNORE, value.toString())
+                CPSNode(IElementType.IGNORE, value.toString())
             }
 
             '%' -> createBlockToken(IElementType.DATETIME, char)
@@ -64,13 +64,13 @@ class Lexer(input: String) {
             '#' -> createHeaderToken()
             '*' -> createElementToken()
             '\\' -> createEscapedToken()
-            in MDX_SYMBOL_CHARS -> createSymbolToken(IElementType.TEXT) //prevent memory leak
-            Char.MIN_VALUE -> Node.EOF
+            in CPS_SYMBOL_CHARS -> createSymbolToken(IElementType.TEXT) //prevent memory leak
+            Char.MIN_VALUE -> CPSNode.EOF
             else -> createTextToken()
         }
     }
 
-    private fun createWhiteSpaceToken(): Node {
+    private fun createWhiteSpaceToken(): CPSNode {
         val start = cursor
         while (char().isWhitespace()) {
             advance()
@@ -78,37 +78,37 @@ class Lexer(input: String) {
         val end = cursor
         val literal = source.subSequence(start, end)
         return when {
-            literal.contains("\n") -> Node.create(IElementType.NEWLINE, literal)
-            else -> Node.create(IElementType.WHITESPACE, literal)
+            literal.contains("\n") -> CPSNode.create(IElementType.NEWLINE, literal)
+            else -> CPSNode.create(IElementType.WHITESPACE, literal)
         }
     }
 
-    private fun createHeaderToken(): Node {
+    private fun createHeaderToken(): CPSNode {
         advance()
-        if (char() == MDX_END_CHAR) {
+        if (char() == CPS_END_CHAR) {
             // early return
-            return Node(IElementType.TEXT, "#")
+            return CPSNode(IElementType.TEXT, "#")
         }
 
         val start = cursor
         advanceWhile { it.isNotSpaceChar && it.isNotEndChar && it.isNotSymbols }
         return when (val value = source.subSequence(start, cursor)) {
-            in "123456" -> Node(IElementType.HEADER, "#$value")
-            else -> Node(IElementType.COLOR_HEX, "#$value")
+            in "123456" -> CPSNode(IElementType.HEADER, "#$value")
+            else -> CPSNode(IElementType.COLOR_HEX, "#$value")
         }
     }
 
-    private fun createEscapedToken(): Node {
+    private fun createEscapedToken(): CPSNode {
         advance()
-        if (char() == MDX_END_CHAR) {
-            return Node.EOF
+        if (char() == CPS_END_CHAR) {
+            return CPSNode.EOF
         }
         val literal = char().toString()
         advance()
-        return Node(IElementType.ESCAPE, literal)
+        return CPSNode(IElementType.ESCAPE, literal)
     }
 
-    private fun createCodeToken(): Node {
+    private fun createCodeToken(): CPSNode {
         advance() //skip opening bracket
         val start = cursor
         var level = 0
@@ -131,10 +131,10 @@ class Lexer(input: String) {
         adhocMap.forEach {
             code = code.replace(it.key, it.value)
         }
-        return Node(IElementType.CODE, code)
+        return CPSNode(IElementType.CODE, code)
     }
 
-    private fun createLinkToken(): Node {
+    private fun createLinkToken(): CPSNode {
         advance() //skip opening parenthesis
         val start = cursor
         while (char() != ')' && charNotEndChar) {
@@ -145,7 +145,7 @@ class Lexer(input: String) {
         advance() //skip closing parenthesis
 
         if (!value.contains("http")) {
-            return Node(IElementType.TEXT, "($value)")
+            return CPSNode(IElementType.TEXT, "($value)")
         }
 
         if (value.contains("@")) {
@@ -154,43 +154,43 @@ class Lexer(input: String) {
             val link = value.str().replace("$hyper@", "")
 
             return when (hyper) {
-                "img" -> Node(IElementType.IMAGE, link)
-                "ytb" -> Node(IElementType.YOUTUBE, link)
-                "vid" -> Node(IElementType.VIDEO, link)
-                else -> Node(IElementType.HYPER_LINK, value)
+                "img" -> CPSNode(IElementType.IMAGE, link)
+                "ytb" -> CPSNode(IElementType.YOUTUBE, link)
+                "vid" -> CPSNode(IElementType.VIDEO, link)
+                else -> CPSNode(IElementType.HYPER_LINK, value)
             }
         }
 
-        return Node(IElementType.LINK, value)
+        return CPSNode(IElementType.LINK, value)
     }
 
-    private fun createElementToken(): Node {
+    private fun createElementToken(): CPSNode {
         advance()
-        if (char() == MDX_END_CHAR) {
+        if (char() == CPS_END_CHAR) {
             // early return
-            return Node(IElementType.TEXT, "*")
+            return CPSNode(IElementType.TEXT, "*")
         }
 
         val start = cursor
         advanceWhile { it.isNotSpaceChar && it.isNotEndChar && it.isNotSymbols }
         val value = source.subSequence(start, cursor)
-        return Node(IElementType.ELEMENT, "*$value")
+        return CPSNode(IElementType.ELEMENT, "*$value")
     }
 
-    private fun createTextToken(): Node {
+    private fun createTextToken(): CPSNode {
         val start = cursor
         advanceWhile { it.isNotSymbols && it.isNotEndChar }
         val literal = source.subSequence(start, cursor).toString()
-        return Node.create(IElementType.TEXT, literal)
+        return CPSNode.create(IElementType.TEXT, literal)
     }
 
-    private fun createSymbolToken(type: String): Node {
+    private fun createSymbolToken(type: String): CPSNode {
         val value = char().toString()
         advance()
-        return Node(type, value)
+        return CPSNode(type, value)
     }
 
-    private fun createBlockToken(type: String, char: Char): Node {
+    private fun createBlockToken(type: String, char: Char): CPSNode {
         advance() //skip the opening char
         val start = cursor
         var prevChar = char()
@@ -206,13 +206,13 @@ class Lexer(input: String) {
             IElementType.DATETIME -> {
                 try {
                     val value = formattedDateTime(blockValue)
-                    Node(type, value)
+                    CPSNode(type, value)
                 } catch (e: Exception) {
-                    Node(IElementType.TEXT, blockValue)
+                    CPSNode(IElementType.TEXT, blockValue)
                 }
             }
 
-            else -> Node(type, blockValue)
+            else -> CPSNode(type, blockValue)
         }
     }
 

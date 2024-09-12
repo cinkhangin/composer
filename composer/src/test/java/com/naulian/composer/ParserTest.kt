@@ -10,10 +10,10 @@ class ParserTest {
         val source = "plain text"
         val actual = Parser(source).parse().children
         val expected = listOf(
-            Node(
+            CPSNode(
                 type = IElementType.PARAGRAPH,
                 children = listOf(
-                    Node(type = IElementType.TEXT, literal = "plain text")
+                    CPSNode(type = IElementType.TEXT, literal = "plain text")
                 )
             )
         )
@@ -25,14 +25,14 @@ class ParserTest {
         val source = "#1 header"
         val actual = Parser(source).parse().children
         val expected = listOf(
-            Node(
+            CPSNode(
                 type = IElementType.H1,
                 literal = "",
                 children = listOf(
-                    Node(
+                    CPSNode(
                         type = IElementType.PARAGRAPH,
                         children = listOf(
-                            Node(type = IElementType.TEXT, literal = "header")
+                            CPSNode(type = IElementType.TEXT, literal = "header")
                         )
                     )
                 )
@@ -49,26 +49,26 @@ class ParserTest {
         """.trimIndent()
         val actual = Parser(source).parse().children
         val expected = listOf(
-            Node(
+            CPSNode(
                 type = IElementType.H1,
                 literal = "",
                 children = listOf(
-                    Node(
+                    CPSNode(
                         type = IElementType.PARAGRAPH,
                         children = listOf(
-                            Node(type = IElementType.TEXT, literal = "header 1")
+                            CPSNode(type = IElementType.TEXT, literal = "header 1")
                         )
                     )
                 )
             ),
-            Node(
+            CPSNode(
                 type = IElementType.H2,
                 literal = "",
                 children = listOf(
-                    Node(
+                    CPSNode(
                         type = IElementType.PARAGRAPH,
                         children = listOf(
-                            Node(type = IElementType.TEXT, literal = "header 2")
+                            CPSNode(type = IElementType.TEXT, literal = "header 2")
                         )
                     )
                 )
@@ -82,16 +82,16 @@ class ParserTest {
         val source = "#1 ~header underline~"
         val actual = Parser(source).parse().children
         val expected = listOf(
-            Node(
+            CPSNode(
                 type = IElementType.H1,
                 literal = "",
                 children = listOf(
-                    Node(
+                    CPSNode(
                         type = IElementType.PARAGRAPH, children = listOf(
-                            Node(
+                            CPSNode(
                                 type = IElementType.STRIKE,
                                 children = listOf(
-                                    Node(
+                                    CPSNode(
                                         type = IElementType.TEXT,
                                         literal = "header underline"
                                     )
@@ -112,17 +112,17 @@ class ParserTest {
         """.trimIndent()
         val actual = Parser(source).parse().children
         val expected = listOf(
-            Node(
+            CPSNode(
                 type = IElementType.QUOTATION,
                 literal = "",
                 children = listOf(
-                    Node(
+                    CPSNode(
                         type = IElementType.PARAGRAPH, children = listOf(
-                            Node(type = IElementType.TEXT, literal = "this is a quote text "),
-                            Node(
+                            CPSNode(type = IElementType.TEXT, literal = "this is a quote text "),
+                            CPSNode(
                                 type = IElementType.BOLD,
                                 children = listOf(
-                                    Node(type = IElementType.TEXT, literal = "-author")
+                                    CPSNode(type = IElementType.TEXT, literal = "-author")
                                 )
                             )
                         )
@@ -147,7 +147,7 @@ class ParserTest {
         """.trimIndent()
         val actual = Parser(source).parse().children
         val expected = listOf(
-            Node(
+            CPSNode(
                 type = IElementType.CODE,
                 literal = """
                     .py
@@ -169,7 +169,7 @@ class ParserTest {
         """.trimIndent()
         val actual = Parser(source).parse().children
         val expected = listOf(
-            Node(
+            CPSNode(
                 type = IElementType.DIVIDER,
                 literal = "line"
             )
@@ -187,55 +187,55 @@ class ParserTest {
         """.trimIndent()
         val actual = Parser(source).parse().children
         val expected = listOf(
-            Node(
+            CPSNode(
                 type = IElementType.TABLE,
                 children = listOf(
-                    Node(
+                    CPSNode(
                         type = IElementType.TABLE_COLOMN,
                         children = listOf(
-                            Node(
+                            CPSNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    Node(type = IElementType.TEXT, literal = "a    ")
+                                    CPSNode(type = IElementType.TEXT, literal = "a    ")
                                 )
                             ),
-                            Node(type = IElementType.PIPE, literal = "|"),
-                            Node(
+                            CPSNode(type = IElementType.PIPE, literal = "|"),
+                            CPSNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    Node(type = IElementType.TEXT, literal = "b    ")
+                                    CPSNode(type = IElementType.TEXT, literal = "b    ")
                                 )
                             ),
-                            Node(type = IElementType.PIPE, literal = "|"),
-                            Node(
+                            CPSNode(type = IElementType.PIPE, literal = "|"),
+                            CPSNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    Node(type = IElementType.TEXT, literal = "c"),
+                                    CPSNode(type = IElementType.TEXT, literal = "c"),
                                 )
                             )
                         )
                     ),
-                    Node(
+                    CPSNode(
                         type = IElementType.TABLE_COLOMN,
                         children = listOf(
-                            Node(
+                            CPSNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    Node(type = IElementType.TEXT, literal = "true "),
+                                    CPSNode(type = IElementType.TEXT, literal = "true "),
                                 )
                             ),
-                            Node(type = IElementType.PIPE, literal = "|"),
-                            Node(
+                            CPSNode(type = IElementType.PIPE, literal = "|"),
+                            CPSNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    Node(type = IElementType.TEXT, literal = "false"),
+                                    CPSNode(type = IElementType.TEXT, literal = "false"),
                                 )
                             ),
-                            Node(type = IElementType.PIPE, literal = "|"),
-                            Node(
+                            CPSNode(type = IElementType.PIPE, literal = "|"),
+                            CPSNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    Node(type = IElementType.TEXT, literal = "true"),
+                                    CPSNode(type = IElementType.TEXT, literal = "true"),
                                 )
                             )
                         )
@@ -253,14 +253,14 @@ class ParserTest {
         """.trimIndent()
         val actual = Parser(source).parse().children
         val expected = listOf(
-            Node(
+            CPSNode(
                 type = IElementType.PARAGRAPH,
                 children = listOf(
-                    Node(
+                    CPSNode(
                         type = IElementType.COLORED,
                         literal = "#FF0000",
                         children = listOf(
-                            Node(type = IElementType.TEXT, literal = "color this text"),
+                            CPSNode(type = IElementType.TEXT, literal = "color this text"),
                         )
                     )
                 )
@@ -276,10 +276,10 @@ class ParserTest {
         """.trimIndent()
         val actual = Parser(source).parse().children
         val expected = listOf(
-            Node(
+            CPSNode(
                 type = IElementType.PARAGRAPH,
                 children = listOf(
-                    Node(
+                    CPSNode(
                         type = IElementType.IGNORE,
                         literal = "the syntax ~should~ be ignore here",
                     )
@@ -299,38 +299,38 @@ class ParserTest {
         """.trimIndent()
         val actual = Parser(source).parse().children
         val expected = listOf(
-            Node(
+            CPSNode(
                 type = IElementType.ELEMENT,
                 children = listOf(
-                    Node(
+                    CPSNode(
                         type = IElementType.ELEMENT_BULLET,
                         children = listOf(
-                            Node(
+                            CPSNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    Node(type = IElementType.TEXT, literal = "unordered item"),
+                                    CPSNode(type = IElementType.TEXT, literal = "unordered item"),
                                 )
                             )
                         )
                     ),
-                    Node(
+                    CPSNode(
                         type = IElementType.ELEMENT_UNCHECKED,
                         children = listOf(
-                            Node(
+                            CPSNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    Node(type = IElementType.TEXT, literal = "unchecked item"),
+                                    CPSNode(type = IElementType.TEXT, literal = "unchecked item"),
                                 )
                             )
                         )
                     ),
-                    Node(
+                    CPSNode(
                         type = IElementType.ELEMENT_CHECKED,
                         children = listOf(
-                            Node(
+                            CPSNode(
                                 type = IElementType.PARAGRAPH,
                                 children = listOf(
-                                    Node(type = IElementType.TEXT, literal = "checked item"),
+                                    CPSNode(type = IElementType.TEXT, literal = "checked item"),
                                 )
                             )
                         )
