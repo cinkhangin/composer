@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -64,6 +65,7 @@ fun TkMenuItem(
     label: String,
     selected: Boolean = false,
     danger: Boolean = false,
+    fontFamily: FontFamily? = null,
     onClick: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -91,6 +93,7 @@ fun TkMenuItem(
                 },
                 fontSize = 13.sp,
                 fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                fontFamily = fontFamily ?: FontFamily.Default,
             ),
             modifier = Modifier.weight(1f),
         )

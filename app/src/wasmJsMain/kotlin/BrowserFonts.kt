@@ -42,10 +42,16 @@ object LocalFonts {
 
     val supported: Boolean get() = localFontsSupported()
 
+    /** Cached enumeration — one `queryLocalFonts()` reused by [query] and every [load]. */
+    private var handles: JsArray<JsFontData>? = null
+
+    private suspend fun fonts(): JsArray<JsFontData> =
+        handles ?: queryLocalFontsJs().await<JsArray<JsFontData>>().also { handles = it }
+
     /** Enumerate installed font families (prompts for permission on first use). */
     suspend fun query() {
         if (!supported) return
-        val arr = queryLocalFontsJs().await<JsArray<JsFontData>>()
+        val arr = fonts()
         val seen = LinkedHashSet<String>()
         for (i in 0 until arr.length) {
             val fd = arr[i] ?: continue
@@ -58,7 +64,7 @@ object LocalFonts {
     /** Load [family]'s bytes and register a FontFamily for the canvas preview. */
     suspend fun load(family: String) {
         if (family.isEmpty() || loaded.containsKey(family) || !supported) return
-        val arr = queryLocalFontsJs().await<JsArray<JsFontData>>()
+        val arr = fonts()
         for (i in 0 until arr.length) {
             val fd = arr[i] ?: continue
             if (fd.family.toString() == family) {
