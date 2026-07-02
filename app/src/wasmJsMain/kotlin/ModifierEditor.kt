@@ -231,6 +231,8 @@ private fun AddChipsRow(existing: List<ModifierSpec>, canWeight: Boolean, onAdd:
         if (existing.none { it is Clip }) AddChip("clip") { onAdd(Clip(12)) }
         if (existing.none { it is ModifierSpec.Alpha }) AddChip("opacity") { onAdd(ModifierSpec.Alpha(0.5f)) }
         if (existing.none { it is ModifierSpec.Border }) AddChip("border") { onAdd(ModifierSpec.Border(1, 0xFF000000)) }
+        if (existing.none { it is ModifierSpec.DropShadow }) AddChip("dropShadow") { onAdd(ModifierSpec.DropShadow()) }
+        if (existing.none { it is ModifierSpec.InnerShadow }) AddChip("innerShadow") { onAdd(ModifierSpec.InnerShadow()) }
         if (FillMaxWidth !in existing) AddChip("fillW") { onAdd(FillMaxWidth) }
         if (FillMaxHeight !in existing) AddChip("fillH") { onAdd(FillMaxHeight) }
         if (FillMaxSize !in existing) AddChip("fillSize") { onAdd(FillMaxSize) }
@@ -341,6 +343,32 @@ private fun ModifierParams(spec: ModifierSpec, onChange: (ModifierSpec) -> Unit)
             IntField("corner radius (dp)", spec.corner, Modifier.fillMaxWidth()) { onChange(Background(spec.color, it)) }
         }
 
+        is ModifierSpec.DropShadow -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ColorPicker(spec.color) { onChange(spec.copy(color = it)) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                IntField("blur (dp)", spec.radius, Modifier.weight(1f)) { onChange(spec.copy(radius = it)) }
+                IntField("spread", spec.spread, Modifier.weight(1f), allowNegative = true) { onChange(spec.copy(spread = it)) }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                IntField("x", spec.offsetX, Modifier.weight(1f), allowNegative = true) { onChange(spec.copy(offsetX = it)) }
+                IntField("y", spec.offsetY, Modifier.weight(1f), allowNegative = true) { onChange(spec.copy(offsetY = it)) }
+            }
+            IntField("corner radius (dp)", spec.corner, Modifier.fillMaxWidth()) { onChange(spec.copy(corner = it)) }
+        }
+
+        is ModifierSpec.InnerShadow -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ColorPicker(spec.color) { onChange(spec.copy(color = it)) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                IntField("blur (dp)", spec.radius, Modifier.weight(1f)) { onChange(spec.copy(radius = it)) }
+                IntField("spread", spec.spread, Modifier.weight(1f), allowNegative = true) { onChange(spec.copy(spread = it)) }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                IntField("x", spec.offsetX, Modifier.weight(1f), allowNegative = true) { onChange(spec.copy(offsetX = it)) }
+                IntField("y", spec.offsetY, Modifier.weight(1f), allowNegative = true) { onChange(spec.copy(offsetY = it)) }
+            }
+            IntField("corner radius (dp)", spec.corner, Modifier.fillMaxWidth()) { onChange(spec.copy(corner = it)) }
+        }
+
         FillMaxWidth, FillMaxHeight, FillMaxSize -> Unit
     }
 }
@@ -439,6 +467,8 @@ private fun specName(spec: ModifierSpec): String = when (spec) {
     is Clip -> "clip"
     is ModifierSpec.Alpha -> "alpha"
     is ModifierSpec.Border -> "border"
+    is ModifierSpec.DropShadow -> "dropShadow"
+    is ModifierSpec.InnerShadow -> "innerShadow"
     FillMaxWidth -> "fillMaxWidth"
     FillMaxHeight -> "fillMaxHeight"
     FillMaxSize -> "fillMaxSize"

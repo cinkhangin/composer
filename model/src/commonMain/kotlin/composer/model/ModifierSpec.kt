@@ -91,6 +91,39 @@ sealed interface ModifierSpec {
     @SerialName("border")
     data class Border(val width: Int, val color: Long, val corner: Int = 0) : ModifierSpec
 
+    /**
+     * `Modifier.dropShadow(shape, Shadow(…))` — a Figma-style drop shadow behind the
+     * component (Compose UI 1.9+ in generated code; the editor preview emulates it in
+     * Skia). [radius] is the blur radius (dp), [spread] grows/shrinks the shadow
+     * geometry, [offsetX]/[offsetY] shift it, [corner] is the shape's corner radius
+     * (keep it in sync with the background/clip corner).
+     */
+    @Serializable
+    @SerialName("dropShadow")
+    data class DropShadow(
+        val radius: Int = 8,
+        val color: Long = 0x40000000,
+        val offsetX: Int = 0,
+        val offsetY: Int = 2,
+        val spread: Int = 0,
+        val corner: Int = 0,
+    ) : ModifierSpec
+
+    /**
+     * `Modifier.innerShadow(shape, Shadow(…))` — the inverse of [DropShadow]: the
+     * component looks recessed/pressed into the surface. Same parameters.
+     */
+    @Serializable
+    @SerialName("innerShadow")
+    data class InnerShadow(
+        val radius: Int = 8,
+        val color: Long = 0x40000000,
+        val offsetX: Int = 0,
+        val offsetY: Int = 2,
+        val spread: Int = 0,
+        val corner: Int = 0,
+    ) : ModifierSpec
+
     @Serializable
     @SerialName("fillMaxWidth")
     data object FillMaxWidth : ModifierSpec

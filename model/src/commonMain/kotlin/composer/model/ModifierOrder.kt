@@ -16,9 +16,11 @@ package composer.model
  */
 private fun appearanceRank(m: ModifierSpec): Int = when (m) {
     is ModifierSpec.Alpha -> 0
-    is ModifierSpec.Clip -> 1
-    is ModifierSpec.Background -> 2
-    is ModifierSpec.Border -> 3
+    is ModifierSpec.DropShadow -> 1 // shadow draws behind → must precede background
+    is ModifierSpec.Clip -> 2
+    is ModifierSpec.Background -> 3
+    is ModifierSpec.Border -> 4
+    is ModifierSpec.InnerShadow -> 5 // draws on top of the fill → after background/border
     else -> Int.MAX_VALUE // layout modifiers (padding, size, …) come after appearance
 }
 

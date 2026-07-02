@@ -26,6 +26,28 @@ class CodeGenTest {
     }
 
     @Test
+    fun drop_shadow_emits_compose19_api() {
+        val code = CodeGen.generate(
+            Node.Box("b", modifier = listOf(ModifierSpec.DropShadow(radius = 10, color = 0x40000000, offsetX = 4, offsetY = 4, spread = 6, corner = 20))),
+        )
+        assertTrue("dropShadow(RoundedCornerShape(20.dp), Shadow(radius = 10.dp, color = Color(0x40000000), spread = 6.dp, offset = DpOffset(4.dp, 4.dp)))" in code, code)
+        assertTrue("import androidx.compose.ui.draw.dropShadow" in code, code)
+        assertTrue("import androidx.compose.ui.graphics.shadow.Shadow" in code, code)
+        assertTrue("import androidx.compose.ui.unit.DpOffset" in code, code)
+    }
+
+    @Test
+    fun inner_shadow_omits_default_args_and_uses_rectangle_shape() {
+        val code = CodeGen.generate(
+            Node.Box("b", modifier = listOf(ModifierSpec.InnerShadow(radius = 8, color = 0x40000000, offsetX = 0, offsetY = 0, spread = 0, corner = 0))),
+        )
+        assertTrue("innerShadow(RectangleShape, Shadow(radius = 8.dp, color = Color(0x40000000)))" in code, code)
+        assertTrue("import androidx.compose.ui.draw.innerShadow" in code, code)
+        assertTrue("import androidx.compose.ui.graphics.RectangleShape" in code, code)
+        assertTrue("DpOffset" !in code, code) // zero offset/spread omitted
+    }
+
+    @Test
     fun text_style_emits_only_non_default_args() {
         val plain = CodeGen.generate(Node.Text("t", "hi"))
         assertTrue("Text(\"hi\")" in plain, plain) // nothing extra at defaults

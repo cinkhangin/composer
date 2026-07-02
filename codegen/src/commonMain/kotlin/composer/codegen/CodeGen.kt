@@ -689,6 +689,16 @@ object CodeGen {
                     }
                 }
 
+                is ModifierSpec.DropShadow -> {
+                    imports += "androidx.compose.ui.draw.dropShadow"
+                    shadowExpr("dropShadow", spec.radius, spec.color, spec.offsetX, spec.offsetY, spec.spread, spec.corner, imports)
+                }
+
+                is ModifierSpec.InnerShadow -> {
+                    imports += "androidx.compose.ui.draw.innerShadow"
+                    shadowExpr("innerShadow", spec.radius, spec.color, spec.offsetX, spec.offsetY, spec.spread, spec.corner, imports)
+                }
+
                 ModifierSpec.FillMaxWidth -> {
                     imports += "androidx.compose.foundation.layout.fillMaxWidth"
                     "fillMaxWidth()"
@@ -707,6 +717,39 @@ object CodeGen {
         }
         // [leading] is a scope-imposed prefix (e.g. a Scaffold's "padding(innerPadding)").
         val parts = listOfNotNull(leading) + specParts
+        return joinChain(parts, indent)
+    }
+
+    /**
+     * `dropShadow(shape, Shadow(…))` / `innerShadow(shape, Shadow(…))` — the Compose UI 1.9
+     * shadow API (`androidx.compose.ui.draw`, `Shadow` from `androidx.compose.ui.graphics.shadow`).
+     * Default-valued Shadow args (zero offset/spread) are omitted to keep the call clean.
+     */
+    private fun shadowExpr(name: String, radius: Int, color: Long, offsetX: Int, offsetY: Int, spread: Int, corner: Int, imports: MutableSet<String>): String {
+        imports += "androidx.compose.ui.graphics.shadow.Shadow"
+        imports += "androidx.compose.ui.graphics.Color"
+        imports += "androidx.compose.ui.unit.dp"
+        val shape = if (corner > 0) {
+            imports += "androidx.compose.foundation.shape.RoundedCornerShape"
+            "RoundedCornerShape($corner.dp)"
+        } else {
+            imports += "androidx.compose.ui.graphics.RectangleShape"
+            "RectangleShape"
+        }
+        val args = buildList {
+            add("radius = $radius.dp")
+            add("color = Color(0x${color.toString(16).uppercase().padStart(8, '0')})")
+            if (spread != 0) add("spread = $spread.dp")
+            if (offsetX != 0 || offsetY != 0) {
+                imports += "androidx.compose.ui.unit.DpOffset"
+                add("offset = DpOffset($offsetX.dp, $offsetY.dp)")
+            }
+        }
+        return "$name($shape, Shadow(${args.joinToString(", ")}))"
+    }
+
+    private fun joinChain(parts: List<String>, indent: Int): String? {
+        if (parts.isEmpty()) return null
         return if (parts.size <= 1) {
             "Modifier." + parts.joinToString(".")
         } else {

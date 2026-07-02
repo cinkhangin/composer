@@ -529,6 +529,8 @@ fun List<ModifierSpec>.toModifier(): Modifier =
                 Color(spec.color),
                 if (spec.corner > 0) RoundedCornerShape(spec.corner.dp) else RectangleShape,
             )
+            is ModifierSpec.DropShadow -> acc.dropShadowPreview(spec)
+            is ModifierSpec.InnerShadow -> acc.innerShadowPreview(spec)
             ModifierSpec.FillMaxWidth -> acc.fillMaxWidth()
             ModifierSpec.FillMaxHeight -> acc.fillMaxHeight()
             ModifierSpec.FillMaxSize -> acc.fillMaxSize()
