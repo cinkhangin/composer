@@ -26,30 +26,31 @@ class CodeGenTest {
     }
 
     @Test
-    fun component_main_extracts_to_function_and_instances_call_it() {
-        val card = Node.Box(
-            "card",
-            modifier = listOf(Padding(12), ModifierSpec.Offset(10, 20)),
-            children = listOf(Node.Text("t", "Hello")),
-        )
+    fun instances_call_the_registered_composables_function() {
         val tree = Node.Artboard(
             "art",
             composables = listOf(
-                Node.Composable("s1", children = listOf(card)),
-                Node.Composable("s2", children = listOf(Node.Instance("i1", "card", listOf(Padding(4))))),
+                Node.Composable("card", children = listOf(Node.Text("t", "Hello", listOf(Padding(12))))),
+                Node.Composable(
+                    "home",
+                    children = listOf(
+                        Node.Instance("i1", "card"),
+                        Node.Instance("i2", "card", listOf(Padding(4))),
+                    ),
+                ),
             ),
-            layerNames = mapOf("card" to "info card", "s1" to "Home", "s2" to "Detail"),
+            layerNames = mapOf("card" to "info card", "home" to "Home"),
             componentIds = listOf("card"),
         )
         val code = CodeGen.generate(tree)
-        // extracted fn: name from layer name; body takes the modifier param OUTSIDE its own chain
-        assertTrue("fun InfoCard(modifier: Modifier = Modifier) {" in code, code)
-        assertTrue(".then(modifier)" in code, code)
-        // main's Offset stays at ITS call site (not baked into every instance)
-        assertTrue("InfoCard(modifier = Modifier.offset(10.dp, 20.dp))" in code, code)
-        // the instance's own chain applies at its call site
-        assertTrue("InfoCard(modifier = Modifier.padding(4.dp))" in code, code)
-        // the padding lives once, inside the function
+        // the composable's own function is the component — no separate extraction
+        assertTrue("fun InfoCard() {" in code, code)
+        // bare instance = bare call
+        assertTrue("    InfoCard()\n" in code, code)
+        // instance with modifiers wraps the call in an explicit Box (a composable
+        // body has no root node to thread a modifier parameter into)
+        assertTrue("Box(modifier = Modifier.padding(4.dp)) {\n        InfoCard()\n    }" in code, code)
+        // the card's padding lives once, inside InfoCard
         assertTrue(code.indexOf("padding(12.dp)") == code.lastIndexOf("padding(12.dp)"), code)
     }
 
@@ -661,7 +662,7 @@ class CodeGenTest {
     @Test
     fun composable_emits_children_directly_into_the_function() {
         val code = CodeGen.generate(Node.Composable("root", children = listOf(Node.Text("t", "Hello world"))))
-        assertTrue("fun Screen1() {\n    Text(\"Hello world\")\n}" in code, code)
+        assertTrue("fun Composable1() {\n    Text(\"Hello world\")\n}" in code, code)
         // No Box/Column wrapper from the screen itself.
         assertTrue("Box" !in code && "Column" !in code, code)
     }
@@ -689,7 +690,7 @@ class CodeGenTest {
         )
         val code = CodeGen.generate(ab)
         assertTrue("fun LoginScreen() {" in code, code)      // PascalCase from free text
-        assertTrue("fun Screen2FactorAuth() {" in code, code) // leading digit prefixed, punctuation dropped
+        assertTrue("fun Composable2FactorAuth() {" in code, code) // leading digit prefixed, punctuation dropped
         assertLexicallyValid(code)
     }
 
@@ -705,7 +706,7 @@ class CodeGenTest {
             layerNames = mapOf("s2" to "Home", "s3" to "Home"),
         )
         val code = CodeGen.generate(ab)
-        assertTrue("fun Screen1() {" in code, code)
+        assertTrue("fun Composable1() {" in code, code)
         assertTrue("fun Home() {" in code, code)
         assertTrue("fun Home2() {" in code, code)
         assertLexicallyValid(code)

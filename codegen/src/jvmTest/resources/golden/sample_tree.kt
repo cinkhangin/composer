@@ -15,7 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun Screen1() {
+fun Composable1() {
     Column(
         modifier = Modifier
             .fillMaxSize()

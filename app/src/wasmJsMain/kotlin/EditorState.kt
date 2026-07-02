@@ -149,13 +149,13 @@ class EditorState(initial: Node) {
 
     /**
      * Add a new screen to the artboard, placed to the right of the rightmost
-     * existing screen (Figma-style side-by-side flow). Named "Screen N" so the
+     * existing composable (Figma-style side-by-side flow). Named "Composable N" so the
      * generated function name is stable and readable. Selects it.
      */
     fun addComposable(width: Int = 390, height: Int = 844) {
         val id = nextId()
         val screen = Node.Composable(id = id, x = nextScreenX(), y = 0, width = width, height = height)
-        val name = "Screen ${composables.size + 1}"
+        val name = "Composable ${composables.size + 1}"
         commit(
             root.insertChild(root.id, screen, Int.MAX_VALUE)
                 .let { (it as Node.Artboard).copy(layerNames = it.layerNames + (id to name)) },
@@ -311,17 +311,13 @@ class EditorState(initial: Node) {
 
     fun isComponent(id: String): Boolean = id in artboard.componentIds
 
-    /** Screens/slots/the artboard/instances can't become components; mains can't twice. */
-    fun canBeComponent(id: String): Boolean {
-        val n = root.findById(id) ?: return false
-        return n !is Node.Artboard && n !is Node.Composable && n !is Node.Slot &&
-            n !is Node.Instance && !isComponent(id)
-    }
+    /** Only a [Node.Composable] can be a reusable component (its fn IS the component). */
+    fun canBeComponent(id: String): Boolean =
+        root.findById(id) is Node.Composable && !isComponent(id)
 
     /**
-     * Register the node as a reusable component (Figma-style main): the node stays
-     * in place and editable — instances reference it live. Its layer name becomes
-     * the component AND generated-function name (auto-named if unnamed).
+     * Register a composable as reusable: it stays on the artboard, fully editable —
+     * instances reference it live. Its layer name is the component AND function name.
      */
     fun createComponent(id: String) {
         if (!canBeComponent(id)) return
@@ -351,15 +347,21 @@ class EditorState(initial: Node) {
     }
 
     /**
-     * Replace an instance with an editable fresh-id clone of its main. The
-     * instance's own chain wraps OUTSIDE the main's (same as when rendered).
+     * Replace an instance with an editable fresh-id clone of the composable's
+     * CONTENT: its single child directly (instance chain prepended), or a Box of
+     * the children when there are several — matching how instances render.
      */
     fun detachInstance(id: String) {
         val inst = root.findById(id) as? Node.Instance ?: return
-        val main = root.findById(inst.refId) ?: return
-        val clone = main.cloneWithNewIds(::nextId)
-        commit(root.replaceById(id) { clone.withModifier(inst.modifier + clone.modifier) })
-        select(clone.id)
+        val main = root.findById(inst.refId) as? Node.Composable ?: return
+        val clones = main.children.map { it.cloneWithNewIds(::nextId) }
+        val detached = when (clones.size) {
+            0 -> return
+            1 -> clones[0].withModifier(inst.modifier + clones[0].modifier)
+            else -> Node.Box(nextId(), children = clones, modifier = inst.modifier)
+        }
+        commit(root.replaceById(id) { detached })
+        select(detached.id)
     }
 
     fun insert(factory: (id: String) -> Node) {

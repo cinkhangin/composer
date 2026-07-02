@@ -103,7 +103,6 @@ import composer.model.BoxAlignment
 import composer.model.ButtonVariant
 import composer.model.childNodes
 import composer.model.findById
-import composer.model.withModifier
 import composer.model.CornerUnit
 import composer.model.DesignTheme
 import composer.model.GradientDirection
@@ -161,14 +160,14 @@ fun RenderNode(
         .onGloballyPositioned { onBounds(node.id, it) }
         .then(innerMod)
     when (node) {
-        // An instance renders its main's subtree as ONE unit: taps anywhere inside
-        // select the INSTANCE (redirected onSelect), inner nodes don't register
-        // bounds (their ids would collide across instances), and the main's
-        // contextual Offset/Weight are stripped (they belong to the main's spot).
+        // An instance renders its composable's CONTENT as ONE unit: taps anywhere
+        // inside select the INSTANCE (redirected onSelect), and inner nodes don't
+        // register bounds (their ids would collide across instances). The
+        // composable's canvas geometry (x/y/w/h) is editor-only — not applied here.
         is Node.Instance -> {
             val designRoot = LocalDesignRoot.current
             val depth = LocalInstanceDepth.current
-            val main = if (depth < 8) designRoot?.findById(node.refId) else null
+            val main = if (depth < 8) designRoot?.findById(node.refId) as? Node.Composable else null
             Box(modifier = modifier) {
                 if (main == null) {
                     Box(
@@ -181,12 +180,14 @@ fun RenderNode(
                     }
                 } else {
                     CompositionLocalProvider(LocalInstanceDepth provides depth + 1) {
-                        RenderNode(
-                            main.withModifier(main.modifier.filterNot { it is ModifierSpec.Offset || it is ModifierSpec.Weight }),
-                            selectedId = null,
-                            onSelect = { _, _ -> onSelect(node.id, false) },
-                            onBounds = { _, _ -> },
-                        )
+                        main.children.forEach { child ->
+                            RenderNode(
+                                child,
+                                selectedId = null,
+                                onSelect = { _, _ -> onSelect(node.id, false) },
+                                onBounds = { _, _ -> },
+                            )
+                        }
                     }
                 }
             }

@@ -118,6 +118,25 @@ fun Inspector(state: EditorState, modifier: Modifier = Modifier) {
                 ThemeEditor(state)
             } else if (selected is Node.Composable) {
                 ComposableEditor(state, selected)
+                InspectorSection("Component") {
+                    if (state.isComponent(selected.id)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            BasicText(
+                                "Reusable component \"${state.componentName(selected.id)}\" — insert instances from the palette; edits here apply to every instance.",
+                                style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
+                            )
+                            ToolButton("Remove from components") { state.removeComponent(selected.id) }
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            BasicText(
+                                "Make this composable reusable — instances of it can be placed inside other composables.",
+                                style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
+                            )
+                            ToolButton("Create component") { state.createComponent(selected.id) }
+                        }
+                    }
+                }
                 InspectorSection("Arrange") {
                     Arrange(state, selected)
                 }
@@ -136,28 +155,14 @@ fun Inspector(state: EditorState, modifier: Modifier = Modifier) {
                 InspectorSection("Component") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         BasicText(
-                            "Instance of \"${state.componentName(selected.refId)}\" — edits to the main apply everywhere.",
+                            "Instance of \"${state.componentName(selected.refId)}\" — edits to that composable apply everywhere.",
                             style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ToolButton("Go to main") { state.select(selected.refId) }
+                            ToolButton("Go to composable") { state.select(selected.refId) }
                             ToolButton("Detach") { state.detachInstance(selected.id) }
                         }
                     }
-                }
-              } else if (state.isComponent(selected.id)) {
-                InspectorSection("Component") {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        BasicText(
-                            "Main component \"${state.componentName(selected.id)}\" — exported as its own @Composable fun; instances follow edits live. Rename via its layer name.",
-                            style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
-                        )
-                        ToolButton("Remove component") { state.removeComponent(selected.id) }
-                    }
-                }
-              } else if (state.canBeComponent(selected.id)) {
-                InspectorSection("Component") {
-                    ToolButton("Create component") { state.createComponent(selected.id) }
                 }
               }
               if (selected.hasContentProps()) InspectorSection("Content") {

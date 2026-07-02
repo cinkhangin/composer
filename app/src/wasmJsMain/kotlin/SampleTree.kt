@@ -30,7 +30,7 @@ val emptyDesign: Node = Node.Artboard(
             height = 844,
         ),
     ),
-    layerNames = mapOf("screen1" to "Screen 1"),
+    layerNames = mapOf("screen1" to "Composable 1"),
     themes = listOf(
         NamedTheme("Light"),
         NamedTheme("Dark", DesignTheme(dark = true)),
