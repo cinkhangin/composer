@@ -409,7 +409,7 @@ private fun BoxAlignment.toCompose(): Alignment = when (this) {
 
 /**
  * Outermost modifier: tap-to-select (non-Button). The selection *outline* is the
- * [SelectionOverlay] drawn in frame space (App.kt) — not a per-node border — so it
+ * {SelectionOverlay} drawn in frame space (App.kt) — not a per-node border — so it
  * sits cleanly outside the component and isn't clipped at the artboard edge.
  */
 private fun selectionModifier(node: Node, onSelect: (id: String, deep: Boolean) -> Unit): Modifier {

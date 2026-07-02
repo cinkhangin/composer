@@ -291,7 +291,6 @@ private fun rgbToHsv(r: Float, g: Float, b: Float): Triple<Float, Float, Float> 
     val max = maxOf(r, g, b)
     val min = minOf(r, g, b)
     val d = max - min
-    val v = max
     val s = if (max <= 0f) 0f else d / max
     val h = when {
         d == 0f -> 0f
@@ -299,7 +298,7 @@ private fun rgbToHsv(r: Float, g: Float, b: Float): Triple<Float, Float, Float> 
         max == g -> 60f * (((b - r) / d) + 2f)
         else -> 60f * (((r - g) / d) + 4f)
     }
-    return Triple((h + 360f).mod(360f), s, v)
+    return Triple((h + 360f).mod(360f), s, max)
 }
 
 private fun hsvToRgb(h: Float, s: Float, v: Float): Triple<Float, Float, Float> {

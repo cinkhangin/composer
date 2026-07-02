@@ -57,8 +57,8 @@ private val ROW_HEIGHT = 28.dp
 /**
  * Layers panel — the design tree as an indented, collapsible list with
  * Figma-style drag & drop. Click a row to select; drag a row to reorder (drop
- * on the top/bottom half to place before/after a sibling) or to nest (drop on
- * the middle of a container). Two-way synced with the canvas via [selectedId].
+ * on the top/bottom half to place before/after a sibling) or to nest (drop in
+ * the middle of a container). Two-way synced with the canvas via {selectedId}.
  */
 @Composable
 fun TreeView(state: EditorState, modifier: Modifier = Modifier) {
