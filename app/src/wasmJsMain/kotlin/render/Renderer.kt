@@ -94,6 +94,7 @@ import composer.model.BoxAlignment
 import composer.model.ButtonVariant
 import composer.model.childNodes
 import composer.model.DesignTheme
+import composer.model.drawOrder
 import composer.model.HAlignment
 import composer.model.HArrangement
 import composer.model.IconKind
@@ -503,9 +504,13 @@ fun DesignTheme.toColorScheme(): ColorScheme {
     return s
 }
 
-/** Fold a modifier-spec chain into a real [Modifier], preserving order. */
+/**
+ * Fold a modifier-spec chain into a real [Modifier], preserving order — except
+ * shadows, which are applied in draw order (drop first, inner last; [drawOrder])
+ * so a drop shadow can never paint over the background. Codegen does the same.
+ */
 fun List<ModifierSpec>.toModifier(): Modifier =
-    fold(Modifier as Modifier) { acc, spec ->
+    drawOrder().fold(Modifier as Modifier) { acc, spec ->
         when (spec) {
             is ModifierSpec.Padding -> when (spec.mode) {
                 PaddingMode.All -> acc.padding(spec.all.dp)

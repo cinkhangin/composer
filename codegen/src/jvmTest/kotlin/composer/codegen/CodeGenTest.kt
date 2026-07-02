@@ -37,6 +37,22 @@ class CodeGenTest {
     }
 
     @Test
+    fun drop_shadow_is_hoisted_before_background_regardless_of_row_order() {
+        val code = CodeGen.generate(
+            Node.Box(
+                "b",
+                modifier = listOf(
+                    Background(0xFFFFFFFF, corner = 12),
+                    ModifierSpec.DropShadow(radius = 8, corner = 12),
+                ),
+            ),
+        )
+        val shadowAt = code.indexOf(".dropShadow(")
+        val backgroundAt = code.indexOf(".background(")
+        assertTrue(shadowAt in 0 until backgroundAt, code) // shadow emitted first
+    }
+
+    @Test
     fun inner_shadow_omits_default_args_and_uses_rectangle_shape() {
         val code = CodeGen.generate(
             Node.Box("b", modifier = listOf(ModifierSpec.InnerShadow(radius = 8, color = 0x40000000, offsetX = 0, offsetY = 0, spread = 0, corner = 0))),

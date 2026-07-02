@@ -3,6 +3,7 @@ package composer.codegen
 import composer.model.BoxAlignment
 import composer.model.ButtonVariant
 import composer.model.DesignTheme
+import composer.model.drawOrder
 import composer.model.HAlignment
 import composer.model.HArrangement
 import composer.model.ModifierSpec
@@ -607,7 +608,9 @@ object CodeGen {
     private fun modifierExpr(specs: List<ModifierSpec>, imports: MutableSet<String>, leading: String? = null, indent: Int = 0): String? {
         if (specs.isEmpty() && leading == null) return null
         imports += "androidx.compose.ui.Modifier"
-        val specParts = specs.map { spec ->
+        // Shadows are emitted in draw order (drop first, inner last) regardless of
+        // their row position — see [drawOrder]. Keeps output correct by construction.
+        val specParts = specs.drawOrder().map { spec ->
             when (spec) {
                 is ModifierSpec.Padding -> {
                     imports += "androidx.compose.foundation.layout.padding"
