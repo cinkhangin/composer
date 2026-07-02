@@ -12,6 +12,41 @@
         html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
         /* ComposeViewport container — it creates its own canvas inside. */
         #composer { position: absolute; inset: 0; outline: none; }
+
+        /* Boot loader — shown while the .wasm bundle downloads/instantiates;
+           the app fades it out on first composition (see Root()). Colors match
+           the editor theme (dark unless localStorage says light). */
+        #loader {
+            position: fixed; inset: 0; z-index: 10;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 18px; background: #0E1014;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            transition: opacity .35s ease; opacity: 1;
+        }
+        #loader.light { background: #ECEEF2; }
+        #loader.done { opacity: 0; pointer-events: none; }
+        #loader .mark {
+            width: 56px; height: 56px; border-radius: 14px; background: #6E7BF2;
+            color: #fff; font-size: 30px; font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+            animation: loaderPulse 1.6s ease-in-out infinite;
+        }
+        #loader.light .mark { background: #5563E8; }
+        #loader .name { color: #E7E9EE; font-size: 15px; font-weight: 600; letter-spacing: .3px; }
+        #loader.light .name { color: #1E2128; }
+        #loader .bar {
+            width: 160px; height: 3px; border-radius: 2px; overflow: hidden;
+            background: rgba(128, 136, 160, .25); position: relative;
+        }
+        #loader .bar::after {
+            content: ""; position: absolute; top: 0; left: -40%; width: 40%; height: 100%;
+            border-radius: 2px; background: #6E7BF2;
+            animation: loaderSlide 1.2s ease-in-out infinite;
+        }
+        #loader.light .bar::after { background: #5563E8; }
+        #loader .hint { color: #8A90A0; font-size: 12px; }
+        @keyframes loaderPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
+        @keyframes loaderSlide { 0% { left: -40%; } 100% { left: 100%; } }
     </style>
     <script>
         // Keep the design-zoom GESTURE (ctrl/cmd + wheel / trackpad pinch) from zooming
@@ -29,6 +64,18 @@
 </head>
 <body>
     <div id="composer"></div>
+    <div id="loader">
+        <div class="mark">C</div>
+        <div class="name">Composer</div>
+        <div class="bar"></div>
+        <div class="hint">Loading the editor…</div>
+    </div>
+    <script>
+        // Match the loader to the saved editor theme before any paint.
+        if (localStorage.getItem('composer.theme') === 'light') {
+            document.getElementById('loader').classList.add('light');
+        }
+    </script>
     <script src="/composer.js"></script>
 </body>
 </html>

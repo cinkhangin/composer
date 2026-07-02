@@ -2,6 +2,7 @@ package composer
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -147,6 +148,8 @@ private fun pathId(): String? {
 @Composable
 fun Root() {
     val ws = remember { Workspace() }
+    // First composition = the app is alive; fade out the index.html boot loader.
+    LaunchedEffect(Unit) { dismissBootLoader() }
     DisposableEffect(Unit) {
         val listener: (Event) -> Unit = { ws.syncFromUrl() }
         window.addEventListener("popstate", listener)

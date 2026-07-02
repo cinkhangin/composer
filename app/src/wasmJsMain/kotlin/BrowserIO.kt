@@ -60,3 +60,12 @@ fun importTextFile(accept: String, onText: (String) -> Unit) {
 fun copyToClipboard(text: String): Unit = js("{ navigator.clipboard.writeText(text); }")
 
 private fun encodeURIComponent(value: String): String = js("encodeURIComponent(value)")
+
+/**
+ * Fade out the index.html boot loader (shown while the wasm bundle loads).
+ * Called on [Root]'s first composition — the CSS transition handles the fade,
+ * and pointer-events: none keeps the invisible overlay from eating clicks.
+ */
+fun dismissBootLoader() {
+    document.getElementById("loader")?.classList?.add("done")
+}
