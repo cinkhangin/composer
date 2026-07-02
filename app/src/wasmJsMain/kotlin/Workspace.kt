@@ -63,6 +63,15 @@ class Workspace {
         go(Route.Edit)
     }
 
+    /** Start a NEW design seeded from a template — the template itself is never mutated. */
+    fun newDesignFrom(name: String, design: Node) {
+        currentId = FileStore.newId()
+        currentName = name
+        initialDesign = design
+        openToken++
+        go(Route.Edit)
+    }
+
     fun open(meta: FileMeta) {
         currentId = meta.id
         currentName = meta.name

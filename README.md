@@ -66,4 +66,4 @@ One `@Composable fun` per screen, plus a shared `AppTheme` when the theme is cus
 
 ## License
 
-Not yet licensed - all rights reserved for now. The source is public to read, but this is a personal project: no usage rights are granted and contributions aren't being accepted at the moment.
+[Apache License 2.0](LICENSE) - same license as the Kotlin and Compose ecosystem it builds on. Editor icons are Google Material Symbols Rounded, also Apache 2.0.

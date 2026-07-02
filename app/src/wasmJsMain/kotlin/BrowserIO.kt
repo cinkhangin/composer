@@ -1,6 +1,7 @@
 package composer
 
 import kotlinx.browser.document
+import kotlinx.browser.window
 import kotlinx.browser.localStorage
 import org.w3c.dom.HTMLAnchorElement
 import org.w3c.dom.HTMLInputElement
@@ -68,4 +69,9 @@ private fun encodeURIComponent(value: String): String = js("encodeURIComponent(v
  */
 fun dismissBootLoader() {
     document.getElementById("loader")?.classList?.add("done")
+}
+
+/** Open [url] in a new browser tab. */
+fun openUrl(url: String) {
+    window.open(url, "_blank")
 }
