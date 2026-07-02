@@ -98,6 +98,7 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -131,6 +132,7 @@ import composer.res.jetbrainsmono_regular
 import org.jetbrains.compose.resources.Font
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 
 /**
  * Composer editor shell: toolbar on top; palette · canvas · inspector · code
@@ -759,17 +761,42 @@ private fun ArtboardCanvas(
             // stays 1dp on screen at any zoom. Draw-only — no pointer handlers.
             val gv = state.snapGuideV
             val gh = state.snapGuideH
-            if (gv != null || gh != null) {
+            val bars = state.spacingBars
+            if (gv != null || gh != null || bars.isNotEmpty()) {
+                val textMeasurer = rememberTextMeasurer()
                 Box(
                     Modifier.matchParentSize().drawBehind {
                         val stroke = 1.dp.toPx() / scale
-                        if (gv != null) {
-                            val x = (size.width - content.w.dp.toPx()) / 2f + (gv - content.minX).dp.toPx()
-                            drawLine(Tk.snapGuide, Offset(x, 0f), Offset(x, size.height), stroke)
-                        }
-                        if (gh != null) {
-                            val y = (size.height - content.h.dp.toPx()) / 2f + (gh - content.minY).dp.toPx()
-                            drawLine(Tk.snapGuide, Offset(0f, y), Offset(size.width, y), stroke)
+                        val guide = Tk.snapGuide
+                        fun ax(v: Int) = (size.width - content.w.dp.toPx()) / 2f + (v - content.minX).dp.toPx()
+                        fun ay(v: Int) = (size.height - content.h.dp.toPx()) / 2f + (v - content.minY).dp.toPx()
+                        if (gv != null) drawLine(guide, Offset(ax(gv), 0f), Offset(ax(gv), size.height), stroke)
+                        if (gh != null) drawLine(guide, Offset(0f, ay(gh)), Offset(size.width, ay(gh)), stroke)
+                        // Spacing bars: gap segment + end ticks + the gap value —
+                        // all /scale so the chrome stays constant-size on screen.
+                        val tick = 4.dp.toPx() / scale
+                        for (b in bars) {
+                            val label = textMeasurer.measure(
+                                b.value.toString(),
+                                TextStyle(color = guide, fontSize = (10f / scale).sp, fontWeight = FontWeight.Medium),
+                            )
+                            if (b.horizontal) {
+                                val y = ay(b.cross).let { it }
+                                val x1 = ax(b.start)
+                                val x2 = ax(b.end)
+                                drawLine(guide, Offset(x1, y), Offset(x2, y), stroke)
+                                drawLine(guide, Offset(x1, y - tick), Offset(x1, y + tick), stroke)
+                                drawLine(guide, Offset(x2, y - tick), Offset(x2, y + tick), stroke)
+                                drawText(label, topLeft = Offset((x1 + x2) / 2f - label.size.width / 2f, y - tick - label.size.height))
+                            } else {
+                                val x = ax(b.cross)
+                                val y1 = ay(b.start)
+                                val y2 = ay(b.end)
+                                drawLine(guide, Offset(x, y1), Offset(x, y2), stroke)
+                                drawLine(guide, Offset(x - tick, y1), Offset(x + tick, y1), stroke)
+                                drawLine(guide, Offset(x - tick, y2), Offset(x + tick, y2), stroke)
+                                drawText(label, topLeft = Offset(x + tick + stroke, (y1 + y2) / 2f - label.size.height / 2f))
+                            }
                         }
                     },
                 )

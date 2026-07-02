@@ -85,6 +85,10 @@ class EditorState(initial: Node) {
     var snapGuideH by mutableStateOf<Int?>(null)
         private set
 
+    /** Active spacing measurement bars (Figma-style equal-gap snap). */
+    var spacingBars by mutableStateOf<List<GapBar>>(emptyList())
+        private set
+
     // The drag's UN-snapped position: snapping is computed against where the
     // cursor actually is, so the screen can escape a snap by dragging past it.
     private var dragDesiredX: Int? = null
@@ -100,6 +104,7 @@ class EditorState(initial: Node) {
         val snap = snapScreenPosition(desX, desY, screen.width, screen.height, composables.filter { it.id != id }, threshold)
         snapGuideV = snap.guideV
         snapGuideH = snap.guideH
+        spacingBars = snap.bars
         setComposablePos(id, snap.x, snap.y)
     }
 
@@ -109,6 +114,7 @@ class EditorState(initial: Node) {
         dragDesiredY = null
         snapGuideV = null
         snapGuideH = null
+        spacingBars = emptyList()
     }
 
     /** Set screen [id]'s canvas position (dp). */
@@ -595,26 +601,46 @@ private fun maxGeneratedId(node: Node): Int {
     return maxOf(self, childMax)
 }
 
-/** Result of [snapScreenPosition]: the snapped position + guide lines (artboard dp) if snapped. */
-data class ScreenSnap(val x: Int, val y: Int, val guideV: Int?, val guideH: Int?)
+/**
+ * A spacing measurement bar (artboard dp): [horizontal] bars run along X at
+ * cross-position Y=[cross] from [start] to [end]; vertical bars the transpose.
+ * Drawn by the canvas with end ticks + the gap value while a spacing snap is active.
+ */
+data class GapBar(val horizontal: Boolean, val start: Int, val end: Int, val cross: Int) {
+    val value: Int get() = end - start
+}
+
+/** Result of [snapScreenPosition]: snapped position, alignment guides, spacing bars. */
+data class ScreenSnap(
+    val x: Int,
+    val y: Int,
+    val guideV: Int?,
+    val guideH: Int?,
+    val bars: List<GapBar> = emptyList(),
+)
 
 /**
- * Snap a screen at desired position ([x], [y], size [w]×[h]) to the edges and
- * centers of [others]: each of the moving screen's left/center/right (and
- * top/center/bottom) anchors is tested against every other screen's matching
- * lines; the closest hit within [threshold] dp wins per axis.
+ * Snap a screen at desired position ([x], [y], size [w]×[h]) against [others].
+ * Two candidate kinds per axis, nearest within [threshold] wins:
+ *  - **alignment**: the moving screen's edges/centers vs every other screen's
+ *    edges/centers → a full-length guide line;
+ *  - **spacing** (Figma-style): the gap between any two adjacent screens in the
+ *    same row/column becomes a target — the moving screen snaps where its own
+ *    gap to a neighbor equals it (plus the equal-gaps midpoint between two
+ *    screens) → pink measurement bars showing the matched gaps.
  */
 fun snapScreenPosition(x: Int, y: Int, w: Int, h: Int, others: List<Node.Composable>, threshold: Int): ScreenSnap {
-    var bestDx: Int? = null
+    // --- alignment candidates -------------------------------------------
+    var alignDx: Int? = null
     var guideV: Int? = null
-    var bestDy: Int? = null
+    var alignDy: Int? = null
     var guideH: Int? = null
     for (o in others) {
         for (t in intArrayOf(o.x, o.x + o.width / 2, o.x + o.width)) {
             for (a in intArrayOf(0, w / 2, w)) {
                 val d = t - (x + a)
-                if (abs(d) <= threshold && (bestDx == null || abs(d) < abs(bestDx!!))) {
-                    bestDx = d
+                if (abs(d) <= threshold && (alignDx == null || abs(d) < abs(alignDx!!))) {
+                    alignDx = d
                     guideV = t
                 }
             }
@@ -622,17 +648,109 @@ fun snapScreenPosition(x: Int, y: Int, w: Int, h: Int, others: List<Node.Composa
         for (t in intArrayOf(o.y, o.y + o.height / 2, o.y + o.height)) {
             for (a in intArrayOf(0, h / 2, h)) {
                 val d = t - (y + a)
-                if (abs(d) <= threshold && (bestDy == null || abs(d) < abs(bestDy!!))) {
-                    bestDy = d
+                if (abs(d) <= threshold && (alignDy == null || abs(d) < abs(alignDy!!))) {
+                    alignDy = d
                     guideH = t
                 }
             }
         }
     }
+
+    // --- spacing candidates ----------------------------------------------
+    val spacingX = bestSpacing(x, y, w, h, others, threshold, horizontal = true)
+    val spacingY = bestSpacing(y, x, h, w, others, threshold, horizontal = false)
+
+    // Per axis: nearest candidate wins (spacing beats alignment on a tie —
+    // it is the more specific intent).
+    val useSpacingX = spacingX != null && (alignDx == null || abs(spacingX.delta) <= abs(alignDx!!))
+    val useSpacingY = spacingY != null && (alignDy == null || abs(spacingY.delta) <= abs(alignDy!!))
+    val dx = if (useSpacingX) spacingX!!.delta else alignDx
+    val dy = if (useSpacingY) spacingY!!.delta else alignDy
     return ScreenSnap(
-        x = x + (bestDx ?: 0),
-        y = y + (bestDy ?: 0),
-        guideV = if (bestDx != null) guideV else null,
-        guideH = if (bestDy != null) guideH else null,
+        x = x + (dx ?: 0),
+        y = y + (dy ?: 0),
+        guideV = if (dx != null && !useSpacingX) guideV else null,
+        guideH = if (dy != null && !useSpacingY) guideH else null,
+        bars = (if (useSpacingX) spacingX!!.bars else emptyList()) +
+            (if (useSpacingY) spacingY!!.bars else emptyList()),
     )
+}
+
+private class SpacingHit(val delta: Int, val bars: List<GapBar>)
+
+/**
+ * Best spacing snap along ONE axis, written for X ([horizontal] = true) with
+ * [pos]/[size] as x/w and [crossPos]/[crossSize] as y/h — pass the transposed
+ * values for the Y axis. Considers only screens overlapping the moving screen
+ * on the cross axis (the "same row"): every gap between adjacent pairs is a
+ * target the moving screen can reproduce on either side of any row member,
+ * plus the equal-gap midpoint between any adjacent pair it fits into.
+ */
+private fun bestSpacing(
+    pos: Int,
+    crossPos: Int,
+    size: Int,
+    crossSize: Int,
+    others: List<Node.Composable>,
+    threshold: Int,
+    horizontal: Boolean,
+): SpacingHit? {
+    fun aPos(s: Node.Composable) = if (horizontal) s.x else s.y
+    fun aSize(s: Node.Composable) = if (horizontal) s.width else s.height
+    fun cPos(s: Node.Composable) = if (horizontal) s.y else s.x
+    fun cSize(s: Node.Composable) = if (horizontal) s.height else s.width
+
+    val row = others.filter { cPos(it) < crossPos + crossSize && crossPos < cPos(it) + cSize(it) }
+    if (row.isEmpty()) return null
+    val sorted = row.sortedBy { aPos(it) }
+
+    fun crossMid(s: Node.Composable): Int {
+        val lo = maxOf(cPos(s), crossPos)
+        val hi = minOf(cPos(s) + cSize(s), crossPos + crossSize)
+        return (lo + hi) / 2
+    }
+    fun crossMidPair(p: Node.Composable, q: Node.Composable): Int {
+        val lo = maxOf(cPos(p), cPos(q))
+        val hi = minOf(cPos(p) + cSize(p), cPos(q) + cSize(q))
+        return if (lo <= hi) (lo + hi) / 2 else crossMid(p)
+    }
+    fun bar(start: Int, end: Int, cross: Int) = GapBar(horizontal, start, end, cross)
+
+    var best: SpacingHit? = null
+    fun offer(candidate: Int, bars: List<GapBar>) {
+        val d = candidate - pos
+        if (abs(d) <= threshold && (best == null || abs(d) < abs(best!!.delta))) best = SpacingHit(d, bars)
+    }
+
+    // Reference gaps between adjacent row members.
+    for (i in 0 until sorted.size - 1) {
+        val p = sorted[i]
+        val q = sorted[i + 1]
+        val g = aPos(q) - (aPos(p) + aSize(p))
+        if (g < 0) continue
+        val refBar = bar(aPos(p) + aSize(p), aPos(q), crossMidPair(p, q))
+        for (s in row) {
+            // moving screen AFTER s with gap g
+            offer(aPos(s) + aSize(s) + g, listOf(refBar, bar(aPos(s) + aSize(s), aPos(s) + aSize(s) + g, crossMid(s))))
+            // moving screen BEFORE s with gap g
+            offer(aPos(s) - g - size, listOf(refBar, bar(aPos(s) - g, aPos(s), crossMid(s))))
+        }
+    }
+    // Equal gaps: centered between an adjacent pair it fits into.
+    for (i in 0 until sorted.size - 1) {
+        val p = sorted[i]
+        val q = sorted[i + 1]
+        val span = aPos(q) - (aPos(p) + aSize(p))
+        if (span < size) continue
+        val g = (span - size) / 2
+        val candidate = aPos(p) + aSize(p) + g
+        offer(
+            candidate,
+            listOf(
+                bar(aPos(p) + aSize(p), candidate, crossMid(p)),
+                bar(candidate + size, aPos(q), crossMid(q)),
+            ),
+        )
+    }
+    return best
 }
