@@ -20,6 +20,7 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,8 +37,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import composer.ScreenEyeDropper
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -51,30 +55,51 @@ import kotlinx.coroutines.launch
  * HSV is kept as local state so hue/saturation don't get lost at the extremes
  * (e.g. dragging value to black). External changes (swatch/hex) re-sync it.
  */
+/**
+ * A design-theme token offered in color pickers: [value] is the [composer.model.ThemeColorRef]
+ * reference Long, [resolved] its current ARGB under the active theme.
+ */
+data class ThemeSwatch(val name: String, val value: Long, val resolved: Long)
+
+/** Active-theme swatches for [ColorPicker]s; provided by the editor screen. */
+val LocalThemeSwatches = compositionLocalOf<List<ThemeSwatch>> { emptyList() }
+
+/** [value]'s displayable ARGB: theme-token references resolve via [LocalThemeSwatches]. */
 @Composable
-fun ColorPicker(color: Long, onColorChange: (Long) -> Unit) {
+fun resolvePickerColor(value: Long): Long =
+    LocalThemeSwatches.current.firstOrNull { it.value == value }?.resolved ?: value
+
+@Composable
+fun ColorPicker(color: Long, showThemeSwatches: Boolean = true, onColorChange: (Long) -> Unit) {
     var h by remember { mutableStateOf(0f) }
     var s by remember { mutableStateOf(0f) }
     var v by remember { mutableStateOf(0f) }
     var a by remember { mutableStateOf(1f) }
-    var lastEmitted by remember { mutableStateOf<Long?>(null) }
+    var lastShown by remember { mutableStateOf<Long?>(null) }
 
-    if (color != lastEmitted) {
-        val hsva = argbToHsva(color)
+    // [color] may be a theme-token reference — the HSV controls and preview work
+    // on its resolved ARGB. Editing any control emits a plain literal (a token
+    // stays a token only while untouched); resync also fires when the ACTIVE
+    // THEME changes the resolved value under an unchanged token.
+    val themeSwatches = if (showThemeSwatches) LocalThemeSwatches.current else emptyList()
+    val display = resolvePickerColor(color)
+
+    if (display != lastShown) {
+        val hsva = argbToHsva(display)
         h = hsva.h; s = hsva.s; v = hsva.v; a = hsva.a
-        lastEmitted = color
+        lastShown = display
     }
 
     fun emit() {
         val c = hsvaToArgb(h, s, v, a)
-        lastEmitted = c
+        lastShown = c
         onColorChange(c)
     }
 
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ColorPreview(color, Modifier.size(34.dp))
-            HexField(color, Modifier.weight(1f), onColorChange)
+            ColorPreview(display, Modifier.size(34.dp))
+            HexField(display, Modifier.weight(1f), onColorChange)
             // Sample any pixel on screen (EyeDropper API, Chromium-only). The
             // sampled RGB keeps the color's current alpha, like Figma.
             if (ScreenEyeDropper.supported) {
@@ -91,7 +116,40 @@ fun ColorPicker(color: Long, onColorChange: (Long) -> Unit) {
         SVSquare(h, s, v) { ns, nv -> s = ns; v = nv; emit() }
         HueSlider(h) { h = it; emit() }
         AlphaSlider(a, h, s, v) { a = it; emit() }
+        if (themeSwatches.isNotEmpty()) ThemeSwatchRow(themeSwatches, selected = color, onPick = onColorChange)
         PresetSwatches(onColorChange)
+    }
+}
+
+/**
+ * The design theme's tokens as picks. Picking one stores the token REFERENCE —
+ * the color follows the theme (and codegen emits `MaterialTheme.colorScheme.<token>`).
+ */
+@Composable
+private fun ThemeSwatchRow(swatches: List<ThemeSwatch>, selected: Long, onPick: (Long) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            BasicText("Theme", style = TextStyle(color = Tk.textMuted, fontSize = 11.sp))
+            swatches.firstOrNull { it.value == selected }?.let {
+                BasicText(it.name, style = TextStyle(color = Tk.accent, fontSize = 11.sp))
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            for (sw in swatches) {
+                val sel = sw.value == selected
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(RoundedCornerShape(Tk.rXs))
+                        .background(Color(sw.resolved))
+                        .border(if (sel) 2.dp else 1.dp, if (sel) Tk.accent else Tk.borderStrong, RoundedCornerShape(Tk.rXs))
+                        .clickable { onPick(sw.value) },
+                )
+            }
+        }
     }
 }
 

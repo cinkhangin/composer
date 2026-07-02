@@ -62,6 +62,7 @@ import composer.model.withModifier
 import composer.ui.AppIcon
 import composer.ui.AppIconKind
 import composer.ui.ColorPicker
+import composer.ui.resolvePickerColor
 import composer.ui.Field
 import composer.ui.SquareIconButton
 import composer.ui.Tk
@@ -275,7 +276,7 @@ private fun GradientStopsEditor(colors: List<Long>, onChange: (List<Long>) -> Un
                     modifier = Modifier
                         .size(24.dp)
                         .clip(RoundedCornerShape(6.dp))
-                        .background(Color(c))
+                        .background(Color(resolvePickerColor(c)))
                         .border(if (i == idx) 2.dp else 1.dp, if (i == idx) Tk.accent else Tk.border, RoundedCornerShape(6.dp))
                         .clickable { selected = i },
                 )

@@ -13,6 +13,7 @@ import composer.model.PaddingMode
 import composer.model.TextAlignment
 import composer.model.TextFontFamily
 import composer.model.TextWeight
+import composer.model.ThemeColorRef
 import composer.model.TopAppBarVariant
 import composer.model.effectiveLineHeight
 import composer.model.migrateToArtboard
@@ -178,10 +179,7 @@ object CodeGen {
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
                 val args = mutableListOf("\"${esc(node.text)}\"")
                 mod?.let { args += "modifier = $it" }
-                node.color?.let {
-                    imports += "androidx.compose.ui.graphics.Color"
-                    args += "color = Color(0x${it.toString(16).uppercase().padStart(8, '0')})"
-                }
+                node.color?.let { args += "color = ${colorExpr(it, imports)}" }
                 if (node.fontSize > 0) {
                     imports += "androidx.compose.ui.unit.sp"
                     args += "fontSize = ${node.fontSize}.sp"
@@ -647,7 +645,6 @@ object CodeGen {
 
                 is ModifierSpec.Background -> {
                     imports += "androidx.compose.foundation.background"
-                    imports += "androidx.compose.ui.graphics.Color"
                     val stops = spec.gradientStops()
                     val fill = if (stops.isNotEmpty()) {
                         imports += "androidx.compose.ui.graphics.Brush"
@@ -657,9 +654,9 @@ object CodeGen {
                             GradientDirection.Diagonal -> "linearGradient"
                             GradientDirection.Radial -> "radialGradient"
                         }
-                        "Brush.$builder(listOf(${stops.joinToString(", ") { colorExpr(it) }}))"
+                        "Brush.$builder(listOf(${stops.joinToString(", ") { colorExpr(it, imports) }}))"
                     } else {
-                        colorExpr(spec.color)
+                        colorExpr(spec.color, imports)
                     }
                     val shape = cornerShapeExpr(spec.corner, spec.cornerUnit, imports)
                     if (shape != null) "background($fill, $shape)" else "background($fill)"
@@ -692,9 +689,8 @@ object CodeGen {
 
                 is ModifierSpec.Border -> {
                     imports += "androidx.compose.foundation.border"
-                    imports += "androidx.compose.ui.graphics.Color"
                     imports += "androidx.compose.ui.unit.dp"
-                    val colorArg = colorExpr(spec.color)
+                    val colorArg = colorExpr(spec.color, imports)
                     val shape = cornerShapeExpr(spec.corner, spec.cornerUnit, imports)
                     if (shape != null) {
                         "border(${spec.width}.dp, $colorArg, $shape)"
@@ -741,7 +737,6 @@ object CodeGen {
      */
     private fun shadowExpr(name: String, radius: Int, color: Long, offsetX: Int, offsetY: Int, spread: Int, corner: Int, cornerUnit: CornerUnit, imports: MutableSet<String>): String {
         imports += "androidx.compose.ui.graphics.shadow.Shadow"
-        imports += "androidx.compose.ui.graphics.Color"
         imports += "androidx.compose.ui.unit.dp"
         val shape = cornerShapeExpr(corner, cornerUnit, imports) ?: run {
             imports += "androidx.compose.ui.graphics.RectangleShape"
@@ -749,7 +744,7 @@ object CodeGen {
         }
         val args = buildList {
             add("radius = $radius.dp")
-            add("color = ${colorExpr(color)}")
+            add("color = ${colorExpr(color, imports)}")
             if (spread != 0) add("spread = $spread.dp")
             if (offsetX != 0 || offsetY != 0) {
                 imports += "androidx.compose.ui.unit.DpOffset"
@@ -759,8 +754,21 @@ object CodeGen {
         return "$name($shape, Shadow(${args.joinToString(", ")}))"
     }
 
-    private fun colorExpr(argb: Long): String =
-        "Color(0x${argb.toString(16).uppercase().padStart(8, '0')})"
+    /**
+     * A color argument: a theme-token reference ([ThemeColorRef]) emits
+     * `MaterialTheme.colorScheme.<token>` (follows the runtime theme), a plain
+     * value emits a `Color(0x…)` literal. Adds whichever import it needs.
+     */
+    private fun colorExpr(argb: Long, imports: MutableSet<String>): String {
+        val token = ThemeColorRef.tokenName(argb)
+        return if (token != null) {
+            imports += "androidx.compose.material3.MaterialTheme"
+            "MaterialTheme.colorScheme.$token"
+        } else {
+            imports += "androidx.compose.ui.graphics.Color"
+            "Color(0x${argb.toString(16).uppercase().padStart(8, '0')})"
+        }
+    }
 
     /**
      * `RoundedCornerShape(N.dp)` or the percent overload `RoundedCornerShape(N)`

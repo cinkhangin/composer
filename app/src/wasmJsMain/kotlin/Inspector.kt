@@ -356,7 +356,7 @@ private fun ThemeEditor(state: EditorState) {
             }
         }
         BasicText("editing: $active", style = TextStyle(color = Tk.textMuted, fontSize = 11.sp))
-        ColorPicker(theme.effective(active)) { c -> state.setTheme(theme.set(active, c), coalesceKey = "theme:$active") }
+        ColorPicker(theme.effective(active), showThemeSwatches = false) { c -> state.setTheme(theme.set(active, c), coalesceKey = "theme:$active") }
     }
 }
 

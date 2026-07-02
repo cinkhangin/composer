@@ -26,6 +26,24 @@ class CodeGenTest {
     }
 
     @Test
+    fun theme_token_colors_emit_colorscheme_references() {
+        val primary = composer.model.ThemeColorRef.token("primary")!!
+        val onPrimary = composer.model.ThemeColorRef.token("onPrimary")!!
+        val code = CodeGen.generate(
+            Node.Column(
+                "c",
+                children = listOf(
+                    Node.Text("t", "Hi", color = onPrimary),
+                    Node.Box("b", modifier = listOf(Background(primary, corner = 8))),
+                ),
+            ),
+        )
+        assertTrue("color = MaterialTheme.colorScheme.onPrimary" in code, code)
+        assertTrue("background(MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))" in code, code)
+        assertTrue("import androidx.compose.material3.MaterialTheme" in code, code)
+    }
+
+    @Test
     fun gradient_background_emits_brush_with_all_stops() {
         val code = CodeGen.generate(
             Node.Box(

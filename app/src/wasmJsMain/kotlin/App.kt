@@ -104,6 +104,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import composer.codegen.CodeGen
 import composer.model.DesignJson
+import composer.model.DesignTheme
+import composer.model.ThemeColorRef
 import composer.model.Node
 import composer.model.backgroundCorner
 import composer.model.findById
@@ -113,6 +115,8 @@ import composer.ui.AppIcon
 import composer.ui.AppIconKind
 import composer.ui.HDivider
 import composer.ui.Island
+import composer.ui.LocalThemeSwatches
+import composer.ui.ThemeSwatch
 import composer.ui.Theme
 import composer.ui.Tk
 import composer.ui.TkMenu
@@ -159,6 +163,12 @@ fun EditorScreen(ws: Workspace) {
         onDispose { window.removeEventListener("beforeunload", flush) }
     }
 
+    // Every ColorPicker in the editor offers the ACTIVE theme's tokens as picks
+    // (stored as ThemeColorRef references, so they follow theme switches).
+    val themeSwatches = DesignTheme.TOKENS.map { t ->
+        ThemeSwatch(t, ThemeColorRef.token(t)!!, state.theme.effective(t))
+    }
+    CompositionLocalProvider(LocalThemeSwatches provides themeSwatches) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -193,6 +203,7 @@ fun EditorScreen(ws: Workspace) {
             }
             Island(Modifier.width(320.dp).fillMaxHeight()) { Inspector(state) }
         }
+    }
     }
 }
 

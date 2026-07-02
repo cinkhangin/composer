@@ -37,6 +37,7 @@ import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.ElevatedButton
@@ -112,6 +113,7 @@ import composer.model.TextAlignment
 import composer.model.TextFontFamily
 import androidx.compose.ui.text.style.TextAlign
 import composer.model.TextWeight
+import composer.model.ThemeColorRef
 import composer.model.TopAppBarVariant
 import composer.model.effectiveLineHeight
 import composer.model.VAlignment
@@ -140,8 +142,9 @@ fun RenderNode(
     // measurement + tap hit-area sit OUTSIDE the node's own box modifiers (padding, size,
     // background). Otherwise the innermost onGloballyPositioned measured the content area
     // *inside* the padding, so a padded container's outline hugged its content, not its box.
-    val offsetMod = node.modifier.filterIsInstance<ModifierSpec.Offset>().toModifier()
-    val innerMod = node.modifier.filterNot { it is ModifierSpec.Offset }.toModifier()
+    val scheme = MaterialTheme.colorScheme
+    val offsetMod = node.modifier.filterIsInstance<ModifierSpec.Offset>().toModifier(scheme)
+    val innerMod = node.modifier.filterNot { it is ModifierSpec.Offset }.toModifier(scheme)
     val modifier = scopeModifier
         .then(offsetMod)
         .then(selectionModifier(node, onSelect))
@@ -154,7 +157,7 @@ fun RenderNode(
             Text(
                 text = node.text,
                 modifier = modifier,
-                color = node.color?.let { Color(it) } ?: Color.Unspecified,
+                color = node.color?.let { themeColor(it, MaterialTheme.colorScheme) } ?: Color.Unspecified,
                 fontSize = if (node.fontSize > 0) node.fontSize.sp else TextUnit.Unspecified,
                 lineHeight = node.effectiveLineHeight().takeIf { it > 0 }?.sp ?: TextUnit.Unspecified,
                 fontWeight = node.fontWeight.toCompose(),
@@ -461,8 +464,9 @@ private fun InteractiveNode(
     // Split the modifier: positional Offset goes on the wrapper Box (so the tap overlay
     // and measured bounds move with the component), everything else (size, background, …)
     // styles the inner component. Otherwise a moved component's hit-area lagged its visual.
-    val offsetMod = node.modifier.filterIsInstance<ModifierSpec.Offset>().toModifier()
-    val innerMod = node.modifier.filterNot { it is ModifierSpec.Offset }.toModifier()
+    val scheme = MaterialTheme.colorScheme
+    val offsetMod = node.modifier.filterIsInstance<ModifierSpec.Offset>().toModifier(scheme)
+    val innerMod = node.modifier.filterNot { it is ModifierSpec.Offset }.toModifier(scheme)
     Box(modifier = scopeModifier.then(offsetMod).onGloballyPositioned { onBounds(node.id, it) }) {
         content(innerMod)
         Box(
@@ -518,8 +522,27 @@ private fun cornerShape(corner: Int, unit: CornerUnit): Shape = when {
     else -> RoundedCornerShape(corner.dp)
 }
 
-/** Fold a modifier-spec chain into a real [Modifier], preserving order. */
-fun List<ModifierSpec>.toModifier(): Modifier =
+/** Resolve a model color — a [ThemeColorRef] token follows [scheme]; else a literal. */
+fun themeColor(value: Long, scheme: ColorScheme): Color = when (ThemeColorRef.tokenName(value)) {
+    null -> Color(value)
+    "primary" -> scheme.primary
+    "onPrimary" -> scheme.onPrimary
+    "secondary" -> scheme.secondary
+    "tertiary" -> scheme.tertiary
+    "error" -> scheme.error
+    "background" -> scheme.background
+    "onBackground" -> scheme.onBackground
+    "surface" -> scheme.surface
+    "onSurface" -> scheme.onSurface
+    else -> scheme.primary
+}
+
+/**
+ * Fold a modifier-spec chain into a real [Modifier], preserving order. [scheme]
+ * resolves theme-token color references, so token-colored fills/borders/shadows
+ * re-color live when the design theme changes.
+ */
+fun List<ModifierSpec>.toModifier(scheme: ColorScheme): Modifier =
     fold(Modifier as Modifier) { acc, spec ->
         when (spec) {
             is ModifierSpec.Padding -> when (spec.mode) {
@@ -535,7 +558,7 @@ fun List<ModifierSpec>.toModifier(): Modifier =
                 val shape = cornerShape(spec.corner, spec.cornerUnit)
                 val stops = spec.gradientStops()
                 if (stops.isNotEmpty()) {
-                    val colors = stops.map { Color(it) }
+                    val colors = stops.map { themeColor(it, scheme) }
                     val brush = when (spec.direction) {
                         GradientDirection.Vertical -> Brush.verticalGradient(colors)
                         GradientDirection.Horizontal -> Brush.horizontalGradient(colors)
@@ -544,7 +567,7 @@ fun List<ModifierSpec>.toModifier(): Modifier =
                     }
                     acc.background(brush, shape)
                 } else {
-                    acc.background(Color(spec.color), shape)
+                    acc.background(themeColor(spec.color, scheme), shape)
                 }
             }
             is ModifierSpec.Weight -> acc // applied at the Row/Column call site, not here
@@ -553,7 +576,7 @@ fun List<ModifierSpec>.toModifier(): Modifier =
             is ModifierSpec.Alpha -> acc.alpha(spec.value)
             is ModifierSpec.Border -> acc.border(
                 spec.width.dp,
-                Color(spec.color),
+                themeColor(spec.color, scheme),
                 cornerShape(spec.corner, spec.cornerUnit),
             )
             // The real Compose 1.9+ shadow APIs — the preview now runs the exact
@@ -562,7 +585,7 @@ fun List<ModifierSpec>.toModifier(): Modifier =
                 cornerShape(spec.corner, spec.cornerUnit),
                 Shadow(
                     radius = spec.radius.dp,
-                    color = Color(spec.color),
+                    color = themeColor(spec.color, scheme),
                     spread = spec.spread.dp,
                     offset = DpOffset(spec.offsetX.dp, spec.offsetY.dp),
                 ),
@@ -571,7 +594,7 @@ fun List<ModifierSpec>.toModifier(): Modifier =
                 cornerShape(spec.corner, spec.cornerUnit),
                 Shadow(
                     radius = spec.radius.dp,
-                    color = Color(spec.color),
+                    color = themeColor(spec.color, scheme),
                     spread = spec.spread.dp,
                     offset = DpOffset(spec.offsetX.dp, spec.offsetY.dp),
                 ),
