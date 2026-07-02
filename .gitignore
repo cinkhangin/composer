@@ -1,0 +1,15 @@
+.gradle/
+.kotlin/
+build/
+kotlin-js-store/
+local.properties
+*.log
+
+# IDE
+.idea/
+*.iml
+.fleet/
+.vscode/
+
+# OS
+.DS_Store

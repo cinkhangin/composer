@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Resolve all relative URLs (script, .wasm, Compose resources) against the
+         origin root, so deep-link paths like /{id}/edit still load assets from /. -->
+    <base href="/">
+    <title>Composer</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <style>
+        html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+        #composer { outline: none; }
+    </style>
+    <script>
+        // Keep the design-zoom GESTURE (ctrl/cmd + wheel / trackpad pinch) from zooming
+        // the whole page. preventDefault cancels only the browser's page-zoom — the
+        // Compose canvas still receives the wheel event and zooms the design itself.
+        // Note: keyboard zoom (Cmd/Ctrl +/-/0) is intentionally left alone, so you can
+        // always reset the browser's own zoom level.
+        window.addEventListener('wheel', function (e) {
+            if (e.ctrlKey) e.preventDefault();
+        }, { passive: false });
+        ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (type) {
+            window.addEventListener(type, function (e) { e.preventDefault(); }, { passive: false });
+        });
+    </script>
+</head>
+<body>
+    <canvas id="composer"></canvas>
+    <script src="/composer.js"></script>
+</body>
+</html>
