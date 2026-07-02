@@ -47,6 +47,29 @@
         #loader .hint { color: #8A90A0; font-size: 12px; }
         @keyframes loaderPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
         @keyframes loaderSlide { 0% { left: -40%; } 100% { left: 100%; } }
+
+        /* Mobile gate — the editor needs a desktop-sized screen; on small
+           viewports this covers the app (CSS-only, so resizing a desktop
+           window in/out of the breakpoint shows/hides it live). */
+        #mobile-gate {
+            position: fixed; inset: 0; z-index: 20;
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+            gap: 14px; padding: 32px; text-align: center; background: #0E1014;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        #mobile-gate.light { background: #ECEEF2; }
+        #mobile-gate .mark {
+            width: 56px; height: 56px; border-radius: 14px; background: #6E7BF2;
+            color: #fff; font-size: 30px; font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+        }
+        #mobile-gate.light .mark { background: #5563E8; }
+        #mobile-gate .title { color: #E7E9EE; font-size: 17px; font-weight: 600; }
+        #mobile-gate.light .title { color: #1E2128; }
+        #mobile-gate .body { color: #8A90A0; font-size: 13px; line-height: 1.5; max-width: 300px; }
+        @media (max-width: 767px) {
+            #mobile-gate { display: flex; }
+        }
     </style>
     <script>
         // Keep the design-zoom GESTURE (ctrl/cmd + wheel / trackpad pinch) from zooming
@@ -70,10 +93,16 @@
         <div class="bar"></div>
         <div class="hint">Loading the editor…</div>
     </div>
+    <div id="mobile-gate">
+        <div class="mark">C</div>
+        <div class="title">Composer needs a bigger screen</div>
+        <div class="body">This is a desktop design tool. Please open it on a laptop or desktop browser to start designing.</div>
+    </div>
     <script>
-        // Match the loader to the saved editor theme before any paint.
+        // Match the loader + mobile gate to the saved editor theme before any paint.
         if (localStorage.getItem('composer.theme') === 'light') {
             document.getElementById('loader').classList.add('light');
+            document.getElementById('mobile-gate').classList.add('light');
         }
     </script>
     <script src="/composer.js"></script>
