@@ -59,7 +59,7 @@ One `@Composable fun` per screen, plus a shared `AppTheme` when the theme is cus
 
 ## Stack
 
-- Kotlin 2.3.20 · Compose Multiplatform 1.11.1 (`wasmJs { browser() }`, Skia renderer)
+- Kotlin 2.4.0 · Compose Multiplatform 1.11.1 (`wasmJs { browser() }`, Skia renderer)
 - Gradle 8.11.1 · JDK 17
 - kotlinx.serialization for design persistence
 - Editor icons: Google Material Symbols Rounded (Apache 2.0)
