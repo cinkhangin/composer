@@ -20,22 +20,31 @@ kotlin {
     }
 
     sourceSets {
+        all {
+            // The browser-interop layer (js(), JsAny, external interfaces) is
+            // experimental in Kotlin 2.3 — opt in once instead of 70 warnings.
+            languageSettings.optIn("kotlin.js.ExperimentalWasmJsInterop")
+        }
         val commonMain by getting {
             dependencies {
-                implementation(compose.runtime)
-                implementation(compose.components.resources)
+                // Direct coordinates: the compose.* DSL aliases are deprecated since CMP 1.10.
+                implementation("org.jetbrains.compose.runtime:runtime:1.11.1")
+                implementation("org.jetbrains.compose.components:components-resources:1.11.1")
             }
         }
         val wasmJsMain by getting {
             dependencies {
                 implementation(project(":model"))
                 implementation(project(":codegen"))
-                implementation(compose.runtime)
-                implementation(compose.foundation)
-                implementation(compose.material3)
-                implementation(compose.materialIconsExtended)
-                implementation(compose.components.resources)
-                implementation(compose.ui)
+                implementation("org.jetbrains.compose.runtime:runtime:1.11.1")
+                implementation("org.jetbrains.compose.foundation:foundation:1.11.1")
+                // material3 is versioned independently of CMP since 1.8.
+                implementation("org.jetbrains.compose.material3:material3:1.9.0")
+                // Pinned artifact (no longer updated) — IconKind renders/generates
+                // Icons.Default.* from it. Long-term migration: Material Symbols.
+                implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
+                implementation("org.jetbrains.compose.components:components-resources:1.11.1")
+                implementation("org.jetbrains.compose.ui:ui:1.11.1")
                 implementation("org.jetbrains.kotlinx:kotlinx-browser:0.3")
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
             }

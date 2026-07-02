@@ -1,5 +1,6 @@
 package composer.model
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 
 /**
@@ -7,6 +8,7 @@ import kotlinx.serialization.json.Json
  * Pure: depends only on the model and kotlinx.serialization.
  */
 object DesignJson {
+    @OptIn(ExperimentalSerializationApi::class)
     private val json = Json {
         prettyPrint = true
         prettyPrintIndent = "  "
