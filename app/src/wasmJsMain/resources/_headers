@@ -6,5 +6,8 @@
   Cache-Control: no-cache
 
 # The .wasm bundles are content-hashed (name changes every build) — cache forever.
+# Detach the /* rule first: matching rules MERGE their headers on Cloudflare,
+# and a combined "no-cache, immutable" resolves to no-cache in browsers.
 /*.wasm
+  ! Cache-Control
   Cache-Control: public, max-age=31536000, immutable
