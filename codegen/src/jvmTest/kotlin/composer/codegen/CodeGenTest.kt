@@ -37,7 +37,9 @@ class CodeGenTest {
     }
 
     @Test
-    fun drop_shadow_is_hoisted_before_background_regardless_of_row_order() {
+    fun shadow_chain_order_is_preserved_as_authored() {
+        // Order is meaning in Compose (a dropShadow after background paints over
+        // the fill) — codegen must emit the chain exactly as the user built it.
         val code = CodeGen.generate(
             Node.Box(
                 "b",
@@ -49,7 +51,7 @@ class CodeGenTest {
         )
         val shadowAt = code.indexOf(".dropShadow(")
         val backgroundAt = code.indexOf(".background(")
-        assertTrue(shadowAt in 0 until backgroundAt, code) // shadow emitted first
+        assertTrue(backgroundAt in 0 until shadowAt, code)
     }
 
     @Test
