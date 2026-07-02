@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
@@ -191,7 +192,10 @@ fun Field(
         else -> Tk.border
     }
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(label, color = if (isError) Tk.danger else Tk.textMuted, fontSize = 11.sp)
+        // BasicText with an explicit style, NOT material3 Text: Text inherits the
+        // theme's bodyLarge lineHeight (24sp) even with a small fontSize, which made
+        // every Field taller than EnumDropdown (whose label is a BasicText).
+        BasicText(label, style = TextStyle(color = if (isError) Tk.danger else Tk.textMuted, fontSize = 11.sp))
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
@@ -201,7 +205,7 @@ fun Field(
             interactionSource = interaction,
             decorationBox = { inner ->
                 if (value.isEmpty() && placeholder != null) {
-                    Text(placeholder, color = Tk.textMuted, fontSize = 13.sp)
+                    BasicText(placeholder, style = TextStyle(color = Tk.textMuted, fontSize = 13.sp))
                 }
                 inner()
             },

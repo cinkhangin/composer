@@ -12,9 +12,9 @@ The editor itself is built with **Compose Multiplatform on Kotlin/Wasm** (canvas
 
 - **Infinite canvas with multiple screens** - an artboard holds any number of screens (each becomes one generated `@Composable` function). Figma-style zoom (cursor-anchored, up to 500×), pan, move/resize handles, drill-down selection, arrow-key nudge.
 - **Component palette** - Material 3 components: Text, TextField, Button (all variants), Icon, IconButton, Image, Switch, Checkbox, RadioButton, Slider, progress indicators, Column/Row/Box, Card, FAB, Scaffold (with real slots), TopAppBar, Dialog, BottomSheet, and more.
-- **Modifier-first inspector** - edit the modifier chain directly (padding, size, offset, background, border, clip, alpha, weight, aspect ratio, fill…). Rows are drag-reorderable; order is significant and preserved end-to-end in both preview and code.
+- **Modifier-first inspector** - edit the modifier chain directly (padding, size, offset, background with solid or multi-stop gradient fills, border, clip, drop & inner shadows, alpha, weight, aspect ratio, fill…). Corner radii in dp or percent. Rows are drag-reorderable; order is significant and preserved end-to-end in both preview and code.
 - **Layers panel** - full tree view with drag & drop reorder/reparent, rename (a screen's name becomes its function name), expand/collapse.
-- **Theming** - named Material color themes per design with a full HSV color picker (hex, alpha, eyedropper on Chromium). Generated as `lightColorScheme`/`darkColorScheme` + an `AppTheme` wrapper.
+- **Theming** - named Material color themes per design with a full HSV color picker (hex, alpha, eyedropper on Chromium). Any color can reference a theme token - it follows theme switches and exports as `MaterialTheme.colorScheme.primary`. Generated as `lightColorScheme`/`darkColorScheme` + an `AppTheme` wrapper.
 - **Live code panel** - syntax-highlighted Kotlin with line numbers, regenerated on every edit. Output is dependency-free, compiles standalone, and hoists real `remember` state so interactive components work out of the box.
 - **Files & persistence** - multi-file workspace in localStorage with auto-save, URL-based routing (deep links survive refresh), JSON import/export, and `.kt` export.
 
@@ -59,7 +59,7 @@ One `@Composable fun` per screen, plus a shared `AppTheme` when the theme is cus
 
 ## Stack
 
-- Kotlin 2.1.0 · Compose Multiplatform 1.7.3 (`wasmJs { browser() }`, Skia renderer)
+- Kotlin 2.3.20 · Compose Multiplatform 1.11.1 (`wasmJs { browser() }`, Skia renderer)
 - Gradle 8.11.1 · JDK 17
 - kotlinx.serialization for design persistence
 - Editor icons: Google Material Symbols Rounded (Apache 2.0)
