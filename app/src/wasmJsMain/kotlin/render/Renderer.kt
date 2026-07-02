@@ -533,9 +533,9 @@ fun List<ModifierSpec>.toModifier(): Modifier =
             is ModifierSpec.Offset -> acc.offset(spec.x.dp, spec.y.dp)
             is ModifierSpec.Background -> {
                 val shape = cornerShape(spec.corner, spec.cornerUnit)
-                val end = spec.colorEnd
-                if (end != null) {
-                    val colors = listOf(Color(spec.color), Color(end))
+                val stops = spec.gradientStops()
+                if (stops.isNotEmpty()) {
+                    val colors = stops.map { Color(it) }
                     val brush = when (spec.direction) {
                         GradientDirection.Vertical -> Brush.verticalGradient(colors)
                         GradientDirection.Horizontal -> Brush.horizontalGradient(colors)

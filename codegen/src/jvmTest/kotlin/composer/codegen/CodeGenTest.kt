@@ -26,17 +26,30 @@ class CodeGenTest {
     }
 
     @Test
-    fun gradient_background_emits_brush() {
+    fun gradient_background_emits_brush_with_all_stops() {
         val code = CodeGen.generate(
             Node.Box(
                 "b",
                 modifier = listOf(
-                    Background(0xFF2196F3, corner = 12, colorEnd = 0xFF9C27B0, direction = composer.model.GradientDirection.Horizontal),
+                    Background(
+                        0xFF000000, corner = 12,
+                        colors = listOf(0xFF2196F3, 0xFF9C27B0, 0xFFFF5722),
+                        direction = composer.model.GradientDirection.Horizontal,
+                    ),
                 ),
             ),
         )
-        assertTrue("background(Brush.horizontalGradient(listOf(Color(0xFF2196F3), Color(0xFF9C27B0))), RoundedCornerShape(12.dp))" in code, code)
+        assertTrue("background(Brush.horizontalGradient(listOf(Color(0xFF2196F3), Color(0xFF9C27B0), Color(0xFFFF5722))), RoundedCornerShape(12.dp))" in code, code)
         assertTrue("import androidx.compose.ui.graphics.Brush" in code, code)
+    }
+
+    @Test
+    fun single_stop_gradient_falls_back_to_solid() {
+        val code = CodeGen.generate(
+            Node.Box("b", modifier = listOf(Background(0xFF2196F3, colors = listOf(0xFF9C27B0)))),
+        )
+        assertTrue("background(Color(0xFF2196F3))" in code, code) // < 2 stops → solid
+        assertTrue("Brush" !in code, code)
     }
 
     @Test

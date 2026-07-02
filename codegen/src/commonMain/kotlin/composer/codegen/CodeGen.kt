@@ -648,7 +648,8 @@ object CodeGen {
                 is ModifierSpec.Background -> {
                     imports += "androidx.compose.foundation.background"
                     imports += "androidx.compose.ui.graphics.Color"
-                    val fill = if (spec.colorEnd != null) {
+                    val stops = spec.gradientStops()
+                    val fill = if (stops.isNotEmpty()) {
                         imports += "androidx.compose.ui.graphics.Brush"
                         val builder = when (spec.direction) {
                             GradientDirection.Vertical -> "verticalGradient"
@@ -656,7 +657,7 @@ object CodeGen {
                             GradientDirection.Diagonal -> "linearGradient"
                             GradientDirection.Radial -> "radialGradient"
                         }
-                        "Brush.$builder(listOf(${colorExpr(spec.color)}, ${colorExpr(spec.colorEnd!!)}))"
+                        "Brush.$builder(listOf(${stops.joinToString(", ") { colorExpr(it) }}))"
                     } else {
                         colorExpr(spec.color)
                     }

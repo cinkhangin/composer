@@ -260,6 +260,64 @@ private fun AddChip(label: String, onClick: () -> Unit) {
 }
 
 /**
+ * Multi-stop gradient editor: a row of stop swatches (click to select, ✕ on the
+ * selected one when 3+ stops, + appends a copy of the last stop) above ONE
+ * [ColorPicker] editing the selected stop — stacking N full pickers would not fit.
+ */
+@Composable
+private fun GradientStopsEditor(colors: List<Long>, onChange: (List<Long>) -> Unit) {
+    var selected by remember { mutableStateOf(0) }
+    val idx = selected.coerceIn(0, colors.lastIndex)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            colors.forEachIndexed { i, c ->
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(c))
+                        .border(if (i == idx) 2.dp else 1.dp, if (i == idx) Tk.accent else Tk.border, RoundedCornerShape(6.dp))
+                        .clickable { selected = i },
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Tk.panelAlt)
+                    .border(1.dp, Tk.border, RoundedCornerShape(6.dp))
+                    .clickable {
+                        onChange(colors + colors.last())
+                        selected = colors.size
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                AppIcon(AppIconKind.Plus, Modifier.size(12.dp), tint = Tk.textSecondary)
+            }
+            if (colors.size > 2) {
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Tk.panelAlt)
+                        .border(1.dp, Tk.border, RoundedCornerShape(6.dp))
+                        .clickable {
+                            onChange(colors.toMutableList().apply { removeAt(idx) })
+                            selected = (idx - 1).coerceAtLeast(0)
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AppIcon(AppIconKind.Close, Modifier.size(12.dp), tint = Tk.textSecondary)
+                }
+            }
+        }
+        ColorPicker(colors[idx]) { new ->
+            onChange(colors.toMutableList().apply { set(idx, new) })
+        }
+    }
+}
+
+/**
  * Corner radius field with a dp / % unit toggle. Percent is Compose's
  * `RoundedCornerShape(percent)` — relative to the smaller side, clamped to 50
  * (= pill/circle), so it survives any resize.
@@ -380,21 +438,20 @@ private fun ModifierParams(spec: ModifierSpec, onChange: (ModifierSpec) -> Unit)
         }
 
         is Background -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SegRow(
-                listOf(false to "solid", true to "gradient"),
-                spec.colorEnd != null,
-            ) { grad ->
-                // Toggling on seeds the end color from the start color so the fill
-                // doesn't jump; toggling off just drops the gradient.
-                onChange(spec.copy(colorEnd = if (grad) spec.colorEnd ?: spec.color else null))
+            val gradient = spec.gradientStops().isNotEmpty()
+            SegRow(listOf(false to "solid", true to "gradient"), gradient) { grad ->
+                // Toggling on seeds two stops from the solid color (no visual jump);
+                // toggling off keeps the solid color and drops the stop list.
+                onChange(spec.copy(colors = if (grad) listOf(spec.color, spec.color) else emptyList()))
             }
-            ColorPicker(spec.color) { onChange(spec.copy(color = it)) }
-            spec.colorEnd?.let { end ->
-                ColorPicker(end) { onChange(spec.copy(colorEnd = it)) }
+            if (gradient) {
+                GradientStopsEditor(spec.colors) { onChange(spec.copy(colors = it)) }
                 SegRow(
                     GradientDirection.entries.map { it to it.name.lowercase() },
                     spec.direction,
                 ) { onChange(spec.copy(direction = it)) }
+            } else {
+                ColorPicker(spec.color) { onChange(spec.copy(color = it)) }
             }
             CornerField(spec.corner, spec.cornerUnit) { c, u -> onChange(spec.copy(corner = c, cornerUnit = u)) }
         }

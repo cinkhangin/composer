@@ -67,8 +67,9 @@ sealed interface ModifierSpec {
     data class Offset(val x: Int, val y: Int) : ModifierSpec
 
     /**
-     * `Modifier.background(…, shape)`. Solid [color] fill, or a two-color gradient
-     * when [colorEnd] is non-null (`Brush.verticalGradient(…)` etc. per [direction]).
+     * `Modifier.background(…, shape)`. Solid [color] fill, or a multi-stop gradient
+     * when [colors] has 2+ entries (`Brush.verticalGradient(listOf(…))` etc. per
+     * [direction]; [colors] is the full stop list, [color] is ignored while active).
      * [corner] is the corner radius (0 = sharp rectangle) in [cornerUnit] units.
      * New fields sit after [corner] so `Background(color, corner)` calls and old
      * saved JSON keep working.
@@ -78,10 +79,13 @@ sealed interface ModifierSpec {
     data class Background(
         val color: Long,
         val corner: Int = 0,
-        val colorEnd: Long? = null,
+        val colors: List<Long> = emptyList(),
         val direction: GradientDirection = GradientDirection.Vertical,
         val cornerUnit: CornerUnit = CornerUnit.Dp,
-    ) : ModifierSpec
+    ) : ModifierSpec {
+        /** Gradient stop list when active (2+ stops), or empty for a solid fill. */
+        fun gradientStops(): List<Long> = if (colors.size >= 2) colors else emptyList()
+    }
 
     /** `Modifier.weight(value)` — only valid inside a Row/Column (else ignored). */
     @Serializable
