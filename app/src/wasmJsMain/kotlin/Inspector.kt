@@ -130,6 +130,36 @@ fun Inspector(state: EditorState, modifier: Modifier = Modifier) {
                     style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
                 )
             } else {
+              // Reusable components: instances show their link; mains show their
+              // status; anything eligible offers "Create component".
+              if (selected is Node.Instance) {
+                InspectorSection("Component") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        BasicText(
+                            "Instance of \"${state.componentName(selected.refId)}\" — edits to the main apply everywhere.",
+                            style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ToolButton("Go to main") { state.select(selected.refId) }
+                            ToolButton("Detach") { state.detachInstance(selected.id) }
+                        }
+                    }
+                }
+              } else if (state.isComponent(selected.id)) {
+                InspectorSection("Component") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        BasicText(
+                            "Main component \"${state.componentName(selected.id)}\" — exported as its own @Composable fun; instances follow edits live. Rename via its layer name.",
+                            style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
+                        )
+                        ToolButton("Remove component") { state.removeComponent(selected.id) }
+                    }
+                }
+              } else if (state.canBeComponent(selected.id)) {
+                InspectorSection("Component") {
+                    ToolButton("Create component") { state.createComponent(selected.id) }
+                }
+              }
               if (selected.hasContentProps()) InspectorSection("Content") {
                 when (selected) {
                     is Node.Text -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -281,7 +311,7 @@ fun Inspector(state: EditorState, modifier: Modifier = Modifier) {
 
                     is Node.Spacer, is Node.Divider, is Node.Card, is Node.Fab,
                     is Node.Composable, is Node.Artboard, is Node.Slot,
-                    is Node.Dialog, is Node.BottomSheet,
+                    is Node.Dialog, is Node.BottomSheet, is Node.Instance,
                     is Node.CircularProgress, is Node.LinearProgress -> Unit
                 }
               }

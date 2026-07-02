@@ -23,6 +23,7 @@ private fun glyphIconName(type: String): String = when (type) {
     "Row" -> "view_column"         // columns side-by-side = horizontal
     "Box" -> "square"
     "Artboard" -> "space_dashboard"
+    "Instance" -> "widgets"
     "Composable" -> "function"     // one generated @Composable function
     "Slot" -> "place_item"         // a Compose slot argument (drop content in)
     "Spacer" -> "expand"

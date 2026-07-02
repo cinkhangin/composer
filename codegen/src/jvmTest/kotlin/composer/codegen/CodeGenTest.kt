@@ -26,6 +26,44 @@ class CodeGenTest {
     }
 
     @Test
+    fun component_main_extracts_to_function_and_instances_call_it() {
+        val card = Node.Box(
+            "card",
+            modifier = listOf(Padding(12), ModifierSpec.Offset(10, 20)),
+            children = listOf(Node.Text("t", "Hello")),
+        )
+        val tree = Node.Artboard(
+            "art",
+            composables = listOf(
+                Node.Composable("s1", children = listOf(card)),
+                Node.Composable("s2", children = listOf(Node.Instance("i1", "card", listOf(Padding(4))))),
+            ),
+            layerNames = mapOf("card" to "info card", "s1" to "Home", "s2" to "Detail"),
+            componentIds = listOf("card"),
+        )
+        val code = CodeGen.generate(tree)
+        // extracted fn: name from layer name; body takes the modifier param OUTSIDE its own chain
+        assertTrue("fun InfoCard(modifier: Modifier = Modifier) {" in code, code)
+        assertTrue(".then(modifier)" in code, code)
+        // main's Offset stays at ITS call site (not baked into every instance)
+        assertTrue("InfoCard(modifier = Modifier.offset(10.dp, 20.dp))" in code, code)
+        // the instance's own chain applies at its call site
+        assertTrue("InfoCard(modifier = Modifier.padding(4.dp))" in code, code)
+        // the padding lives once, inside the function
+        assertTrue(code.indexOf("padding(12.dp)") == code.lastIndexOf("padding(12.dp)"), code)
+    }
+
+    @Test
+    fun dangling_instance_emits_comment_not_broken_code() {
+        val tree = Node.Artboard(
+            "art",
+            composables = listOf(Node.Composable("s1", children = listOf(Node.Instance("i1", "gone")))),
+        )
+        val code = CodeGen.generate(tree)
+        assertTrue("// Missing component: gone" in code, code)
+    }
+
+    @Test
     fun theme_token_colors_emit_colorscheme_references() {
         val primary = composer.model.ThemeColorRef.token("primary")!!
         val onPrimary = composer.model.ThemeColorRef.token("onPrimary")!!
@@ -797,6 +835,7 @@ class CodeGenTest {
             Node.Image("img", url = "https://x/\"a\".png", contentDescription = tricky),
             Node.Image("img2", url = "data:image/png;base64,ABC=="),
             Node.Divider("dv"),
+            Node.Instance("inst", "missing-ref"), // dangling — must emit a safe comment
             Node.Icon("ic", composer.model.IconKind.Add, contentDescription = tricky),
             Node.IconButton("ib", composer.model.IconKind.Menu),
             Node.TextField("tf", value = tricky, placeholder = tricky),

@@ -81,6 +81,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -100,6 +102,8 @@ import androidx.compose.ui.unit.sp
 import composer.model.BoxAlignment
 import composer.model.ButtonVariant
 import composer.model.childNodes
+import composer.model.findById
+import composer.model.withModifier
 import composer.model.CornerUnit
 import composer.model.DesignTheme
 import composer.model.GradientDirection
@@ -128,6 +132,12 @@ import composer.model.VArrangement
  * reports each node's layout coordinates so the canvas can place resize/move
  * handles over the selection.
  */
+/** The full design tree — [Node.Instance] resolves its main through this. */
+val LocalDesignRoot = compositionLocalOf<Node?> { null }
+
+/** Instance nesting depth — hard stop against pathological reference chains. */
+val LocalInstanceDepth = compositionLocalOf { 0 }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RenderNode(
@@ -151,6 +161,36 @@ fun RenderNode(
         .onGloballyPositioned { onBounds(node.id, it) }
         .then(innerMod)
     when (node) {
+        // An instance renders its main's subtree as ONE unit: taps anywhere inside
+        // select the INSTANCE (redirected onSelect), inner nodes don't register
+        // bounds (their ids would collide across instances), and the main's
+        // contextual Offset/Weight are stripped (they belong to the main's spot).
+        is Node.Instance -> {
+            val designRoot = LocalDesignRoot.current
+            val depth = LocalInstanceDepth.current
+            val main = if (depth < 8) designRoot?.findById(node.refId) else null
+            Box(modifier = modifier) {
+                if (main == null) {
+                    Box(
+                        Modifier
+                            .size(48.dp)
+                            .border(1.dp, MaterialTheme.colorScheme.error),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("?", color = MaterialTheme.colorScheme.error)
+                    }
+                } else {
+                    CompositionLocalProvider(LocalInstanceDepth provides depth + 1) {
+                        RenderNode(
+                            main.withModifier(main.modifier.filterNot { it is ModifierSpec.Offset || it is ModifierSpec.Weight }),
+                            selectedId = null,
+                            onSelect = { _, _ -> onSelect(node.id, false) },
+                            onBounds = { _, _ -> },
+                        )
+                    }
+                }
+            }
+        }
         is Node.Text -> {
             val custom = node.customFont.takeIf { it.isNotEmpty() }
             if (custom != null) LaunchedEffect(custom) { LocalFonts.load(custom) }

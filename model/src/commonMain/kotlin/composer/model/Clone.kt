@@ -28,6 +28,7 @@ fun Node.dedupeIds(): Node {
 
 fun Node.cloneWithNewIds(newId: () -> String): Node = when (this) {
     is Node.Text -> copy(id = newId())
+    is Node.Instance -> copy(id = newId()) // keeps refId — a copy is another instance
     is Node.Spacer -> copy(id = newId())
     is Node.Image -> copy(id = newId())
     is Node.Divider -> copy(id = newId())

@@ -17,6 +17,9 @@ import composer.model.ThemeColorRef
 import composer.model.TopAppBarVariant
 import composer.model.effectiveLineHeight
 import composer.model.migrateToArtboard
+import composer.model.validComponentIds
+import composer.model.findById
+import composer.model.withModifier
 import composer.model.NamedTheme
 import composer.model.VAlignment
 import composer.model.VArrangement
@@ -29,6 +32,15 @@ import composer.model.VArrangement
  * panel) and on the JVM (for golden-file tests in M2).
  */
 object CodeGen {
+
+    /**
+     * Component-function registry for the CURRENT [generate] run: main-node id →
+     * generated function name. A field rather than a parameter purely to avoid
+     * threading context through ~40 recursive emit call sites — [generate] sets
+     * it up-front and the object is used single-threaded (wasm app, sequential
+     * JVM tests), so generate remains a pure function of its input.
+     */
+    private var componentFns: Map<String, String> = emptyMap()
 
     /**
      * Generate a complete Kotlin source file for [root]: one `@Composable fun` per
@@ -66,12 +78,41 @@ object CodeGen {
             }
         } else emptyList()
 
+        // Reusable components: one @Composable fun per registered main. Names are
+        // layer names (sanitized/deduped); bodies strip the main's contextual
+        // Offset/Weight modifiers (those stay at call sites) and take a
+        // `modifier` parameter applied OUTSIDE the main's own chain.
+        val compIds = artboard.validComponentIds()
+        componentFns = compIds.associateWith { cid ->
+            val base = sanitizeIdentifier(artboard.layerNames[cid] ?: "") ?: "Component"
+            var candidate = base
+            var n = 2
+            while (!used.add(candidate)) {
+                candidate = "$base$n"
+                n++
+            }
+            candidate
+        }
+        val componentFnBodies = compIds.map { cid ->
+            val main = artboard.findById(cid)!!
+            val body = StringBuilder()
+            val saved = componentFns
+            // While generating c's own body, c must NOT substitute to a call to itself.
+            componentFns = componentFns - cid
+            val fnRoot = main.withModifier(main.modifier.filterNot { it is ModifierSpec.Offset || it is ModifierSpec.Weight })
+            imports += "androidx.compose.ui.Modifier"
+            emit(fnRoot, indent = 1, out = body, imports = imports, seq = seq, scopeModifier = "then(modifier)")
+            componentFns = saved
+            saved.getValue(cid) to body.toString()
+        }
+
         val screens = artboard.composables.filterIsInstance<Node.Composable>()
         val fns = screens.mapIndexed { i, screen ->
             val body = StringBuilder()
             emit(screen, indent = 1, out = body, imports = imports, seq = seq)
             functionName(artboard.layerNames[screen.id], i, used) to body.toString()
         }
+        componentFns = emptyMap()
         val themeBlock = if (themed) themeBlock(themes, schemeVals, artboard.activeTheme, imports) else null
 
         // Some Material3 components (any TopAppBar variant) are experimental — opt in if used.
@@ -84,7 +125,15 @@ object CodeGen {
             appendLine()
             if (themeBlock != null) {
                 append(themeBlock)
-                if (fns.isNotEmpty()) appendLine()
+                if (componentFnBodies.isNotEmpty() || fns.isNotEmpty()) appendLine()
+            }
+            componentFnBodies.forEachIndexed { i, (name, body) ->
+                if (needsM3OptIn) appendLine("@OptIn(ExperimentalMaterial3Api::class)")
+                appendLine("@Composable")
+                appendLine("fun $name(modifier: Modifier = Modifier) {")
+                append(body)
+                appendLine("}")
+                if (i != componentFnBodies.lastIndex || fns.isNotEmpty()) appendLine()
             }
             fns.forEachIndexed { i, (name, body) ->
                 if (needsM3OptIn) appendLine("@OptIn(ExperimentalMaterial3Api::class)")
@@ -177,11 +226,32 @@ object CodeGen {
 
     private fun emit(node: Node, indent: Int, out: StringBuilder, imports: MutableSet<String>, seq: IntArray, inWeightScope: Boolean = false, scopeModifier: String? = null) {
         val pad = "    ".repeat(indent)
+        // A registered component's MAIN emits as a CALL to its extracted function —
+        // only the contextual (layout-scope) modifiers stay at the call site; the
+        // rest of its chain lives inside the function body.
+        componentFns[node.id]?.let { fnName ->
+            val callMods = node.modifier.filter {
+                it is ModifierSpec.Offset || (it is ModifierSpec.Weight && inWeightScope && it.value > 0f)
+            }
+            val mod = modifierExpr(callMods, imports, scopeModifier, indent)
+            appendCall(out, indent, fnName, listOfNotNull(mod?.let { "modifier = $it" }))
+            return
+        }
         // weight is RowScope/ColumnScope-only, and weight(<=0) throws — strip both cases.
         val mods = node.modifier.filterNot {
             it is ModifierSpec.Weight && (!inWeightScope || it.value <= 0f)
         }
         when (node) {
+            is Node.Instance -> {
+                val fnName = componentFns[node.refId]
+                if (fnName == null) {
+                    // Dangling reference (main was deleted) — keep output compiling.
+                    out.appendLine("$pad// Missing component: ${node.refId.replace(Regex("[\\r\\n]"), " ")}")
+                } else {
+                    val mod = modifierExpr(mods, imports, scopeModifier, indent)
+                    appendCall(out, indent, fnName, listOfNotNull(mod?.let { "modifier = $it" }))
+                }
+            }
             is Node.Text -> {
                 imports += "androidx.compose.material3.Text"
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)

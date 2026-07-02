@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import composer.model.ModifierSpec
 import composer.model.Node
 import composer.model.childNodes
+import composer.model.canInstantiate
 import composer.model.cloneWithNewIds
 import composer.model.contentChildren
 import composer.model.dedupeIds
@@ -29,6 +30,8 @@ import composer.model.removeById
 import composer.model.replaceById
 import composer.model.toColumn
 import composer.model.toRow
+import composer.model.typeName
+import composer.model.validComponentIds
 import composer.model.withModifier
 
 /**
@@ -297,6 +300,68 @@ class EditorState(initial: Node) {
      * current selection: into the selected container, else as a sibling after
      * the selected leaf, else into the root.
      */
+    // --- reusable components ---------------------------------------------
+
+    /** Registered components (main id → display name) whose main still exists. */
+    fun componentDefs(): List<Pair<String, String>> =
+        artboard.validComponentIds().map { it to componentName(it) }
+
+    fun componentName(refId: String): String =
+        layerName(refId) ?: root.findById(refId)?.typeName() ?: "Component"
+
+    fun isComponent(id: String): Boolean = id in artboard.componentIds
+
+    /** Screens/slots/the artboard/instances can't become components; mains can't twice. */
+    fun canBeComponent(id: String): Boolean {
+        val n = root.findById(id) ?: return false
+        return n !is Node.Artboard && n !is Node.Composable && n !is Node.Slot &&
+            n !is Node.Instance && !isComponent(id)
+    }
+
+    /**
+     * Register the node as a reusable component (Figma-style main): the node stays
+     * in place and editable — instances reference it live. Its layer name becomes
+     * the component AND generated-function name (auto-named if unnamed).
+     */
+    fun createComponent(id: String) {
+        if (!canBeComponent(id)) return
+        val name = layerName(id) ?: "Component ${artboard.componentIds.size + 1}"
+        update(root.id) { node ->
+            (node as Node.Artboard).copy(
+                componentIds = node.componentIds + id,
+                layerNames = node.layerNames + (id to name),
+            )
+        }
+    }
+
+    /** Remove a component registration (instances become dangling placeholders). */
+    fun removeComponent(id: String) {
+        if (!isComponent(id)) return
+        update(root.id) { node ->
+            (node as Node.Artboard).copy(componentIds = node.componentIds - id)
+        }
+    }
+
+    /** Insert an instance of component [refId] at the current insert target (cycle-guarded). */
+    fun insertInstanceOf(refId: String) {
+        val target = resolveInsertTarget().first
+        val ancestors = if (target != null) pathFromRoot(target) else listOf(root.id)
+        if (!root.canInstantiate(refId, ancestors)) return
+        insert { id -> Node.Instance(id, refId) }
+    }
+
+    /**
+     * Replace an instance with an editable fresh-id clone of its main. The
+     * instance's own chain wraps OUTSIDE the main's (same as when rendered).
+     */
+    fun detachInstance(id: String) {
+        val inst = root.findById(id) as? Node.Instance ?: return
+        val main = root.findById(inst.refId) ?: return
+        val clone = main.cloneWithNewIds(::nextId)
+        commit(root.replaceById(id) { clone.withModifier(inst.modifier + clone.modifier) })
+        select(clone.id)
+    }
+
     fun insert(factory: (id: String) -> Node) {
         insertNode(factory(nextId()))
     }

@@ -23,7 +23,7 @@ fun Node.childNodes(): List<Node> = when (this) {
     is Node.Text, is Node.Spacer, is Node.Image, is Node.Divider,
     is Node.Switch, is Node.Checkbox, is Node.RadioButton, is Node.Slider,
     is Node.Icon, is Node.IconButton, is Node.TextField,
-    is Node.CircularProgress, is Node.LinearProgress -> emptyList()
+    is Node.CircularProgress, is Node.LinearProgress, is Node.Instance -> emptyList()
 }
 
 /** The reorderable **content** children (Scaffold → content; TopAppBar → actions; else [childNodes]). */
@@ -51,7 +51,7 @@ fun Node.withChildren(children: List<Node>): Node = when (this) {
     is Node.Text, is Node.Spacer, is Node.Image, is Node.Divider,
     is Node.Switch, is Node.Checkbox, is Node.RadioButton, is Node.Slider,
     is Node.Icon, is Node.IconButton, is Node.TextField,
-    is Node.CircularProgress, is Node.LinearProgress -> this
+    is Node.CircularProgress, is Node.LinearProgress, is Node.Instance -> this
 }
 
 /** Apply [transform] to every direct child (content and Scaffold slots), preserving structure. */
@@ -81,7 +81,7 @@ fun Node.mapChildren(transform: (Node) -> Node): Node = when (this) {
     is Node.Text, is Node.Spacer, is Node.Image, is Node.Divider,
     is Node.Switch, is Node.Checkbox, is Node.RadioButton, is Node.Slider,
     is Node.Icon, is Node.IconButton, is Node.TextField,
-    is Node.CircularProgress, is Node.LinearProgress -> this
+    is Node.CircularProgress, is Node.LinearProgress, is Node.Instance -> this
 }
 
 /** Depth-first search for the node with [id]. */
@@ -127,6 +127,7 @@ fun Node.typeName(): String = when (this) {
     is Node.BottomSheet -> "BottomSheet"
     is Node.TopAppBar -> "TopAppBar"
     is Node.Slot -> "Slot"
+    is Node.Instance -> "Instance"
     is Node.Composable -> "Composable"
     is Node.Artboard -> "Artboard"
     is Node.Switch -> "Switch"
@@ -157,6 +158,7 @@ fun Node.withId(id: String): Node = when (this) {
     is Node.Scaffold -> copy(id = id)
     is Node.TopAppBar -> copy(id = id)
     is Node.Slot -> copy(id = id)
+    is Node.Instance -> copy(id = id)
     is Node.Composable -> copy(id = id)
     is Node.Artboard -> copy(id = id)
     is Node.Switch -> copy(id = id)
@@ -187,6 +189,7 @@ fun Node.withModifier(modifier: List<ModifierSpec>): Node = when (this) {
     is Node.Scaffold -> copy(modifier = modifier)
     is Node.TopAppBar -> copy(modifier = modifier)
     is Node.Slot -> copy(modifier = modifier)
+    is Node.Instance -> copy(modifier = modifier)
     is Node.Composable -> copy(modifier = modifier)
     is Node.Artboard -> copy(modifier = modifier)
     is Node.Switch -> copy(modifier = modifier)

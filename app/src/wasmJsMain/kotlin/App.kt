@@ -110,6 +110,7 @@ import composer.model.ThemeColorRef
 import composer.model.Node
 import composer.model.backgroundCorner
 import composer.model.findById
+import composer.render.LocalDesignRoot
 import composer.render.RenderNode
 import composer.render.toColorScheme
 import composer.ui.AppIcon
@@ -851,7 +852,10 @@ private fun ScreenFrame(
             // so default-colored Text/Icon would stay black on a dark background.
             // The frame paints `background`, so content defaults to `onBackground` —
             // matching a generated app whose screens sit on a themed surface.
-            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
+            CompositionLocalProvider(
+                LocalContentColor provides MaterialTheme.colorScheme.onBackground,
+                LocalDesignRoot provides state.root,
+            ) {
                 Box(
                     modifier = Modifier
                         .matchParentSize()

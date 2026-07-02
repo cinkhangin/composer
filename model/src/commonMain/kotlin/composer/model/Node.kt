@@ -251,6 +251,22 @@ sealed interface Node {
     ) : Node
 
     /**
+     * An **instance of a reusable component**: references another node in the tree
+     * (the *main*, registered in [Artboard.componentIds]) by [refId]. Renders the
+     * main's subtree as one unit; codegen emits a call to the extracted
+     * `@Composable fun` instead of inlining. [modifier] applies OUTSIDE the
+     * main's own chain (wrapper semantics). Deleting the main leaves instances
+     * dangling — they render/emit a placeholder.
+     */
+    @Serializable
+    @SerialName("Instance")
+    data class Instance(
+        override val id: String,
+        val refId: String,
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    /**
      * Not a real UI component — one composable **function scope** (the body of a
      * generated `@Composable fun`). Its children are emitted directly into the
      * function (no wrapper). Lives directly under the [Artboard]; its layer name
@@ -296,6 +312,9 @@ sealed interface Node {
         val layerNames: Map<String, String> = emptyMap(), // custom layer names, keyed by node id
         val themes: List<NamedTheme> = emptyList(),
         val activeTheme: Int = 0,
+        // Reusable-component registry: ids of MAIN nodes (their layer name is the
+        // component/function name). Ids whose node no longer exists are ignored.
+        val componentIds: List<String> = emptyList(),
     ) : Node {
         /** The theme the preview renders and codegen defaults to. */
         fun currentTheme(): DesignTheme =
