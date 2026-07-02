@@ -34,9 +34,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -759,16 +761,22 @@ private fun ScreenFrame(
         // OVERLAY (children first, grid on top) so component fills can't cover it;
         // it sits after .clip() so the grid stays clipped to the frame.
         MaterialTheme(colorScheme = state.theme.toColorScheme()) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clip(windowShape)
-                    .background(MaterialTheme.colorScheme.background)
-                    .pixelGrid(scale)
-                    // A tap on the screen's empty area (no child consumed it) selects the screen.
-                    .pointerInput(screen.id) { detectTapGestures { state.select(screen.id) } },
-            ) {
-                RenderNode(screen, state.selectedId, onSelect = state::selectAt, onBounds = ::register)
+            // MaterialTheme alone does NOT set LocalContentColor (only Surface does),
+            // so default-colored Text/Icon would stay black on a dark background.
+            // The frame paints `background`, so content defaults to `onBackground` —
+            // matching a generated app whose screens sit on a themed surface.
+            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(windowShape)
+                        .background(MaterialTheme.colorScheme.background)
+                        .pixelGrid(scale)
+                        // A tap on the screen's empty area (no child consumed it) selects the screen.
+                        .pointerInput(screen.id) { detectTapGestures { state.select(screen.id) } },
+                ) {
+                    RenderNode(screen, state.selectedId, onSelect = state::selectAt, onBounds = ::register)
+                }
             }
         }
 
