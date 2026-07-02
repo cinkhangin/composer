@@ -559,7 +559,11 @@ private fun DeviceFontPicker(current: String, onPick: (String) -> Unit) {
                 // make the menu screen-tall AND eagerly load every font's bytes.
                 // Only composed (≈visible) rows load their font, so each name renders
                 // in its own typeface as you scroll (default font until loaded).
-                LazyColumn(Modifier.width(260.dp).heightIn(max = 320.dp)) {
+                // FIXED size (not heightIn): DropdownMenu measures its content with
+                // IntrinsicSize, and LazyColumn (SubcomposeLayout) can't answer
+                // intrinsics — an explicit size modifier answers for it.
+                val menuHeight = (LocalFonts.available.size * 31).coerceAtMost(320).dp
+                LazyColumn(Modifier.width(260.dp).height(menuHeight)) {
                     items(LocalFonts.available, key = { it }) { f ->
                         LaunchedEffect(f) { LocalFonts.load(f) }
                         TkMenuItem(f, selected = f == current, fontFamily = LocalFonts.loaded[f]) {
