@@ -160,13 +160,14 @@ private val paletteGroups: List<PaletteGroup> = listOf(
     PaletteGroup("Structure", listOf(
         // Scaffold ships with its three permanent slot containers (Compose's slot
         // arguments made visible in the Layers tree) — empty until the user fills them.
+        // No default Size: the real Scaffold fills its max constraints on its own,
+        // so it takes the whole screen in preview and generated code alike.
         PaletteItem("Scaffold") { id ->
             Node.Scaffold(
                 id,
                 topBar = Node.Slot("$id-topBar", "topBar"),
                 bottomBar = Node.Slot("$id-bottomBar", "bottomBar"),
                 fab = Node.Slot("$id-fab", "fab"),
-                modifier = listOf(Size(48, 48)),
             )
         },
         PaletteItem("Fab") { id -> Node.Fab(id, children = listOf(Node.Icon("${id}i", IconKind.Add))) },
