@@ -30,6 +30,7 @@ data class Palette(
     val accentSoft: Color,
     val danger: Color,
     val dangerSoft: Color,
+    val snapGuide: Color,
     val canvasBg: Color,
     val canvasDot: Color,
     val canvasFrame: Color,
@@ -54,6 +55,7 @@ private val DarkPalette = Palette(
     accentSoft = Color(0x266E7BF2),
     danger = Color(0xFFE5605A),
     dangerSoft = Color(0x22E5605A),
+    snapGuide = Color(0xFFFF4D8D),
     canvasBg = Color(0xFF0E1116),
     canvasDot = Color(0xFF1F2631),
     canvasFrame = Color(0xFF2A313C),
@@ -77,6 +79,7 @@ private val LightPalette = Palette(
     accentHover = Color(0xFF4351DF),
     accentSoft = Color(0x1A5563E8),
     danger = Color(0xFFD9433D),
+    snapGuide = Color(0xFFE0316E),
     dangerSoft = Color(0x16D9433D),
     canvasBg = Color(0xFFE7EAEF),
     canvasDot = Color(0xFFCFD5DE),
@@ -122,6 +125,7 @@ object Tk {
     val accentHover get() = Theme.palette.accentHover
     val accentSoft get() = Theme.palette.accentSoft
     val danger get() = Theme.palette.danger
+    val snapGuide get() = Theme.palette.snapGuide
     val dangerSoft get() = Theme.palette.dangerSoft
     val canvasBg get() = Theme.palette.canvasBg
     val canvasDot get() = Theme.palette.canvasDot

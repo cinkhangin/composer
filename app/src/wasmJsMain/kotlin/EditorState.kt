@@ -1,6 +1,7 @@
 package composer
 
 import androidx.compose.runtime.getValue
+import kotlin.math.abs
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -74,6 +75,40 @@ class EditorState(initial: Node) {
         update(id, coalesceKey = "cmove:$id") { node ->
             if (node is Node.Composable) node.copy(x = node.x + dx, y = node.y + dy) else node
         }
+    }
+
+    // --- artboard snap (screen drags) -----------------------------------
+
+    /** Active snap guides (artboard dp) while a screen drag is snapping — drawn by the canvas. */
+    var snapGuideV by mutableStateOf<Int?>(null)
+        private set
+    var snapGuideH by mutableStateOf<Int?>(null)
+        private set
+
+    // The drag's UN-snapped position: snapping is computed against where the
+    // cursor actually is, so the screen can escape a snap by dragging past it.
+    private var dragDesiredX: Int? = null
+    private var dragDesiredY: Int? = null
+
+    /** Body-drag move with Figma-style snapping to other screens' edges/centers. */
+    fun moveComposableSnapped(id: String, dx: Int, dy: Int, threshold: Int) {
+        val screen = root.findById(id) as? Node.Composable ?: return
+        val desX = (dragDesiredX ?: screen.x) + dx
+        val desY = (dragDesiredY ?: screen.y) + dy
+        dragDesiredX = desX
+        dragDesiredY = desY
+        val snap = snapScreenPosition(desX, desY, screen.width, screen.height, composables.filter { it.id != id }, threshold)
+        snapGuideV = snap.guideV
+        snapGuideH = snap.guideH
+        setComposablePos(id, snap.x, snap.y)
+    }
+
+    /** Drag finished — clear the snap session and its guides. */
+    fun endScreenDrag() {
+        dragDesiredX = null
+        dragDesiredY = null
+        snapGuideV = null
+        snapGuideH = null
     }
 
     /** Set screen [id]'s canvas position (dp). */
@@ -558,4 +593,46 @@ private fun maxGeneratedId(node: Node): Int {
     }
     val childMax = node.childNodes().maxOfOrNull { maxGeneratedId(it) } ?: 0
     return maxOf(self, childMax)
+}
+
+/** Result of [snapScreenPosition]: the snapped position + guide lines (artboard dp) if snapped. */
+data class ScreenSnap(val x: Int, val y: Int, val guideV: Int?, val guideH: Int?)
+
+/**
+ * Snap a screen at desired position ([x], [y], size [w]×[h]) to the edges and
+ * centers of [others]: each of the moving screen's left/center/right (and
+ * top/center/bottom) anchors is tested against every other screen's matching
+ * lines; the closest hit within [threshold] dp wins per axis.
+ */
+fun snapScreenPosition(x: Int, y: Int, w: Int, h: Int, others: List<Node.Composable>, threshold: Int): ScreenSnap {
+    var bestDx: Int? = null
+    var guideV: Int? = null
+    var bestDy: Int? = null
+    var guideH: Int? = null
+    for (o in others) {
+        for (t in intArrayOf(o.x, o.x + o.width / 2, o.x + o.width)) {
+            for (a in intArrayOf(0, w / 2, w)) {
+                val d = t - (x + a)
+                if (abs(d) <= threshold && (bestDx == null || abs(d) < abs(bestDx!!))) {
+                    bestDx = d
+                    guideV = t
+                }
+            }
+        }
+        for (t in intArrayOf(o.y, o.y + o.height / 2, o.y + o.height)) {
+            for (a in intArrayOf(0, h / 2, h)) {
+                val d = t - (y + a)
+                if (abs(d) <= threshold && (bestDy == null || abs(d) < abs(bestDy!!))) {
+                    bestDy = d
+                    guideH = t
+                }
+            }
+        }
+    }
+    return ScreenSnap(
+        x = x + (bestDx ?: 0),
+        y = y + (bestDy ?: 0),
+        guideV = if (bestDx != null) guideV else null,
+        guideH = if (bestDy != null) guideH else null,
+    )
 }

@@ -595,6 +595,15 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
                         onMove = { dx, dy ->
                             if (isScreen) state.moveComposable(sel, dx, dy) else state.offsetNode(sel, dx, dy)
                         },
+                        // ~8dp of SCREEN travel snaps at any zoom (threshold is in artboard dp).
+                        onBodyMove = { dx, dy ->
+                            if (isScreen) {
+                                state.moveComposableSnapped(sel, dx, dy, threshold = (8f / scale).roundToInt().coerceAtLeast(2))
+                            } else {
+                                state.offsetNode(sel, dx, dy)
+                            }
+                        },
+                        onBodyMoveEnd = { if (isScreen) state.endScreenDrag() },
                         onResize = { dw, dh ->
                             if (isScreen) {
                                 state.resizeComposable(sel, dw, dh)
@@ -745,6 +754,26 @@ private fun ArtboardCanvas(
                     ScreenFrame(state, screen, scale, content, spaceCoords, bounds)
                 }
             }
+            // Snap guides (screen drags): full-length lines at the matched artboard
+            // coordinate, same centering math as ScreenFrame; stroke /scale so it
+            // stays 1dp on screen at any zoom. Draw-only — no pointer handlers.
+            val gv = state.snapGuideV
+            val gh = state.snapGuideH
+            if (gv != null || gh != null) {
+                Box(
+                    Modifier.matchParentSize().drawBehind {
+                        val stroke = 1.dp.toPx() / scale
+                        if (gv != null) {
+                            val x = (size.width - content.w.dp.toPx()) / 2f + (gv - content.minX).dp.toPx()
+                            drawLine(Tk.snapGuide, Offset(x, 0f), Offset(x, size.height), stroke)
+                        }
+                        if (gh != null) {
+                            val y = (size.height - content.h.dp.toPx()) / 2f + (gh - content.minY).dp.toPx()
+                            drawLine(Tk.snapGuide, Offset(0f, y), Offset(size.width, y), stroke)
+                        }
+                    },
+                )
+            }
         }
     }
 }
@@ -857,6 +886,11 @@ private fun SelectionOverlay(
     onMove: (Int, Int) -> Unit,
     onResize: (Int, Int) -> Unit,
     onDrill: (Offset) -> Unit,
+    // Body-grip drag override + end hook: screens route the body drag through the
+    // SNAPPED move (edge/corner anchor-compensation keeps plain onMove — mixing
+    // snap into resize deltas would fight the handles).
+    onBodyMove: ((Int, Int) -> Unit)? = null,
+    onBodyMoveEnd: () -> Unit = {},
 ) {
     // The body's real layout coordinates — used to convert a tap to frame space exactly,
     // instead of deriving it from `screen` (which drifted from the body's actual placement).
@@ -905,7 +939,9 @@ private fun SelectionOverlay(
                             if (fc != null && bc != null) onDrill(fc.localPositionOf(bc, local))
                         })
                     }
-                    .windowAnchoredDrag(scale, { bodyCoords }, thresholdDp = 5f) { dx, dy -> onMove(dx, dy) },
+                    .windowAnchoredDrag(scale, { bodyCoords }, thresholdDp = 5f, onEnd = onBodyMoveEnd) { dx, dy ->
+                        (onBodyMove ?: onMove)(dx, dy)
+                    },
             )
         }
 
