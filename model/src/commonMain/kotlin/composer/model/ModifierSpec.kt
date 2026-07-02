@@ -14,6 +14,17 @@ import kotlinx.serialization.Serializable
 @Serializable
 enum class PaddingMode { All, Symmetric, Sides }
 
+/** Direction of a two-color gradient fill ([ModifierSpec.Background.colorEnd] non-null). */
+@Serializable
+enum class GradientDirection { Vertical, Horizontal, Diagonal, Radial }
+
+/**
+ * Unit of a `corner` value: absolute [Dp], or [Percent] of the shape's smaller
+ * side (Compose's `RoundedCornerShape(percent)` — 50 = pill/circle at any size).
+ */
+@Serializable
+enum class CornerUnit { Dp, Percent }
+
 @Serializable
 sealed interface ModifierSpec {
     /**
@@ -56,12 +67,21 @@ sealed interface ModifierSpec {
     data class Offset(val x: Int, val y: Int) : ModifierSpec
 
     /**
-     * `Modifier.background(Color(0xAARRGGBB), shape)`. [corner] is the corner
-     * radius in dp (0 = sharp rectangle; a large value rounds a square to a circle).
+     * `Modifier.background(…, shape)`. Solid [color] fill, or a two-color gradient
+     * when [colorEnd] is non-null (`Brush.verticalGradient(…)` etc. per [direction]).
+     * [corner] is the corner radius (0 = sharp rectangle) in [cornerUnit] units.
+     * New fields sit after [corner] so `Background(color, corner)` calls and old
+     * saved JSON keep working.
      */
     @Serializable
     @SerialName("background")
-    data class Background(val color: Long, val corner: Int = 0) : ModifierSpec
+    data class Background(
+        val color: Long,
+        val corner: Int = 0,
+        val colorEnd: Long? = null,
+        val direction: GradientDirection = GradientDirection.Vertical,
+        val cornerUnit: CornerUnit = CornerUnit.Dp,
+    ) : ModifierSpec
 
     /** `Modifier.weight(value)` — only valid inside a Row/Column (else ignored). */
     @Serializable
@@ -73,10 +93,10 @@ sealed interface ModifierSpec {
     @SerialName("aspectRatio")
     data class AspectRatio(val width: Int = 1, val height: Int = 1) : ModifierSpec
 
-    /** `Modifier.clip(RoundedCornerShape(corner.dp))` — clips to rounded corners (large value = circle). */
+    /** `Modifier.clip(RoundedCornerShape(…))` — clips to rounded corners ([cornerUnit]; 50% = circle). */
     @Serializable
     @SerialName("clip")
-    data class Clip(val corner: Int) : ModifierSpec
+    data class Clip(val corner: Int, val cornerUnit: CornerUnit = CornerUnit.Dp) : ModifierSpec
 
     /** `Modifier.alpha(value)` — opacity 0f (transparent) … 1f (opaque). */
     @Serializable
@@ -89,7 +109,12 @@ sealed interface ModifierSpec {
      */
     @Serializable
     @SerialName("border")
-    data class Border(val width: Int, val color: Long, val corner: Int = 0) : ModifierSpec
+    data class Border(
+        val width: Int,
+        val color: Long,
+        val corner: Int = 0,
+        val cornerUnit: CornerUnit = CornerUnit.Dp,
+    ) : ModifierSpec
 
     /**
      * `Modifier.dropShadow(shape, Shadow(…))` — a Figma-style drop shadow behind the
@@ -107,6 +132,7 @@ sealed interface ModifierSpec {
         val offsetY: Int = 2,
         val spread: Int = 0,
         val corner: Int = 0,
+        val cornerUnit: CornerUnit = CornerUnit.Dp,
     ) : ModifierSpec
 
     /**
@@ -122,6 +148,7 @@ sealed interface ModifierSpec {
         val offsetY: Int = 2,
         val spread: Int = 0,
         val corner: Int = 0,
+        val cornerUnit: CornerUnit = CornerUnit.Dp,
     ) : ModifierSpec
 
     @Serializable

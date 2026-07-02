@@ -42,6 +42,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.ui.text.TextStyle
+import composer.model.CornerUnit
+import composer.model.GradientDirection
 import composer.model.ModifierSpec
 import composer.model.PaddingMode
 import composer.model.ModifierSpec.AspectRatio
@@ -257,6 +259,45 @@ private fun AddChip(label: String, onClick: () -> Unit) {
     }
 }
 
+/**
+ * Corner radius field with a dp / % unit toggle. Percent is Compose's
+ * `RoundedCornerShape(percent)` — relative to the smaller side, clamped to 50
+ * (= pill/circle), so it survives any resize.
+ */
+@Composable
+private fun CornerField(corner: Int, unit: CornerUnit, onChange: (Int, CornerUnit) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
+        val label = if (unit == CornerUnit.Percent) "corner radius (%)" else "corner radius (dp)"
+        IntField(label, corner, Modifier.weight(1f)) { c ->
+            onChange(if (unit == CornerUnit.Percent) c.coerceAtMost(50) else c, unit)
+        }
+        SegRow(listOf(CornerUnit.Dp to "dp", CornerUnit.Percent to "%"), unit) { u ->
+            onChange(if (u == CornerUnit.Percent) corner.coerceAtMost(50) else corner, u)
+        }
+    }
+}
+
+/** Small segmented toggle (the PaddingModeRow look, generic). */
+@Composable
+private fun <T> SegRow(options: List<Pair<T, String>>, selected: T, onPick: (T) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        for ((value, label) in options) {
+            val sel = value == selected
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(Tk.rXs))
+                    .background(if (sel) Tk.accent else Tk.panelAlt)
+                    .border(1.dp, if (sel) Tk.accent else Tk.border, RoundedCornerShape(Tk.rXs))
+                    .clickable { onPick(value) }
+                    .padding(horizontal = 12.dp, vertical = 5.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                BasicText(label, style = TextStyle(color = if (sel) Color.White else Tk.textSecondary, fontSize = 11.sp))
+            }
+        }
+    }
+}
+
 @Composable
 private fun PaddingModeRow(mode: PaddingMode, onPick: (PaddingMode) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -322,14 +363,14 @@ private fun ModifierParams(spec: ModifierSpec, onChange: (ModifierSpec) -> Unit)
 
         is Weight -> FloatField("weight", spec.value, Modifier.fillMaxWidth()) { onChange(Weight(it)) }
 
-        is Clip -> IntField("corner radius (dp)", spec.corner, Modifier.fillMaxWidth()) { onChange(Clip(it)) }
+        is Clip -> CornerField(spec.corner, spec.cornerUnit) { c, u -> onChange(Clip(c, u)) }
 
         is ModifierSpec.Alpha -> FloatField("opacity (0–1)", spec.value, Modifier.fillMaxWidth()) { onChange(ModifierSpec.Alpha(it.coerceIn(0f, 1f))) }
 
         is ModifierSpec.Border -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             IntField("width (dp)", spec.width, Modifier.fillMaxWidth()) { onChange(spec.copy(width = it)) }
             ColorPicker(spec.color) { onChange(spec.copy(color = it)) }
-            IntField("corner radius (dp)", spec.corner, Modifier.fillMaxWidth()) { onChange(spec.copy(corner = it)) }
+            CornerField(spec.corner, spec.cornerUnit) { c, u -> onChange(spec.copy(corner = c, cornerUnit = u)) }
         }
 
         is AspectRatio -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
@@ -339,8 +380,23 @@ private fun ModifierParams(spec: ModifierSpec, onChange: (ModifierSpec) -> Unit)
         }
 
         is Background -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ColorPicker(spec.color) { onChange(Background(it, spec.corner)) }
-            IntField("corner radius (dp)", spec.corner, Modifier.fillMaxWidth()) { onChange(Background(spec.color, it)) }
+            SegRow(
+                listOf(false to "solid", true to "gradient"),
+                spec.colorEnd != null,
+            ) { grad ->
+                // Toggling on seeds the end color from the start color so the fill
+                // doesn't jump; toggling off just drops the gradient.
+                onChange(spec.copy(colorEnd = if (grad) spec.colorEnd ?: spec.color else null))
+            }
+            ColorPicker(spec.color) { onChange(spec.copy(color = it)) }
+            spec.colorEnd?.let { end ->
+                ColorPicker(end) { onChange(spec.copy(colorEnd = it)) }
+                SegRow(
+                    GradientDirection.entries.map { it to it.name.lowercase() },
+                    spec.direction,
+                ) { onChange(spec.copy(direction = it)) }
+            }
+            CornerField(spec.corner, spec.cornerUnit) { c, u -> onChange(spec.copy(corner = c, cornerUnit = u)) }
         }
 
         is ModifierSpec.DropShadow -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -353,7 +409,7 @@ private fun ModifierParams(spec: ModifierSpec, onChange: (ModifierSpec) -> Unit)
                 IntField("x", spec.offsetX, Modifier.weight(1f), allowNegative = true) { onChange(spec.copy(offsetX = it)) }
                 IntField("y", spec.offsetY, Modifier.weight(1f), allowNegative = true) { onChange(spec.copy(offsetY = it)) }
             }
-            IntField("corner radius (dp)", spec.corner, Modifier.fillMaxWidth()) { onChange(spec.copy(corner = it)) }
+            CornerField(spec.corner, spec.cornerUnit) { c, u -> onChange(spec.copy(corner = c, cornerUnit = u)) }
         }
 
         is ModifierSpec.InnerShadow -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -366,7 +422,7 @@ private fun ModifierParams(spec: ModifierSpec, onChange: (ModifierSpec) -> Unit)
                 IntField("x", spec.offsetX, Modifier.weight(1f), allowNegative = true) { onChange(spec.copy(offsetX = it)) }
                 IntField("y", spec.offsetY, Modifier.weight(1f), allowNegative = true) { onChange(spec.copy(offsetY = it)) }
             }
-            IntField("corner radius (dp)", spec.corner, Modifier.fillMaxWidth()) { onChange(spec.copy(corner = it)) }
+            CornerField(spec.corner, spec.cornerUnit) { c, u -> onChange(spec.copy(corner = c, cornerUnit = u)) }
         }
 
         FillMaxWidth, FillMaxHeight, FillMaxSize -> Unit

@@ -84,7 +84,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -97,7 +99,9 @@ import androidx.compose.ui.unit.sp
 import composer.model.BoxAlignment
 import composer.model.ButtonVariant
 import composer.model.childNodes
+import composer.model.CornerUnit
 import composer.model.DesignTheme
+import composer.model.GradientDirection
 import composer.model.HAlignment
 import composer.model.HArrangement
 import composer.model.IconKind
@@ -507,6 +511,13 @@ fun DesignTheme.toColorScheme(): ColorScheme {
     return s
 }
 
+/** [ModifierSpec] corner → Shape: dp or percent-of-smaller-side (50% = circle). */
+private fun cornerShape(corner: Int, unit: CornerUnit): Shape = when {
+    corner <= 0 -> RectangleShape
+    unit == CornerUnit.Percent -> RoundedCornerShape(corner.coerceAtMost(50))
+    else -> RoundedCornerShape(corner.dp)
+}
+
 /** Fold a modifier-spec chain into a real [Modifier], preserving order. */
 fun List<ModifierSpec>.toModifier(): Modifier =
     fold(Modifier as Modifier) { acc, spec ->
@@ -520,23 +531,35 @@ fun List<ModifierSpec>.toModifier(): Modifier =
             is ModifierSpec.Width -> acc.width(spec.width.dp)
             is ModifierSpec.Height -> acc.height(spec.height.dp)
             is ModifierSpec.Offset -> acc.offset(spec.x.dp, spec.y.dp)
-            is ModifierSpec.Background -> acc.background(
-                Color(spec.color),
-                if (spec.corner > 0) RoundedCornerShape(spec.corner.dp) else RectangleShape,
-            )
+            is ModifierSpec.Background -> {
+                val shape = cornerShape(spec.corner, spec.cornerUnit)
+                val end = spec.colorEnd
+                if (end != null) {
+                    val colors = listOf(Color(spec.color), Color(end))
+                    val brush = when (spec.direction) {
+                        GradientDirection.Vertical -> Brush.verticalGradient(colors)
+                        GradientDirection.Horizontal -> Brush.horizontalGradient(colors)
+                        GradientDirection.Diagonal -> Brush.linearGradient(colors)
+                        GradientDirection.Radial -> Brush.radialGradient(colors)
+                    }
+                    acc.background(brush, shape)
+                } else {
+                    acc.background(Color(spec.color), shape)
+                }
+            }
             is ModifierSpec.Weight -> acc // applied at the Row/Column call site, not here
             is ModifierSpec.AspectRatio -> acc.aspectRatio(spec.width.toFloat() / spec.height.coerceAtLeast(1).toFloat())
-            is ModifierSpec.Clip -> acc.clip(RoundedCornerShape(spec.corner.dp))
+            is ModifierSpec.Clip -> acc.clip(cornerShape(spec.corner, spec.cornerUnit))
             is ModifierSpec.Alpha -> acc.alpha(spec.value)
             is ModifierSpec.Border -> acc.border(
                 spec.width.dp,
                 Color(spec.color),
-                if (spec.corner > 0) RoundedCornerShape(spec.corner.dp) else RectangleShape,
+                cornerShape(spec.corner, spec.cornerUnit),
             )
             // The real Compose 1.9+ shadow APIs — the preview now runs the exact
             // modifier the generated code emits (no more Skia emulation).
             is ModifierSpec.DropShadow -> acc.dropShadow(
-                if (spec.corner > 0) RoundedCornerShape(spec.corner.dp) else RectangleShape,
+                cornerShape(spec.corner, spec.cornerUnit),
                 Shadow(
                     radius = spec.radius.dp,
                     color = Color(spec.color),
@@ -545,7 +568,7 @@ fun List<ModifierSpec>.toModifier(): Modifier =
                 ),
             )
             is ModifierSpec.InnerShadow -> acc.innerShadow(
-                if (spec.corner > 0) RoundedCornerShape(spec.corner.dp) else RectangleShape,
+                cornerShape(spec.corner, spec.cornerUnit),
                 Shadow(
                     radius = spec.radius.dp,
                     color = Color(spec.color),

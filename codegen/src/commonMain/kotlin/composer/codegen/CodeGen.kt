@@ -2,7 +2,9 @@ package composer.codegen
 
 import composer.model.BoxAlignment
 import composer.model.ButtonVariant
+import composer.model.CornerUnit
 import composer.model.DesignTheme
+import composer.model.GradientDirection
 import composer.model.HAlignment
 import composer.model.HArrangement
 import composer.model.ModifierSpec
@@ -646,14 +648,20 @@ object CodeGen {
                 is ModifierSpec.Background -> {
                     imports += "androidx.compose.foundation.background"
                     imports += "androidx.compose.ui.graphics.Color"
-                    val colorArg = "Color(0x${spec.color.toString(16).uppercase().padStart(8, '0')})"
-                    if (spec.corner > 0) {
-                        imports += "androidx.compose.foundation.shape.RoundedCornerShape"
-                        imports += "androidx.compose.ui.unit.dp"
-                        "background($colorArg, RoundedCornerShape(${spec.corner}.dp))"
+                    val fill = if (spec.colorEnd != null) {
+                        imports += "androidx.compose.ui.graphics.Brush"
+                        val builder = when (spec.direction) {
+                            GradientDirection.Vertical -> "verticalGradient"
+                            GradientDirection.Horizontal -> "horizontalGradient"
+                            GradientDirection.Diagonal -> "linearGradient"
+                            GradientDirection.Radial -> "radialGradient"
+                        }
+                        "Brush.$builder(listOf(${colorExpr(spec.color)}, ${colorExpr(spec.colorEnd!!)}))"
                     } else {
-                        "background($colorArg)"
+                        colorExpr(spec.color)
                     }
+                    val shape = cornerShapeExpr(spec.corner, spec.cornerUnit, imports)
+                    if (shape != null) "background($fill, $shape)" else "background($fill)"
                 }
 
                 // weight() is a Row/Column scope member — no import needed.
@@ -666,9 +674,14 @@ object CodeGen {
 
                 is ModifierSpec.Clip -> {
                     imports += "androidx.compose.ui.draw.clip"
-                    imports += "androidx.compose.foundation.shape.RoundedCornerShape"
-                    imports += "androidx.compose.ui.unit.dp"
-                    "clip(RoundedCornerShape(${spec.corner}.dp))"
+                    val shape = cornerShapeExpr(spec.corner, spec.cornerUnit, imports)
+                        ?: run {
+                            // corner 0 still needs a shape argument
+                            imports += "androidx.compose.foundation.shape.RoundedCornerShape"
+                            imports += "androidx.compose.ui.unit.dp"
+                            "RoundedCornerShape(0.dp)"
+                        }
+                    "clip($shape)"
                 }
 
                 is ModifierSpec.Alpha -> {
@@ -680,10 +693,10 @@ object CodeGen {
                     imports += "androidx.compose.foundation.border"
                     imports += "androidx.compose.ui.graphics.Color"
                     imports += "androidx.compose.ui.unit.dp"
-                    val colorArg = "Color(0x${spec.color.toString(16).uppercase().padStart(8, '0')})"
-                    if (spec.corner > 0) {
-                        imports += "androidx.compose.foundation.shape.RoundedCornerShape"
-                        "border(${spec.width}.dp, $colorArg, RoundedCornerShape(${spec.corner}.dp))"
+                    val colorArg = colorExpr(spec.color)
+                    val shape = cornerShapeExpr(spec.corner, spec.cornerUnit, imports)
+                    if (shape != null) {
+                        "border(${spec.width}.dp, $colorArg, $shape)"
                     } else {
                         "border(${spec.width}.dp, $colorArg)"
                     }
@@ -691,12 +704,12 @@ object CodeGen {
 
                 is ModifierSpec.DropShadow -> {
                     imports += "androidx.compose.ui.draw.dropShadow"
-                    shadowExpr("dropShadow", spec.radius, spec.color, spec.offsetX, spec.offsetY, spec.spread, spec.corner, imports)
+                    shadowExpr("dropShadow", spec.radius, spec.color, spec.offsetX, spec.offsetY, spec.spread, spec.corner, spec.cornerUnit, imports)
                 }
 
                 is ModifierSpec.InnerShadow -> {
                     imports += "androidx.compose.ui.draw.innerShadow"
-                    shadowExpr("innerShadow", spec.radius, spec.color, spec.offsetX, spec.offsetY, spec.spread, spec.corner, imports)
+                    shadowExpr("innerShadow", spec.radius, spec.color, spec.offsetX, spec.offsetY, spec.spread, spec.corner, spec.cornerUnit, imports)
                 }
 
                 ModifierSpec.FillMaxWidth -> {
@@ -725,20 +738,17 @@ object CodeGen {
      * shadow API (`androidx.compose.ui.draw`, `Shadow` from `androidx.compose.ui.graphics.shadow`).
      * Default-valued Shadow args (zero offset/spread) are omitted to keep the call clean.
      */
-    private fun shadowExpr(name: String, radius: Int, color: Long, offsetX: Int, offsetY: Int, spread: Int, corner: Int, imports: MutableSet<String>): String {
+    private fun shadowExpr(name: String, radius: Int, color: Long, offsetX: Int, offsetY: Int, spread: Int, corner: Int, cornerUnit: CornerUnit, imports: MutableSet<String>): String {
         imports += "androidx.compose.ui.graphics.shadow.Shadow"
         imports += "androidx.compose.ui.graphics.Color"
         imports += "androidx.compose.ui.unit.dp"
-        val shape = if (corner > 0) {
-            imports += "androidx.compose.foundation.shape.RoundedCornerShape"
-            "RoundedCornerShape($corner.dp)"
-        } else {
+        val shape = cornerShapeExpr(corner, cornerUnit, imports) ?: run {
             imports += "androidx.compose.ui.graphics.RectangleShape"
             "RectangleShape"
         }
         val args = buildList {
             add("radius = $radius.dp")
-            add("color = Color(0x${color.toString(16).uppercase().padStart(8, '0')})")
+            add("color = ${colorExpr(color)}")
             if (spread != 0) add("spread = $spread.dp")
             if (offsetX != 0 || offsetY != 0) {
                 imports += "androidx.compose.ui.unit.DpOffset"
@@ -746,6 +756,26 @@ object CodeGen {
             }
         }
         return "$name($shape, Shadow(${args.joinToString(", ")}))"
+    }
+
+    private fun colorExpr(argb: Long): String =
+        "Color(0x${argb.toString(16).uppercase().padStart(8, '0')})"
+
+    /**
+     * `RoundedCornerShape(N.dp)` or the percent overload `RoundedCornerShape(N)`
+     * (N% of the smaller side; 50 = pill/circle); null when [corner] <= 0 so
+     * callers can omit the shape argument entirely.
+     */
+    private fun cornerShapeExpr(corner: Int, unit: CornerUnit, imports: MutableSet<String>): String? {
+        if (corner <= 0) return null
+        imports += "androidx.compose.foundation.shape.RoundedCornerShape"
+        return when (unit) {
+            CornerUnit.Dp -> {
+                imports += "androidx.compose.ui.unit.dp"
+                "RoundedCornerShape($corner.dp)"
+            }
+            CornerUnit.Percent -> "RoundedCornerShape(${corner.coerceAtMost(50)})"
+        }
     }
 
     private fun joinChain(parts: List<String>, indent: Int): String? {

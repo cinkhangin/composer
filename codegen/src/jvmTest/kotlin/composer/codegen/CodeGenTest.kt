@@ -26,6 +26,36 @@ class CodeGenTest {
     }
 
     @Test
+    fun gradient_background_emits_brush() {
+        val code = CodeGen.generate(
+            Node.Box(
+                "b",
+                modifier = listOf(
+                    Background(0xFF2196F3, corner = 12, colorEnd = 0xFF9C27B0, direction = composer.model.GradientDirection.Horizontal),
+                ),
+            ),
+        )
+        assertTrue("background(Brush.horizontalGradient(listOf(Color(0xFF2196F3), Color(0xFF9C27B0))), RoundedCornerShape(12.dp))" in code, code)
+        assertTrue("import androidx.compose.ui.graphics.Brush" in code, code)
+    }
+
+    @Test
+    fun percent_corner_emits_percent_shape_overload() {
+        val code = CodeGen.generate(
+            Node.Box(
+                "b",
+                modifier = listOf(
+                    Background(0xFF2196F3, corner = 50, cornerUnit = composer.model.CornerUnit.Percent),
+                    ModifierSpec.Clip(50, composer.model.CornerUnit.Percent),
+                ),
+            ),
+        )
+        assertTrue("background(Color(0xFF2196F3), RoundedCornerShape(50))" in code, code)
+        assertTrue("clip(RoundedCornerShape(50))" in code, code)
+        assertTrue("RoundedCornerShape(50.dp)" !in code, code) // percent, not dp
+    }
+
+    @Test
     fun drop_shadow_emits_compose19_api() {
         val code = CodeGen.generate(
             Node.Box("b", modifier = listOf(ModifierSpec.DropShadow(radius = 10, color = 0x40000000, offsetX = 4, offsetY = 4, spread = 6, corner = 20))),
