@@ -650,7 +650,7 @@ private class FramePreset(val symbol: String, val w: Int, val h: Int)
 
 // Material Symbols names — presets read as device icons, not words.
 private val framePresets = listOf(
-    FramePreset("smartphone", 390, 844),
+    FramePreset("mobile", 390, 844),
     FramePreset("tablet", 820, 1180),
     FramePreset("computer", 1440, 900),
 )
