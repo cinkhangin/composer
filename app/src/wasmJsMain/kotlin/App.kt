@@ -118,8 +118,11 @@ import composer.ui.Island
 import composer.ui.LocalThemeSwatches
 import composer.ui.ThemeSwatch
 import composer.ui.Theme
+import composer.ui.SymbolIcon
 import composer.ui.Tk
+import composer.ui.SymbolIcon
 import composer.ui.TkMenu
+import composer.ui.SymbolIcon
 import composer.ui.TkMenuItem
 import composer.ui.ToolButton
 import composer.ui.highlightKotlin
@@ -643,12 +646,13 @@ private fun ZoomBadge(zoom: Float, onZoom: (Float) -> Unit, onReset: () -> Unit,
     }
 }
 
-private class FramePreset(val name: String, val w: Int, val h: Int)
+private class FramePreset(val symbol: String, val w: Int, val h: Int)
 
+// Material Symbols names — presets read as device icons, not words.
 private val framePresets = listOf(
-    FramePreset("Mobile", 390, 844),
-    FramePreset("Tablet", 820, 1180),
-    FramePreset("Desktop", 1440, 900),
+    FramePreset("smartphone", 390, 844),
+    FramePreset("tablet", 820, 1180),
+    FramePreset("computer", 1440, 900),
 )
 
 /**
@@ -668,7 +672,7 @@ private fun SizeBadge(state: EditorState, modifier: Modifier = Modifier) {
             if (screen != null) {
                 Box(Modifier.width(1.dp).height(20.dp).padding(horizontal = 2.dp).background(Tk.border))
                 for (p in framePresets) {
-                    ToolButton(p.name, primary = screen.width == p.w && screen.height == p.h) {
+                    PresetButton(p.symbol, active = screen.width == p.w && screen.height == p.h) {
                         state.setComposableSize(screen.id, p.w, p.h)
                     }
                 }
@@ -680,6 +684,21 @@ private fun SizeBadge(state: EditorState, modifier: Modifier = Modifier) {
                 )
             }
         }
+    }
+}
+
+/** Icon-only device-preset button (accent-filled while the size matches). */
+@Composable
+private fun PresetButton(symbol: String, active: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(26.dp)
+            .clip(RoundedCornerShape(Tk.rXs))
+            .background(if (active) Tk.accent else Color.Transparent)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        SymbolIcon(symbol, Modifier.size(15.dp), tint = if (active) Color.White else Tk.textSecondary)
     }
 }
 

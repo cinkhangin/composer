@@ -80,13 +80,6 @@ fun FloatingPalette(state: EditorState, modifier: Modifier = Modifier) {
             ) {
                 paletteGroups.forEachIndexed { i, group ->
                     if (i > 0) Box(Modifier.size(width = 1.dp, height = 26.dp).padding(horizontal = 3.dp).background(Tk.border))
-                    Text(
-                        group.label.uppercase(),
-                        color = Tk.textMuted,
-                        fontSize = 8.5.sp,
-                        letterSpacing = 0.8.sp,
-                        modifier = Modifier.padding(start = 2.dp, end = 4.dp),
-                    )
                     for (item in group.items) {
                         PaletteTool(item.type) { state.insert(item.factory) }
                     }
