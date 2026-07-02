@@ -4,6 +4,8 @@ A **visual UI designer in the browser** - Figma-like - whose output is **Compose
 
 > Design real Compose components on a canvas; get clean, idiomatic Compose Multiplatform code back.
 
+**✨ Try it live: [composer.ckgin.com](https://composer.ckgin.com)** - no install, runs right in your browser (Chromium-based browsers get the full experience: eyedropper, local font picker).
+
 The editor itself is built with **Compose Multiplatform on Kotlin/Wasm** (canvas/Skia backend), so the design surface uses the *same* `androidx.compose.*` primitives (`Box`, `Column`, `Row`, `Modifier`) that the generated code targets. WYSIWYG is real, not approximated. Code generation is a **pure, deterministic function** of the design tree.
 
 ## Features
@@ -17,6 +19,8 @@ The editor itself is built with **Compose Multiplatform on Kotlin/Wasm** (canvas
 - **Files & persistence** - multi-file workspace in localStorage with auto-save, URL-based routing (deep links survive refresh), JSON import/export, and `.kt` export.
 
 ## Try it
+
+The hosted app is at **[composer.ckgin.com](https://composer.ckgin.com)**. To run it locally instead:
 
 ```bash
 ./gradlew :app:wasmJsBrowserDevelopmentRun --continuous --no-configuration-cache
