@@ -201,7 +201,9 @@ fun EditorScreen(ws: Workspace) {
  */
 @Composable
 private fun Toolbar(state: EditorState, ws: Workspace) {
-    Box(modifier = Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp)) {
+    // 40dp: the tallest controls are 32dp, so this leaves 4dp of air above/below —
+    // a slim, Figma-like bar instead of the airy 52dp it started with.
+    Box(modifier = Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 12.dp)) {
         // LEFT — brand/main menu, editable project title, live save status
         Row(
             modifier = Modifier.align(Alignment.CenterStart),
