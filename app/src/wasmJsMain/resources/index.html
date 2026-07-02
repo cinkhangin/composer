@@ -45,6 +45,13 @@
         }
         #loader.light .bar::after { background: #5563E8; }
         #loader .hint { color: #8A90A0; font-size: 12px; }
+        #loader .reload {
+            display: none; margin-top: 4px; padding: 7px 18px; border: 0; border-radius: 8px;
+            background: #6E7BF2; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+        }
+        #loader.failed .bar { display: none; }
+        #loader.failed .mark { animation: none; }
+        #loader.failed .reload { display: block; }
         @keyframes loaderPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
         @keyframes loaderSlide { 0% { left: -40%; } 100% { left: 100%; } }
 
@@ -91,7 +98,8 @@
         <div class="mark">C</div>
         <div class="name">Composer</div>
         <div class="bar"></div>
-        <div class="hint">Loading the editor…</div>
+        <div class="hint" id="loader-hint">Loading the editor…</div>
+        <button class="reload" onclick="location.reload()">Reload</button>
     </div>
     <div id="mobile-gate">
         <div class="mark">C</div>
@@ -104,6 +112,17 @@
             document.getElementById('loader').classList.add('light');
             document.getElementById('mobile-gate').classList.add('light');
         }
+        // If the app fails to boot (e.g. a stale cached bundle referencing a
+        // previous deploy's .wasm), don't spin forever — offer a reload.
+        function composerBootFailed() {
+            var loader = document.getElementById('loader');
+            if (!loader || loader.classList.contains('done')) return; // app already up
+            loader.classList.add('failed');
+            document.getElementById('loader-hint').textContent =
+                'Something went wrong while loading. If this keeps happening, try a hard refresh (Ctrl/Cmd+Shift+R).';
+        }
+        window.addEventListener('error', composerBootFailed);
+        window.addEventListener('unhandledrejection', composerBootFailed);
     </script>
     <script src="/composer.js"></script>
 </body>

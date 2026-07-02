@@ -1,0 +1,10 @@
+# Cloudflare Pages headers.
+# composer.js / index.html / Compose resources keep STABLE names across deploys —
+# they must revalidate (ETag 304s are cheap), or a cached composer.js references
+# a previous deploy's hashed .wasm and the app hangs on the loading screen.
+/*
+  Cache-Control: no-cache
+
+# The .wasm bundles are content-hashed (name changes every build) — cache forever.
+/*.wasm
+  Cache-Control: public, max-age=31536000, immutable
