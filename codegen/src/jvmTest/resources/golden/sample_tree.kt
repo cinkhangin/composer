@@ -22,15 +22,19 @@ fun Screen1() {
             .padding(16.dp),
     ) {
         Text("Welcome to Composer", modifier = Modifier.padding(8.dp))
+
         Row(modifier = Modifier.padding(8.dp)) {
             Button(onClick = {}) {
                 Text("Primary")
             }
+
             Spacer(modifier = Modifier.size(12.dp, 0.dp))
+
             Button(onClick = {}) {
                 Text("Secondary")
             }
         }
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()

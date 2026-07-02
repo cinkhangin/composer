@@ -167,6 +167,14 @@ object CodeGen {
      * @param inWeightScope whether the node's parent is a Row/Column, so a
      * `weight` modifier on this node is valid. Weight is dropped otherwise.
      */
+    /** Emit sibling components with ONE blank line between them (readability). */
+    private fun emitSiblings(children: List<Node>, indent: Int, out: StringBuilder, imports: MutableSet<String>, seq: IntArray, inWeightScope: Boolean = false, scopeModifier: String? = null) {
+        children.forEachIndexed { i, child ->
+            if (i > 0) out.appendLine()
+            emit(child, indent, out, imports, seq, inWeightScope, scopeModifier)
+        }
+    }
+
     private fun emit(node: Node, indent: Int, out: StringBuilder, imports: MutableSet<String>, seq: IntArray, inWeightScope: Boolean = false, scopeModifier: String? = null) {
         val pad = "    ".repeat(indent)
         // weight is RowScope/ColumnScope-only, and weight(<=0) throws — strip both cases.
@@ -216,7 +224,7 @@ object CodeGen {
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
                 val args = listOfNotNull("onClick = {}", mod?.let { "modifier = $it" })
                 appendCall(out, indent, name, args, open = true)
-                for (child in node.children) emit(child, indent + 1, out, imports, seq = seq, inWeightScope = true)
+                emitSiblings(node.children, indent + 1, out, imports, seq, inWeightScope = true)
                 out.appendLine("$pad}")
             }
 
@@ -368,7 +376,7 @@ object CodeGen {
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
                 val args = listOfNotNull("onClick = {}", mod?.let { "modifier = $it" })
                 appendCall(out, indent, "FloatingActionButton", args, open = true)
-                for (child in node.children) emit(child, indent + 1, out, imports, seq = seq, inWeightScope = false)
+                emitSiblings(node.children, indent + 1, out, imports, seq, inWeightScope = false)
                 out.appendLine("$pad}")
             }
 
@@ -385,7 +393,7 @@ object CodeGen {
                 val surfaceArgs = listOfNotNull(mod?.let { "modifier = $it" }, "shape = RoundedCornerShape(16.dp)")
                 appendCall(out, indent + 1, "Surface", surfaceArgs, open = true)
                 out.appendLine("$pad        Column(modifier = Modifier.padding(24.dp)) {")
-                for (child in node.children) emit(child, indent + 3, out, imports, seq = seq, inWeightScope = true)
+                emitSiblings(node.children, indent + 3, out, imports, seq, inWeightScope = true)
                 out.appendLine("$pad        }")
                 out.appendLine("$pad    }")
                 out.appendLine("$pad}")
@@ -401,7 +409,7 @@ object CodeGen {
                 val args = listOfNotNull("onDismissRequest = {}", mod?.let { "modifier = $it" })
                 appendCall(out, indent, "ModalBottomSheet", args, open = true)
                 out.appendLine("$pad    Column(modifier = Modifier.padding(16.dp)) {")
-                for (child in node.children) emit(child, indent + 2, out, imports, seq = seq, inWeightScope = true)
+                emitSiblings(node.children, indent + 2, out, imports, seq, inWeightScope = true)
                 out.appendLine("$pad    }")
                 out.appendLine("$pad}")
             }
@@ -431,7 +439,7 @@ object CodeGen {
                     fun slot(name: String, kids: List<Node>) {
                         if (kids.isEmpty()) return
                         out.appendLine("$pad    $name = {")
-                        for (k in kids) emit(k, indent + 2, out, imports, seq = seq, inWeightScope = false)
+                        emitSiblings(kids, indent + 2, out, imports, seq, inWeightScope = false)
                         out.appendLine("$pad    },")
                     }
                     slot("topBar", topKids)
@@ -441,7 +449,7 @@ object CodeGen {
                 } else {
                     out.appendLine("$pad" + "Scaffold$lambdaOpen")
                 }
-                for (child in node.children) emit(child, indent + 1, out, imports, seq = seq, inWeightScope = false, scopeModifier = contentScope)
+                emitSiblings(node.children, indent + 1, out, imports, seq, inWeightScope = false, scopeModifier = contentScope)
                 out.appendLine("$pad}")
             }
 
@@ -515,7 +523,7 @@ object CodeGen {
                 }
                 if (node.actions.isNotEmpty()) {
                     out.appendLine("$pad    actions = {")
-                    for (a in node.actions) emit(a, indent + 2, out, imports, seq = seq, inWeightScope = false)
+                    emitSiblings(node.actions, indent + 2, out, imports, seq, inWeightScope = false)
                     out.appendLine("$pad    },")
                 }
                 mod?.let { out.appendLine("$pad    modifier = $it,") }
@@ -523,10 +531,10 @@ object CodeGen {
             }
 
             // A Composable is the function scope — emit its children directly, no wrapper.
-            is Node.Composable -> for (child in node.children) emit(child, indent, out, imports, seq = seq, inWeightScope = false)
+            is Node.Composable -> emitSiblings(node.children, indent, out, imports, seq, inWeightScope = false)
             // A Slot is a slot-argument scope — normally emitted by its parent
             // (e.g. the Scaffold branch); defensively emit children directly.
-            is Node.Slot -> for (child in node.children) emit(child, indent, out, imports, seq = seq, inWeightScope = false)
+            is Node.Slot -> emitSiblings(node.children, indent, out, imports, seq, inWeightScope = false)
             // The artboard is handled by [generate]; defensively emit its screens' bodies.
             is Node.Artboard -> for (screen in node.composables) emit(screen, indent, out, imports, seq = seq, inWeightScope = false)
         }
@@ -550,7 +558,7 @@ object CodeGen {
         val mod = modifierExpr(modifier, imports, scopeModifier, indent)
         val args = listOfNotNull(mod?.let { "modifier = $it" }) + extraArgs
         if (args.isEmpty()) out.appendLine("$pad$name {") else appendCall(out, indent, name, args, open = true)
-        for (child in children) emit(child, indent + 1, out, imports, seq = seq, inWeightScope = childWeightScope)
+        emitSiblings(children, indent + 1, out, imports, seq, inWeightScope = childWeightScope)
         out.appendLine("$pad}")
     }
 
