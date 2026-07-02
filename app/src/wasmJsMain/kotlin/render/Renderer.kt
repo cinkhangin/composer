@@ -4,6 +4,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.dropShadow
+import androidx.compose.ui.draw.innerShadow
+import androidx.compose.ui.graphics.shadow.Shadow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -534,8 +538,26 @@ fun List<ModifierSpec>.toModifier(): Modifier =
                 Color(spec.color),
                 if (spec.corner > 0) RoundedCornerShape(spec.corner.dp) else RectangleShape,
             )
-            is ModifierSpec.DropShadow -> acc.dropShadowPreview(spec)
-            is ModifierSpec.InnerShadow -> acc.innerShadowPreview(spec)
+            // The real Compose 1.9+ shadow APIs — the preview now runs the exact
+            // modifier the generated code emits (no more Skia emulation).
+            is ModifierSpec.DropShadow -> acc.dropShadow(
+                if (spec.corner > 0) RoundedCornerShape(spec.corner.dp) else RectangleShape,
+                Shadow(
+                    radius = spec.radius.dp,
+                    color = Color(spec.color),
+                    spread = spec.spread.dp,
+                    offset = DpOffset(spec.offsetX.dp, spec.offsetY.dp),
+                ),
+            )
+            is ModifierSpec.InnerShadow -> acc.innerShadow(
+                if (spec.corner > 0) RoundedCornerShape(spec.corner.dp) else RectangleShape,
+                Shadow(
+                    radius = spec.radius.dp,
+                    color = Color(spec.color),
+                    spread = spec.spread.dp,
+                    offset = DpOffset(spec.offsetX.dp, spec.offsetY.dp),
+                ),
+            )
             ModifierSpec.FillMaxWidth -> acc.fillMaxWidth()
             ModifierSpec.FillMaxHeight -> acc.fillMaxHeight()
             ModifierSpec.FillMaxSize -> acc.fillMaxSize()

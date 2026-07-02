@@ -10,7 +10,7 @@ plugins {
 kotlin {
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
-        moduleName = "composer"
+        outputModuleName.set("composer")
         browser {
             commonWebpackConfig {
                 outputFileName = "composer.js"
@@ -37,7 +37,7 @@ kotlin {
                 implementation(compose.components.resources)
                 implementation(compose.ui)
                 implementation("org.jetbrains.kotlinx:kotlinx-browser:0.3")
-                implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+                implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
             }
         }
     }

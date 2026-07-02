@@ -18,7 +18,9 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+                // api (not implementation): @Serializable types put the serialization
+                // runtime in the model's ABI — consumers (:codegen) must see it too.
+                api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
             }
         }
         val jvmTest by getting {
