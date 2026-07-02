@@ -70,7 +70,7 @@ import composer.model.VAlignment
 import composer.model.VArrangement
 import composer.model.typeName
 import composer.ui.AppIcon
-import composer.ui.ColorPicker
+import composer.ui.ColorField
 import composer.ui.AppIconKind
 import composer.ui.ComponentGlyph
 import composer.ui.Field
@@ -78,6 +78,7 @@ import composer.ui.HDivider
 import composer.ui.InspectorSection
 import composer.ui.SectionHeader
 import composer.ui.SquareIconButton
+import composer.ui.SymbolIcon
 import composer.ui.Tk
 import composer.ui.TkMenu
 import composer.ui.TkMenuItem
@@ -164,7 +165,7 @@ fun Inspector(state: EditorState, modifier: Modifier = Modifier) {
                             state.update(selected.id) { (it as Node.Text).copy(color = if (on) (selected.color ?: 0xFF000000L) else null) }
                         }
                         selected.color?.let { c ->
-                            ColorPicker(c) { nc -> state.update(selected.id, coalesceKey = "textcolor:${selected.id}") { (it as Node.Text).copy(color = nc) } }
+                            ColorField(c) { nc -> state.update(selected.id, coalesceKey = "textcolor:${selected.id}") { (it as Node.Text).copy(color = nc) } }
                         }
                     }
 
@@ -356,7 +357,7 @@ private fun ThemeEditor(state: EditorState) {
             }
         }
         BasicText("editing: $active", style = TextStyle(color = Tk.textMuted, fontSize = 11.sp))
-        ColorPicker(theme.effective(active), showThemeSwatches = false) { c -> state.setTheme(theme.set(active, c), coalesceKey = "theme:$active") }
+        ColorField(theme.effective(active), showThemeSwatches = false) { c -> state.setTheme(theme.set(active, c), coalesceKey = "theme:$active") }
     }
 }
 
@@ -437,16 +438,16 @@ private fun TextAlignField(value: TextAlignment, onChange: (TextAlignment) -> Un
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
         BasicText("Align", style = TextStyle(color = Tk.textMuted, fontSize = 11.sp))
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            SegButton("Left", value == TextAlignment.Start) { onChange(TextAlignment.Start) }
-            SegButton("Center", value == TextAlignment.Center) { onChange(TextAlignment.Center) }
-            SegButton("Right", value == TextAlignment.End) { onChange(TextAlignment.End) }
-            SegButton("Justify", value == TextAlignment.Justify) { onChange(TextAlignment.Justify) }
+            AlignButton("format_align_left", value == TextAlignment.Start) { onChange(TextAlignment.Start) }
+            AlignButton("format_align_center", value == TextAlignment.Center) { onChange(TextAlignment.Center) }
+            AlignButton("format_align_right", value == TextAlignment.End) { onChange(TextAlignment.End) }
+            AlignButton("format_align_justify", value == TextAlignment.Justify) { onChange(TextAlignment.Justify) }
         }
     }
 }
 
 @Composable
-private fun SegButton(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun AlignButton(symbol: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(Tk.rXs))
@@ -456,7 +457,7 @@ private fun SegButton(label: String, selected: Boolean, onClick: () -> Unit) {
             .padding(horizontal = 10.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
-        BasicText(label, style = TextStyle(color = if (selected) Color.White else Tk.textSecondary, fontSize = 12.sp))
+        SymbolIcon(symbol, Modifier.size(16.dp), tint = if (selected) Color.White else Tk.textSecondary)
     }
 }
 

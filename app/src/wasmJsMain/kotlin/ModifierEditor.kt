@@ -61,7 +61,7 @@ import composer.model.parentOf
 import composer.model.withModifier
 import composer.ui.AppIcon
 import composer.ui.AppIconKind
-import composer.ui.ColorPicker
+import composer.ui.ColorField
 import composer.ui.resolvePickerColor
 import composer.ui.Field
 import composer.ui.SquareIconButton
@@ -227,6 +227,8 @@ private fun AddChipsRow(existing: List<ModifierSpec>, canWeight: Boolean, onAdd:
     ) {
         AddChip("padding") { onAdd(Padding(8)) }
         AddChip("size") { onAdd(Size(100, 40)) }
+        AddChip("width") { onAdd(ModifierSpec.Width(100)) }
+        AddChip("height") { onAdd(ModifierSpec.Height(48)) }
         AddChip("offset") { onAdd(Offset(0, 0)) }
         AddChip("background") { onAdd(Background(0xFF2196F3)) }
         if (canWeight && existing.none { it is Weight }) AddChip("weight") { onAdd(Weight(1f)) }
@@ -312,7 +314,7 @@ private fun GradientStopsEditor(colors: List<Long>, onChange: (List<Long>) -> Un
                 }
             }
         }
-        ColorPicker(colors[idx]) { new ->
+        ColorField(colors[idx]) { new ->
             onChange(colors.toMutableList().apply { set(idx, new) })
         }
     }
@@ -393,15 +395,11 @@ private fun ModifierParams(spec: ModifierSpec, onChange: (ModifierSpec) -> Unit)
                     IntField("horizontal", spec.horizontal, Modifier.weight(1f)) { onChange(spec.copy(horizontal = it)) }
                     IntField("vertical", spec.vertical, Modifier.weight(1f)) { onChange(spec.copy(vertical = it)) }
                 }
-                PaddingMode.Sides -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        IntField("start", spec.start, Modifier.weight(1f)) { onChange(spec.copy(start = it)) }
-                        IntField("top", spec.top, Modifier.weight(1f)) { onChange(spec.copy(top = it)) }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        IntField("end", spec.end, Modifier.weight(1f)) { onChange(spec.copy(end = it)) }
-                        IntField("bottom", spec.bottom, Modifier.weight(1f)) { onChange(spec.copy(bottom = it)) }
-                    }
+                PaddingMode.Sides -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    IntField("start", spec.start, Modifier.weight(1f)) { onChange(spec.copy(start = it)) }
+                    IntField("top", spec.top, Modifier.weight(1f)) { onChange(spec.copy(top = it)) }
+                    IntField("end", spec.end, Modifier.weight(1f)) { onChange(spec.copy(end = it)) }
+                    IntField("bottom", spec.bottom, Modifier.weight(1f)) { onChange(spec.copy(bottom = it)) }
                 }
             }
         }
@@ -428,7 +426,7 @@ private fun ModifierParams(spec: ModifierSpec, onChange: (ModifierSpec) -> Unit)
 
         is ModifierSpec.Border -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             IntField("width (dp)", spec.width, Modifier.fillMaxWidth()) { onChange(spec.copy(width = it)) }
-            ColorPicker(spec.color) { onChange(spec.copy(color = it)) }
+            ColorField(spec.color) { onChange(spec.copy(color = it)) }
             CornerField(spec.corner, spec.cornerUnit) { c, u -> onChange(spec.copy(corner = c, cornerUnit = u)) }
         }
 
@@ -452,13 +450,13 @@ private fun ModifierParams(spec: ModifierSpec, onChange: (ModifierSpec) -> Unit)
                     spec.direction,
                 ) { onChange(spec.copy(direction = it)) }
             } else {
-                ColorPicker(spec.color) { onChange(spec.copy(color = it)) }
+                ColorField(spec.color) { onChange(spec.copy(color = it)) }
             }
             CornerField(spec.corner, spec.cornerUnit) { c, u -> onChange(spec.copy(corner = c, cornerUnit = u)) }
         }
 
         is ModifierSpec.DropShadow -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ColorPicker(spec.color) { onChange(spec.copy(color = it)) }
+            ColorField(spec.color) { onChange(spec.copy(color = it)) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 IntField("blur (dp)", spec.radius, Modifier.weight(1f)) { onChange(spec.copy(radius = it)) }
                 IntField("spread", spec.spread, Modifier.weight(1f), allowNegative = true) { onChange(spec.copy(spread = it)) }
@@ -471,7 +469,7 @@ private fun ModifierParams(spec: ModifierSpec, onChange: (ModifierSpec) -> Unit)
         }
 
         is ModifierSpec.InnerShadow -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ColorPicker(spec.color) { onChange(spec.copy(color = it)) }
+            ColorField(spec.color) { onChange(spec.copy(color = it)) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 IntField("blur (dp)", spec.radius, Modifier.weight(1f)) { onChange(spec.copy(radius = it)) }
                 IntField("spread", spec.spread, Modifier.weight(1f), allowNegative = true) { onChange(spec.copy(spread = it)) }

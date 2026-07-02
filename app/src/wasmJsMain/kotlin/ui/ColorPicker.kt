@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -148,6 +150,42 @@ private fun ThemeSwatchRow(swatches: List<ThemeSwatch>, selected: Long, onPick: 
                         .border(if (sel) 2.dp else 1.dp, if (sel) Tk.accent else Tk.borderStrong, RoundedCornerShape(Tk.rXs))
                         .clickable { onPick(sw.value) },
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Compact color input for the inspector: a Field-height trigger (swatch + hex,
+ * or the theme-token name while a token is referenced) that opens the full
+ * [ColorPicker] in a dropdown — the inline picker ate ~300dp of panel height.
+ */
+@Composable
+fun ColorField(color: Long, showThemeSwatches: Boolean = true, onColorChange: (Long) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val token = if (showThemeSwatches) LocalThemeSwatches.current.firstOrNull { it.value == color } else null
+    val display = token?.resolved ?: color
+    Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Tk.rSm))
+                .background(Tk.panelAlt)
+                .border(1.dp, if (open) Tk.accent else Tk.border, RoundedCornerShape(Tk.rSm))
+                .clickable { open = !open }
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ColorPreview(display, Modifier.size(16.dp))
+            BasicText(
+                token?.name ?: "#${hex8(display)}",
+                style = TextStyle(color = if (token != null) Tk.accent else Tk.textPrimary, fontSize = 13.sp),
+            )
+        }
+        TkMenu(expanded = open, onDismissRequest = { open = false }) {
+            Box(Modifier.width(260.dp).padding(horizontal = 6.dp, vertical = 4.dp)) {
+                ColorPicker(color, showThemeSwatches, onColorChange)
             }
         }
     }
