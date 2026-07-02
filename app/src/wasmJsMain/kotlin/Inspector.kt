@@ -508,12 +508,43 @@ private fun ComposableEditor(state: EditorState, screen: Node.Composable) {
             NumField("X", screen.x, Modifier.weight(1f), allowNegative = true) { state.setComposablePos(screen.id, it, screen.y) }
             NumField("Y", screen.y, Modifier.weight(1f), allowNegative = true) { state.setComposablePos(screen.id, screen.x, it) }
         }
+        // The composable HUGS its content — W/H are the MAX constraints a
+        // fillMaxSize child grows to. Device presets set them in one click.
+        BasicText(
+            "Max size — the composable hugs its content; fillMaxSize children grow up to this.",
+            style = TextStyle(color = Tk.textMuted, fontSize = 11.sp),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (p in devicePresets) {
+                val active = screen.width == p.w && screen.height == p.h
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(Tk.rXs))
+                        .background(if (active) Tk.accent else Tk.panelAlt)
+                        .border(1.dp, if (active) Tk.accent else Tk.border, RoundedCornerShape(Tk.rXs))
+                        .clickable { state.setComposableSize(screen.id, p.w, p.h) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    SymbolIcon(p.symbol, Modifier.size(16.dp), tint = if (active) Color.White else Tk.textSecondary)
+                }
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            NumField("W", screen.width, Modifier.weight(1f)) { state.setComposableSize(screen.id, it, screen.height) }
-            NumField("H", screen.height, Modifier.weight(1f)) { state.setComposableSize(screen.id, screen.width, it) }
+            NumField("Max W", screen.width, Modifier.weight(1f)) { state.setComposableSize(screen.id, it, screen.height) }
+            NumField("Max H", screen.height, Modifier.weight(1f)) { state.setComposableSize(screen.id, screen.width, it) }
         }
     }
 }
+
+private class DevicePreset(val symbol: String, val w: Int, val h: Int)
+
+// Material Symbols device icons: mobile / tablet / desktop max-size presets.
+private val devicePresets = listOf(
+    DevicePreset("mobile", 390, 844),
+    DevicePreset("tablet", 820, 1180),
+    DevicePreset("computer", 1440, 900),
+)
 
 /**
  * Integer field that accepts free typing. A valid number commits; an invalid one

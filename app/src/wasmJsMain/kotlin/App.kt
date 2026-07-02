@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -120,11 +121,8 @@ import composer.ui.Island
 import composer.ui.LocalThemeSwatches
 import composer.ui.ThemeSwatch
 import composer.ui.Theme
-import composer.ui.SymbolIcon
 import composer.ui.Tk
-import composer.ui.SymbolIcon
 import composer.ui.TkMenu
-import composer.ui.SymbolIcon
 import composer.ui.TkMenuItem
 import composer.ui.ToolButton
 import composer.ui.highlightKotlin
@@ -594,7 +592,8 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
                         // handle moves them so the opposite edge stays pinned. Components
                         // are LAYOUT children (their position is the parent's business,
                         // like Figma auto-layout items) — corners/edges only resize.
-                        anchorMove = isScreen,
+                        anchorMove = false,
+                        resizable = !isScreen,
                         onMove = { dx, dy ->
                             if (isScreen) state.moveComposable(sel, dx, dy) else state.offsetNode(sel, dx, dy)
                         },
@@ -658,63 +657,18 @@ private fun ZoomBadge(zoom: Float, onZoom: (Float) -> Unit, onReset: () -> Unit,
     }
 }
 
-private class FramePreset(val symbol: String, val w: Int, val h: Int)
-
-// Material Symbols names — presets read as device icons, not words.
-private val framePresets = listOf(
-    FramePreset("mobile", 390, 844),
-    FramePreset("tablet", 820, 1180),
-    FramePreset("computer", 1440, 900),
-)
-
-/**
- * Device presets + live size for the screen the selection lives in (falls back
- * to the first screen), plus an "add screen" action.
- */
+/** The "add composable" action (device presets live in the inspector now). */
 @Composable
 private fun SizeBadge(state: EditorState, modifier: Modifier = Modifier) {
-    val screen = state.selectedId?.let { state.screenOf(it) } ?: state.composables.firstOrNull()
     Island(modifier) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             ToolButton("Composable", icon = AppIconKind.Plus) { state.addComposable() }
-            if (screen != null) {
-                Box(Modifier.width(1.dp).height(20.dp).padding(horizontal = 2.dp).background(Tk.border))
-                for (p in framePresets) {
-                    PresetButton(p.symbol, active = screen.width == p.w && screen.height == p.h) {
-                        state.setComposableSize(screen.id, p.w, p.h)
-                    }
-                }
-                Box(Modifier.width(1.dp).height(20.dp).padding(horizontal = 2.dp).background(Tk.border))
-                BasicText(
-                    "${screen.width} × ${screen.height}",
-                    style = TextStyle(color = Tk.textSecondary, fontSize = 11.sp, fontFamily = FontFamily.Monospace),
-                    modifier = Modifier.padding(end = 4.dp),
-                )
-            }
         }
     }
 }
-
-/** Icon-only device-preset button (accent-filled while the size matches). */
-@Composable
-private fun PresetButton(symbol: String, active: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .size(26.dp)
-            .clip(RoundedCornerShape(Tk.rXs))
-            .background(if (active) Tk.accent else Color.Transparent)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center,
-    ) {
-        SymbolIcon(symbol, Modifier.size(15.dp), tint = if (active) Color.White else Tk.textSecondary)
-    }
-}
-
-private val windowShape = RectangleShape
 
 /**
  * The artboard canvas: every [Node.Composable] screen rendered as its own frame
@@ -807,9 +761,11 @@ private fun ArtboardCanvas(
 }
 
 /**
- * One screen's frame: themed surface + preview at the screen's artboard position,
- * with a Figma-style clickable name label above it. The label shows the layer
- * name — which is also the generated function name.
+ * One composable's frame at its artboard position, with a clickable name label.
+ * The frame is TRANSPARENT and HUGS its content: width/height are MAX constraints
+ * (the device preset) — a fillMaxSize child grows to them, smaller content wraps.
+ * No fixed size, no background paint, no canvas resize (preset picked in the
+ * inspector); the label shows the layer name = the generated function name.
  */
 @Composable
 private fun ScreenFrame(
@@ -832,9 +788,11 @@ private fun ScreenFrame(
             // can be larger than the island — Modifier.size would silently coerce)
             // and place it so the frozen content box is centered in the island.
             .layout { measurable, constraints ->
+                // MAX constraints (not fixed): the frame hugs its content; the
+                // preset size only caps it — fillMaxSize children expand to it.
                 val w = screen.width.dp.roundToPx()
                 val h = screen.height.dp.roundToPx()
-                val placeable = measurable.measure(Constraints.fixed(w, h))
+                val placeable = measurable.measure(Constraints(maxWidth = w, maxHeight = h))
                 val ox = ((constraints.maxWidth - content.w.dp.toPx()) / 2f + (screen.x - content.minX).dp.toPx()).roundToInt()
                 val oy = ((constraints.maxHeight - content.h.dp.toPx()) / 2f + (screen.y - content.minY).dp.toPx()).roundToInt()
                 layout(0, 0) { placeable.place(ox, oy) }
@@ -842,27 +800,21 @@ private fun ScreenFrame(
             .onGloballyPositioned { register(screen.id, it) },
     ) {
         // The design's own theme wraps the preview (WYSIWYG with the generated
-        // MaterialTheme). The frame ALWAYS paints the theme background — that's
-        // what the generated app shows — so it reads as a real surface on the canvas
-        // (Figma-style), never as transparent grid. pixelGrid is a drawWithContent
-        // OVERLAY (children first, grid on top) so component fills can't cover it;
-        // it sits after .clip() so the grid stays clipped to the frame.
+        // MaterialTheme). The frame paints NOTHING itself — a composable is
+        // transparent until the user adds a background; the canvas grid shows
+        // through, and the frame simply wraps whatever the content measures.
         MaterialTheme(colorScheme = state.theme.toColorScheme()) {
-            // MaterialTheme alone does NOT set LocalContentColor (only Surface does),
-            // so default-colored Text/Icon would stay black on a dark background.
-            // The frame paints `background`, so content defaults to `onBackground` —
-            // matching a generated app whose screens sit on a themed surface.
+            // MaterialTheme alone does NOT set LocalContentColor (only Surface does) —
+            // default-colored Text/Icon follows the theme like a themed app surface.
             CompositionLocalProvider(
                 LocalContentColor provides MaterialTheme.colorScheme.onBackground,
                 LocalDesignRoot provides state.root,
             ) {
                 Box(
                     modifier = Modifier
-                        .matchParentSize()
-                        .clip(windowShape)
-                        .background(MaterialTheme.colorScheme.background)
-                        .pixelGrid(scale)
-                        // A tap on the screen's empty area (no child consumed it) selects the screen.
+                        // an EMPTY composable must stay visible/selectable
+                        .defaultMinSize(48.dp, 48.dp)
+                        // A tap on a gap (no child consumed it) selects the composable.
                         .pointerInput(screen.id) { detectTapGestures { state.select(screen.id) } },
                 ) {
                     RenderNode(screen, state.selectedId, onSelect = state::selectAt, onBounds = ::register)
@@ -922,6 +874,7 @@ private fun SelectionOverlay(
     // snap into resize deltas would fight the handles).
     onBodyMove: ((Int, Int) -> Unit)? = null,
     onBodyMoveEnd: () -> Unit = {},
+    resizable: Boolean = true,
 ) {
     // The body's real layout coordinates — used to convert a tap to frame space exactly,
     // instead of deriving it from `screen` (which drifted from the body's actual placement).
@@ -978,15 +931,15 @@ private fun SelectionOverlay(
 
         // Figma-style resize chrome: invisible EDGE zones (straddling the outline,
         // browser resize cursor on hover) + four white corner squares — each placed
-        // only along its edge's VISIBLE segment. When [anchorMove] (free-floating
-        // screens), sides/corners anchored at the top/left invert the delta and move
-        // the node the same amount so the opposite edge stays pinned; layout children
-        // only resize.
-        val thick = 10f * onePx // edge hit thickness (10dp), straddling the outline
+        // only along its edge's VISIBLE segment. Composables are NOT resizable
+        // (they hug content; their preset is picked in the inspector) — [resizable]
+        // skips all of this for them.
         val vy0 = outer.top.coerceAtLeast(0f)
         val vy1 = outer.bottom.coerceAtMost(viewport.height)
         val vx0 = outer.left.coerceAtLeast(0f)
         val vx1 = outer.right.coerceAtMost(viewport.width)
+        if (resizable) {
+        val thick = 10f * onePx // edge hit thickness (10dp), straddling the outline
 
         @Composable
         fun edge(x: Float, y: Float, w: Float, h: Float, cursor: String, onDelta: (Int, Int) -> Unit) {
@@ -1036,6 +989,7 @@ private fun SelectionOverlay(
         }
         corner(outer.right, outer.bottom, "nwse-resize") { dx, dy ->
             onResize(dx, dy)
+        }
         }
 
         // Figma-style dimensions pill under the selection's bottom edge (when that
@@ -1227,25 +1181,6 @@ private fun Modifier.editorGrid(): Modifier = drawBehind {
  * hairline on screen, cells align to the frame's pixel origin, and the color is a neutral
  * translucent gray so it reads over both light and dark fills.
  */
-private fun Modifier.pixelGrid(scale: Float): Modifier = drawWithContent {
-    drawContent()
-    if (scale < GRID_PIXEL_FADE_START) return@drawWithContent
-    val alpha = ((scale - GRID_PIXEL_FADE_START) / (GRID_PIXEL_FULL - GRID_PIXEL_FADE_START)).coerceIn(0f, 1f)
-    if (alpha <= 0f) return@drawWithContent
-    val cell = 1.dp.toPx()          // 1 design unit; the layer scales it to `scale`-dp on screen
-    val sw = 1.dp.toPx() / scale    // constant ~1dp hairline on screen at any zoom
-    val color = Color(0xFF808080).copy(alpha = 0.45f * alpha)
-    var x = cell
-    while (x < size.width) {
-        drawLine(color, Offset(x, 0f), Offset(x, size.height), strokeWidth = sw)
-        x += cell
-    }
-    var y = cell
-    while (y < size.height) {
-        drawLine(color, Offset(0f, y), Offset(size.width, y), strokeWidth = sw)
-        y += cell
-    }
-}
 
 @Composable
 private fun jetBrainsMono(): FontFamily = FontFamily(Font(Res.font.jetbrainsmono_regular))
