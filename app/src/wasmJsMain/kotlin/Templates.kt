@@ -36,6 +36,7 @@ val templates: List<Template> = listOf(
 
 private val primary = ThemeColorRef.token("primary")!!
 private val onPrimary = ThemeColorRef.token("onPrimary")!!
+private val background = ThemeColorRef.token("background")!!
 
 private fun loginTemplate(): Node = Node.Artboard(
     id = "lg-art",
@@ -46,7 +47,7 @@ private fun loginTemplate(): Node = Node.Artboard(
             children = listOf(
                 Node.Column(
                     id = "lg-col",
-                    modifier = listOf(FillMaxSize, Padding(24)),
+                    modifier = listOf(FillMaxSize, Background(background), Padding(24)),
                     verticalArrangement = VArrangement.Center,
                     horizontalAlignment = HAlignment.Center,
                     spacing = 12,
@@ -149,10 +150,10 @@ private fun profileTemplate(): Node = Node.Artboard(
                                     "pf-avatar",
                                     modifier = listOf(Size(96, 96), Background(primary, corner = 50, cornerUnit = CornerUnit.Percent)),
                                     contentAlignment = composer.model.BoxAlignment.Center,
-                                    children = listOf(Node.Text("pf-avatar-t", "AK", fontSize = 30, fontWeight = TextWeight.Bold, color = onPrimary)),
+                                    children = listOf(Node.Text("pf-avatar-t", "JD", fontSize = 30, fontWeight = TextWeight.Bold, color = onPrimary)),
                                 ),
-                                Node.Text("pf-name", "Aung Khant", fontSize = 22, fontWeight = TextWeight.Bold),
-                                Node.Text("pf-handle", "@aungkhant · Product designer", color = 0xFF8A90A0),
+                                Node.Text("pf-name", "John Doe", fontSize = 22, fontWeight = TextWeight.Bold),
+                                Node.Text("pf-handle", "@johndoe · Product designer", color = 0xFF8A90A0),
                                 Node.Row(
                                     "pf-stats", spacing = 24,
                                     children = listOf(
@@ -201,7 +202,7 @@ private fun dashboardTemplate(): Node = Node.Artboard(
             children = listOf(
                 Node.Column(
                     id = "db-col",
-                    modifier = listOf(FillMaxSize, Padding(20)),
+                    modifier = listOf(FillMaxSize, Background(background), Padding(20)),
                     spacing = 14,
                     children = listOf(
                         Node.Text("db-hello", "Good morning", fontSize = 24, fontWeight = TextWeight.Bold),
