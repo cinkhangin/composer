@@ -657,15 +657,26 @@ private fun ZoomBadge(zoom: Float, onZoom: (Float) -> Unit, onReset: () -> Unit,
     }
 }
 
-/** The "add composable" action (device presets live in the inspector now). */
+/**
+ * "+ Composable" plus one insert-button per reusable component — the component
+ * library lives up here, next to where composables are created.
+ */
 @Composable
 private fun SizeBadge(state: EditorState, modifier: Modifier = Modifier) {
     Island(modifier) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             ToolButton("Composable", icon = AppIconKind.Plus) { state.addComposable() }
+            val comps = state.componentDefs()
+            if (comps.isNotEmpty()) {
+                Box(Modifier.width(1.dp).height(20.dp).padding(horizontal = 2.dp).background(Tk.border))
+                for ((refId, name) in comps) {
+                    ToolButton(name) { state.insertInstanceOf(refId) }
+                }
+            }
         }
     }
 }

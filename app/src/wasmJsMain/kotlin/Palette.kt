@@ -85,14 +85,6 @@ fun FloatingPalette(state: EditorState, modifier: Modifier = Modifier) {
                         PaletteTool(item.type) { state.insert(item.factory) }
                     }
                 }
-                // User-defined reusable components — one tool per registered main.
-                val comps = state.componentDefs()
-                if (comps.isNotEmpty()) {
-                    Box(Modifier.size(width = 1.dp, height = 26.dp).padding(horizontal = 3.dp).background(Tk.border))
-                    for ((refId, name) in comps) {
-                        PaletteTool(name, glyphType = "Instance") { state.insertInstanceOf(refId) }
-                    }
-                }
             }
         }
     }
@@ -100,7 +92,7 @@ fun FloatingPalette(state: EditorState, modifier: Modifier = Modifier) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PaletteTool(type: String, glyphType: String = type, onClick: () -> Unit) {
+private fun PaletteTool(type: String, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     TooltipBox(
@@ -121,7 +113,7 @@ private fun PaletteTool(type: String, glyphType: String = type, onClick: () -> U
                 Modifier.size(30.dp).clip(RoundedCornerShape(Tk.rXs)).background(Tk.accentSoft),
                 contentAlignment = Alignment.Center,
             ) {
-                ComponentGlyph(glyphType, Modifier.size(17.dp), tint = if (hovered) Tk.accentHover else Tk.accent)
+                ComponentGlyph(type, Modifier.size(17.dp), tint = if (hovered) Tk.accentHover else Tk.accent)
             }
         }
     }
