@@ -50,8 +50,11 @@ class ComposerWebServer : Disposable {
             return
         }
         // SPA-style fallback: the root (and any extensionless path) is the app page.
+        // NB: substringAfterLast('/') must keep its default missing-delimiter value
+        // (the whole string) — passing "" here made every ROOT-LEVEL asset
+        // (composer.js, *.wasm) read as extensionless and serve index.html.
         val rel = path.trimStart('/').ifEmpty { "index.html" }.let {
-            if ('.' in it.substringAfterLast('/', "")) it else "index.html"
+            if ('.' in it.substringAfterLast('/')) it else "index.html"
         }
         val bytes = readAsset(rel)
         if (bytes == null) {
