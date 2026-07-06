@@ -58,8 +58,6 @@ object CodeGen {
         val themes = artboard.themes
         val themed = themes.size > 1 || themes.any { it.theme.isCustomized() }
         val imports = mutableSetOf("androidx.compose.runtime.Composable")
-        // Shared counter so hoisted state vars (state1, state2, …) are file-unique.
-        val seq = intArrayOf(0)
 
         val used = mutableSetOf<String>()
         val schemeVals = if (themed) {
@@ -88,15 +86,17 @@ object CodeGen {
             .associate { screens[it].id to screenNames[it] }
         val fns = screens.mapIndexed { i, screen ->
             val body = StringBuilder()
-            emit(screen, indent = 1, out = body, imports = imports, seq = seq)
+            // Per-FUNCTION state counter (state1 restarts in each fun): stateN vars
+            // are function-local, and the IDE plugin's write-back regenerates
+            // functions in isolation — their text must match full-file output.
+            emit(screen, indent = 1, out = body, imports = imports, seq = intArrayOf(0))
             screenNames[i] to body.toString()
         }
         componentFns = emptyMap()
         val themeBlock = if (themed) themeBlock(themes, schemeVals, artboard.activeTheme, imports) else null
 
         // Some Material3 components (any TopAppBar variant) are experimental — opt in if used.
-        val m3Experimental = setOf("TopAppBar", "CenterAlignedTopAppBar", "MediumTopAppBar", "LargeTopAppBar", "ModalBottomSheet")
-        val needsM3OptIn = imports.any { it.removePrefix("androidx.compose.material3.") in m3Experimental }
+        val needsM3OptIn = imports.any { it.removePrefix("androidx.compose.material3.") in M3_EXPERIMENTAL }
         if (needsM3OptIn) imports += "androidx.compose.material3.ExperimentalMaterial3Api"
 
         return buildString {
@@ -116,6 +116,41 @@ object CodeGen {
             }
         }
     }
+
+    /** Material3 composables that need `@OptIn(ExperimentalMaterial3Api::class)`. */
+    private val M3_EXPERIMENTAL = setOf("TopAppBar", "CenterAlignedTopAppBar", "MediumTopAppBar", "LargeTopAppBar", "ModalBottomSheet")
+
+    /** One complete generated function declaration + the imports its body needs. */
+    data class ScreenCode(val text: String, val imports: Set<String>)
+
+    /**
+     * Partial generation for the IDE plugin's write-back: ONE complete
+     * `@Composable fun` declaration (no trailing newline) for [screen], named
+     * [name], with instance calls resolved through [componentFns] (registered
+     * screen id → function name). The text matches what [generate] would emit
+     * for this screen inside a full file, including a per-function
+     * `@OptIn(ExperimentalMaterial3Api::class)` when its own body needs it.
+     */
+    fun screenFunction(screen: Node.Composable, name: String, componentFns: Map<String, String> = emptyMap()): ScreenCode {
+        val imports = mutableSetOf("androidx.compose.runtime.Composable")
+        this.componentFns = componentFns
+        val body = StringBuilder()
+        emit(screen, indent = 1, out = body, imports = imports, seq = intArrayOf(0))
+        this.componentFns = emptyMap()
+        val needsOptIn = imports.any { it.removePrefix("androidx.compose.material3.") in M3_EXPERIMENTAL }
+        if (needsOptIn) imports += "androidx.compose.material3.ExperimentalMaterial3Api"
+        val text = buildString {
+            if (needsOptIn) appendLine("@OptIn(ExperimentalMaterial3Api::class)")
+            appendLine("@Composable")
+            appendLine("fun $name() {")
+            append(body)
+            append("}")
+        }
+        return ScreenCode(text, imports)
+    }
+
+    /** [sanitizeIdentifier] for callers outside codegen (write-back naming). */
+    fun sanitizeName(raw: String): String? = sanitizeIdentifier(raw)
 
     /**
      * A generated function name for one screen: the layer name sanitized to a

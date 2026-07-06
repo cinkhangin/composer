@@ -74,7 +74,7 @@ object DesignParser {
                 screenId = screenId,
                 functionName = name,
                 fnRange = fn.textRange.startOffset until fn.textRange.endOffset,
-                treeHash = screen.hashCode(),
+                treeHash = ParsedFunction.hashOf(screen),
             )
         }
         if (screens.isEmpty()) return null
@@ -90,6 +90,7 @@ object DesignParser {
             functions = parsedFns,
             existingImports = imports,
             importInsertOffset = importInsertOffset(file),
+            topLevelFunctionNames = file.declarations.filterIsInstance<KtNamedFunction>().mapNotNull { it.name },
         )
     }
 

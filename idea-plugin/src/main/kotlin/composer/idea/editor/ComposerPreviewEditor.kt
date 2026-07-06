@@ -89,9 +89,8 @@ class ComposerPreviewEditor(
         when (msg.type) {
             // The designer is up — parse the open file and start following the document.
             "ready" -> sync?.start()
-            // Write-back lands next; for now designer edits are observed only.
-            "designChanged" ->
-                log.info("Composer designChanged rev=${msg.rev}, ${msg.design?.length ?: 0} chars from ${file.name}")
+            // Designer edit → regenerate only the changed functions in the document.
+            "designChanged" -> msg.design?.let { sync?.applyDesignerEdit(it) }
         }
     }
 
