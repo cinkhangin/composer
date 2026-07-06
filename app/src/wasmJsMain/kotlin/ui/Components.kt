@@ -22,8 +22,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -118,12 +124,25 @@ fun ToolButton(
     }
 }
 
+/** Hover tooltip for icon-only controls — the same M3 tooltip the palette uses. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun Tip(text: String, content: @Composable () -> Unit) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+        tooltip = { PlainTooltip { Text(text, fontSize = 12.sp) } },
+        state = rememberTooltipState(),
+        content = content,
+    )
+}
+
 /** Small square icon button for inline actions (move, delete, etc.). */
 @Composable
 fun SquareIconButton(
     icon: AppIconKind,
     enabled: Boolean = true,
     danger: Boolean = false,
+    tip: String? = null,
     onClick: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -140,18 +159,21 @@ fun SquareIconButton(
         hovered -> Tk.elevated
         else -> Tk.panelAlt
     }
-    Box(
-        modifier = Modifier
-            .size(28.dp)
-            .clip(RoundedCornerShape(Tk.rXs))
-            .background(bg)
-            .border(1.dp, if (hovered && enabled) Tk.borderStrong else Tk.border, RoundedCornerShape(Tk.rXs))
-            .hoverable(interaction, enabled)
-            .clickable(interactionSource = interaction, indication = null, enabled = enabled) { onClick() },
-        contentAlignment = Alignment.Center,
-    ) {
-        AppIcon(icon, Modifier.size(15.dp), tint = fg)
+    val body: @Composable () -> Unit = {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(RoundedCornerShape(Tk.rXs))
+                .background(bg)
+                .border(1.dp, if (hovered && enabled) Tk.borderStrong else Tk.border, RoundedCornerShape(Tk.rXs))
+                .hoverable(interaction, enabled)
+                .clickable(interactionSource = interaction, indication = null, enabled = enabled) { onClick() },
+            contentAlignment = Alignment.Center,
+        ) {
+            AppIcon(icon, Modifier.size(15.dp), tint = fg)
+        }
     }
+    if (tip != null) Tip(tip, body) else body()
 }
 
 /** Uppercase section label used to head a group of controls, with an optional leading icon. */

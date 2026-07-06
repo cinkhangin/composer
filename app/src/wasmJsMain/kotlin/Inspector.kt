@@ -402,7 +402,7 @@ private fun ThemeEditor(state: EditorState) {
                 modifier = Modifier.weight(1f),
             )
             if (state.themes.size > 1) {
-                SquareIconButton(AppIconKind.Trash, danger = true) { state.deleteTheme(state.activeTheme) }
+                SquareIconButton(AppIconKind.Trash, danger = true, tip = "Delete theme") { state.deleteTheme(state.activeTheme) }
             }
         }
         BoolField("dark base scheme", theme.dark) { state.setTheme(theme.copy(dark = it), coalesceKey = null) }
@@ -767,11 +767,11 @@ private fun Arrange(state: EditorState, selected: Node) {
     val isRoot = selected.id == state.root.id
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SquareIconButton(AppIconKind.ArrowUp, enabled = state.canMove(selected.id, -1)) { state.move(selected.id, -1) }
-            SquareIconButton(AppIconKind.ArrowDown, enabled = state.canMove(selected.id, +1)) { state.move(selected.id, +1) }
+            SquareIconButton(AppIconKind.ArrowUp, enabled = state.canMove(selected.id, -1), tip = "Move up") { state.move(selected.id, -1) }
+            SquareIconButton(AppIconKind.ArrowDown, enabled = state.canMove(selected.id, +1), tip = "Move down") { state.move(selected.id, +1) }
             Box(Modifier.weight(1f))
-            SquareIconButton(AppIconKind.Duplicate) { state.duplicate() }
-            SquareIconButton(AppIconKind.Trash, enabled = !isRoot, danger = true) { state.delete(selected.id) }
+            SquareIconButton(AppIconKind.Duplicate, tip = "Duplicate (⌘D)") { state.duplicate() }
+            SquareIconButton(AppIconKind.Trash, enabled = !isRoot, danger = true, tip = "Delete") { state.delete(selected.id) }
         }
     }
 }

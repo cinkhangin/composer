@@ -123,6 +123,7 @@ import composer.ui.Island
 import composer.ui.LocalThemeSwatches
 import composer.ui.ThemeSwatch
 import composer.ui.Theme
+import composer.ui.Tip
 import composer.ui.Tk
 import composer.ui.TkMenu
 import composer.ui.TkMenuItem
@@ -283,10 +284,14 @@ private fun Toolbar(state: EditorState, ws: Workspace, embedded: Boolean = false
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            TopIconButton(AppIconKind.Undo, enabled = state.canUndo, onClick = state::undo)
-            TopIconButton(AppIconKind.Redo, enabled = state.canRedo, onClick = state::redo)
+            TopIconButton(AppIconKind.Undo, tip = "Undo (⌘Z)", enabled = state.canUndo, onClick = state::undo)
+            TopIconButton(AppIconKind.Redo, tip = "Redo (⇧⌘Z)", enabled = state.canRedo, onClick = state::redo)
             TopDivider()
-            TopIconButton(if (Theme.isDark) AppIconKind.Sun else AppIconKind.Moon, onClick = Theme::toggle)
+            TopIconButton(
+                if (Theme.isDark) AppIconKind.Sun else AppIconKind.Moon,
+                tip = if (Theme.isDark) "Light mode" else "Dark mode",
+                onClick = Theme::toggle,
+            )
             if (!embedded) {
                 ExportMenu(state)
                 AccountChip()
@@ -362,27 +367,29 @@ private fun ViewSegment(label: String, icon: AppIconKind, active: Boolean, onCli
 
 /** Borderless hover-highlight icon button for toolbar history/theme actions. */
 @Composable
-private fun TopIconButton(icon: AppIconKind, enabled: Boolean = true, onClick: () -> Unit) {
+private fun TopIconButton(icon: AppIconKind, tip: String, enabled: Boolean = true, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-    Box(
-        modifier = Modifier
-            .size(32.dp)
-            .clip(RoundedCornerShape(Tk.rSm))
-            .background(if (hovered && enabled) Tk.elevated else Color.Transparent)
-            .hoverable(interaction, enabled)
-            .clickable(enabled = enabled) { onClick() },
-        contentAlignment = Alignment.Center,
-    ) {
-        AppIcon(
-            icon,
-            Modifier.size(16.dp),
-            tint = when {
-                !enabled -> Tk.textMuted
-                hovered -> Tk.textPrimary
-                else -> Tk.textSecondary
-            },
-        )
+    Tip(tip) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(Tk.rSm))
+                .background(if (hovered && enabled) Tk.elevated else Color.Transparent)
+                .hoverable(interaction, enabled)
+                .clickable(enabled = enabled) { onClick() },
+            contentAlignment = Alignment.Center,
+        ) {
+            AppIcon(
+                icon,
+                Modifier.size(16.dp),
+                tint = when {
+                    !enabled -> Tk.textMuted
+                    hovered -> Tk.textPrimary
+                    else -> Tk.textSecondary
+                },
+            )
+        }
     }
 }
 
@@ -713,11 +720,11 @@ private fun ZoomBadge(zoom: Float, onZoom: (Float) -> Unit, onReset: () -> Unit,
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            ToolButton("−") { onZoom(zoom / 1.2f) }
-            ToolButton(zoomLabel(zoom), onClick = onReset)
-            ToolButton("+") { onZoom(zoom * 1.2f) }
-            // Fit to screen: back to the fitted view, centered.
-            ToolButton("", icon = AppIconKind.Fit, onClick = onReset)
+            Tip("Zoom out") { ToolButton("−") { onZoom(zoom / 1.2f) } }
+            // The readout zooms to TRUE size (1 design dp = 1 screen dp); Fit re-fits the view.
+            Tip("Actual size (1x)") { ToolButton(zoomLabel(zoom), onClick = { onZoom(1f) }) }
+            Tip("Zoom in") { ToolButton("+") { onZoom(zoom * 1.2f) } }
+            Tip("Fit to screen") { ToolButton("", icon = AppIconKind.Fit, onClick = onReset) }
         }
     }
 }
