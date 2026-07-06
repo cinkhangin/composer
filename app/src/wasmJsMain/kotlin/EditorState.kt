@@ -490,6 +490,24 @@ class EditorState(initial: Node) {
         lastCommitKey = null
     }
 
+    /**
+     * Replace the tree from the embedding host (IDE plugin bridge) — NOT undoable.
+     * External code edits aren't designer history: undoing one here would post the
+     * stale design back and silently revert the user's typed code. Clears both
+     * stacks; keeps the selection while its node still exists (parser ids are
+     * stable across re-parses). No-op when the tree is unchanged.
+     */
+    fun loadExternal(tree: Node) {
+        val newRoot = tree.migrated().dedupeIds()
+        if (newRoot == root) return
+        undoStack.clear()
+        redoStack.clear()
+        root = newRoot
+        idCounter = maxOf(idCounter, maxGeneratedId(root))
+        if (selectedId?.let { root.findById(it) } == null) selectedId = null
+        lastCommitKey = null
+    }
+
     /** Reset to a fresh "Hello world" design. Undoable. */
     fun newFile() {
         commit(emptyDesign.migrated().dedupeIds())
