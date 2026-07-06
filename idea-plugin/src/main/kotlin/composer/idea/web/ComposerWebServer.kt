@@ -6,8 +6,17 @@ import com.intellij.openapi.diagnostic.thisLogger
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import java.io.File
+import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
+
+/**
+ * The loopback server could not bind (twice, on OS-assigned ephemeral ports).
+ * Typed so [ComposerPreviewEditor] can turn it into its error state instead of
+ * letting a raw IOException escape [ComposerWebServer.baseUrl].
+ */
+class ComposerWebServerStartException(cause: IOException) :
+    RuntimeException("Composer's local web server could not bind a loopback port: ${cause.message}", cause)
 
 /**
  * Loopback static server for the bundled Composer web app (JCEF pages need a real
@@ -30,13 +39,29 @@ class ComposerWebServer : Disposable {
     private var started: HttpServer? = null
 
     private val server: HttpServer
-        @Synchronized get() = started ?: HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0).apply {
+        @Synchronized get() = started ?: bind().apply {
             createContext("/") { exchange -> exchange.use(::handle) }
             start()
             log.info("Composer web server on http://127.0.0.1:${address.port}/")
             started = this
         }
 
+    /** Bind an OS-assigned ephemeral loopback port, retrying once on a fresh one. */
+    private fun bind(): HttpServer {
+        fun create() = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0)
+        return try {
+            create()
+        } catch (first: IOException) {
+            log.warn("Composer web server failed to bind, retrying on another ephemeral port", first)
+            try {
+                create()
+            } catch (second: IOException) {
+                throw ComposerWebServerStartException(second)
+            }
+        }
+    }
+
+    /** @throws ComposerWebServerStartException when the server can't bind. */
     val baseUrl: String get() = "http://127.0.0.1:${server.address.port}/"
 
     private fun handle(exchange: HttpExchange) {

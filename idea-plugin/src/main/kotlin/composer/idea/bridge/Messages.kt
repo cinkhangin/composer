@@ -8,8 +8,15 @@ import kotlinx.serialization.json.Json
  * The design payload is an OPAQUE DesignJson string — envelope parsing never
  * touches the Node schema, so the two sides can't drift on it.
  *
- * web → IDE: `ready` (editor booted), `designChanged` (rev + design).
- * IDE → web: `loadDesign` (rev + design).
+ * web → IDE: `ready` (editor booted), `designChanged` (rev + design),
+ *            `selectionChanged` (rev + nodeId, null = deselected).
+ * IDE → web: `loadDesign` (rev + design), `setTheme` (dark),
+ *            `selectNode` (rev + nodeId).
+ *
+ * Each side stamps a monotonically increasing `rev` on its own outgoing
+ * messages; the receiver drops anything at or below the highest rev it has
+ * seen, and resets that tracker on `ready` (a page reload restarts the web
+ * side's counter).
  */
 @Serializable
 data class BridgeMsg(
