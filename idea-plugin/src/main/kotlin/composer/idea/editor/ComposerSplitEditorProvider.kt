@@ -35,7 +35,7 @@ class ComposerSplitEditorProvider : FileEditorProvider, DumbAware {
 
     override fun createEditor(project: Project, file: VirtualFile): FileEditor {
         val textEditor = TextEditorProvider.getInstance().createEditor(project, file) as TextEditor
-        val preview = ComposerPreviewEditor(project, file)
+        val preview = ComposerPreviewEditor(project, file, textEditor)
         return TextEditorWithPreview(
             textEditor,
             preview,
