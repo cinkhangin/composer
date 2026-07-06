@@ -17,6 +17,7 @@ data class BridgeMsg(
     val rev: Int = 0,
     val design: String? = null,
     val nodeId: String? = null,
+    val dark: Boolean? = null,
 )
 
 /** Forward-compatible envelope codec (unknown fields/types are ignored). */

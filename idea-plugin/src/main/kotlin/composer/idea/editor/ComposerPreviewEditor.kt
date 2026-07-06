@@ -1,7 +1,11 @@
 package composer.idea.editor
 
+import com.intellij.ide.ui.LafManagerListener
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
+import com.intellij.ui.JBColor
+import com.intellij.ui.jcef.JBCefBrowserBase
 import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.fileEditor.FileEditorState
 import com.intellij.openapi.project.Project
@@ -69,6 +73,7 @@ class ComposerPreviewEditor(
         }
         // Windowed (non-OSR) rendering: best canvas/Skia throughput for the wasm app.
         val b = JBCefBrowser.createBuilder().setOffScreenRendering(false).build()
+        b.setErrorPage(JBCefBrowserBase.ErrorPage.DEFAULT) // load failures get a reload page
         Disposer.register(this, b)
         val br = DesignerBridge(b) // must exist before loadURL (JSQuery requirement)
         Disposer.register(this, br)
@@ -80,15 +85,26 @@ class ComposerPreviewEditor(
         }
         Disposer.register(this, s)
         sync = s
+        // Designer chrome follows the IDE look-and-feel, live.
+        ApplicationManager.getApplication().messageBus.connect(this)
+            .subscribe(LafManagerListener.TOPIC, LafManagerListener { pushTheme() })
         panel.add(b.component, BorderLayout.CENTER)
         panel.revalidate()
         b.loadURL(service<ComposerWebServer>().baseUrl + "?embedded=1")
     }
 
+    private fun pushTheme() {
+        bridge?.send(BridgeMsg(type = "setTheme", dark = !JBColor.isBright()))
+    }
+
     private fun onBridgeMessage(msg: BridgeMsg) {
         when (msg.type) {
-            // The designer is up — parse the open file and start following the document.
-            "ready" -> sync?.start()
+            // The designer is up — theme it like the IDE, then parse the open
+            // file and start following the document.
+            "ready" -> {
+                pushTheme()
+                sync?.start()
+            }
             // Designer edit → regenerate only the changed functions in the document.
             "designChanged" -> msg.design?.let { sync?.applyDesignerEdit(it) }
         }

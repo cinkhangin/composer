@@ -1,8 +1,10 @@
 package composer.idea.sync
 
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.editor.event.DocumentEvent
 import com.intellij.openapi.editor.event.DocumentListener
@@ -88,19 +90,30 @@ class DesignSyncController(
         log.info("Composer write-back applied ${plan.edits.size} edit(s) to ${file.name}")
     }
 
-    /** Runs on the EDT (MergingUpdateQueue default) — implicit read access. */
+    /**
+     * Entered on the EDT (MergingUpdateQueue default): documents commit there,
+     * then the parse itself runs as a non-blocking read action off the EDT
+     * (SlowOperations hygiene — PSI walks of big files don't belong on the UI
+     * thread) and the push hops back to the EDT.
+     */
     private fun parseAndPush() {
         if (project.isDisposed || !file.isValid) return
         PsiDocumentManager.getInstance(project).commitAllDocuments()
-        val ktFile = PsiManager.getInstance(project).findFile(file) as? KtFile ?: return
-        val artboard = ReadAction.compute<Node.Artboard?, RuntimeException> {
-            DesignParser.parse(ktFile)?.artboard
-        } ?: Node.Artboard(id = "artboard") // no parseable @Composable → empty canvas
-        val json = DesignJson.encode(artboard)
-        if (json != lastPushed) {
-            lastPushed = json
-            push(json)
+        ReadAction.nonBlocking<String> {
+            val ktFile = PsiManager.getInstance(project).findFile(file) as? KtFile
+            val artboard = ktFile?.let { DesignParser.parse(it)?.artboard }
+                ?: Node.Artboard(id = "artboard") // no parseable @Composable → empty canvas
+            DesignJson.encode(artboard)
         }
+            .expireWith(this)
+            .coalesceBy(this)
+            .finishOnUiThread(ModalityState.defaultModalityState()) { json ->
+                if (json != lastPushed) {
+                    lastPushed = json
+                    push(json)
+                }
+            }
+            .submit(AppExecutorUtil.getAppExecutorService())
     }
 
     private fun emptyPrevious(ktFile: KtFile): ParsedDesign = ParsedDesign(

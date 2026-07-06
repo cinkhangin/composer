@@ -104,6 +104,11 @@ object Theme {
         isDark = !isDark
         localStorage.setItem(THEME_KEY, if (isDark) "dark" else "light")
     }
+
+    /** Host-driven theme (IDE plugin follows the IDE's LaF) — not persisted. */
+    fun set(dark: Boolean) {
+        isDark = dark
+    }
 }
 
 /**
