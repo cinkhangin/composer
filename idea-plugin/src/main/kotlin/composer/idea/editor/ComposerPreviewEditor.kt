@@ -13,7 +13,7 @@ import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import composer.idea.bridge.BridgeMsg
 import composer.idea.bridge.DesignerBridge
-import composer.idea.sampleDesignJson
+import composer.idea.sync.DesignSyncController
 import composer.idea.web.ComposerWebServer
 import java.awt.BorderLayout
 import java.awt.event.HierarchyEvent
@@ -40,6 +40,8 @@ class ComposerPreviewEditor(
     private val panel = JPanel(BorderLayout())
     private var browser: JBCefBrowser? = null
     private var bridge: DesignerBridge? = null
+    private var sync: DesignSyncController? = null
+    private var rev = 0
 
     private val showListener = HierarchyListener { e ->
         if ((e.changeFlags and HierarchyEvent.SHOWING_CHANGED.toLong()) != 0L && panel.isShowing) {
@@ -73,6 +75,11 @@ class ComposerPreviewEditor(
         br.onMessage = ::onBridgeMessage
         browser = b
         bridge = br
+        val s = DesignSyncController(project, file) { json ->
+            bridge?.send(BridgeMsg(type = "loadDesign", rev = ++rev, design = json))
+        }
+        Disposer.register(this, s)
+        sync = s
         panel.add(b.component, BorderLayout.CENTER)
         panel.revalidate()
         b.loadURL(service<ComposerWebServer>().baseUrl + "?embedded=1")
@@ -80,7 +87,9 @@ class ComposerPreviewEditor(
 
     private fun onBridgeMessage(msg: BridgeMsg) {
         when (msg.type) {
-            "ready" -> bridge?.send(BridgeMsg(type = "loadDesign", rev = 1, design = sampleDesignJson()))
+            // The designer is up — parse the open file and start following the document.
+            "ready" -> sync?.start()
+            // Write-back lands next; for now designer edits are observed only.
             "designChanged" ->
                 log.info("Composer designChanged rev=${msg.rev}, ${msg.design?.length ?: 0} chars from ${file.name}")
         }
