@@ -224,9 +224,21 @@ fun Inspector(state: EditorState, modifier: Modifier = Modifier) {
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val urlFailed = !isLocal && selected.url.isNotEmpty() && LocalImages.isFailed(selected.url)
                             BasicText(
-                                if (isLocal) "✓ local image selected" else "or pick a local file",
-                                style = TextStyle(color = if (isLocal) Tk.accent else Tk.textMuted, fontSize = 12.sp),
+                                when {
+                                    isLocal -> "✓ local image selected"
+                                    urlFailed -> "⚠ couldn't load this URL (blocked or not an image)"
+                                    else -> "or pick a local file"
+                                },
+                                style = TextStyle(
+                                    color = when {
+                                        isLocal -> Tk.accent
+                                        urlFailed -> Tk.danger
+                                        else -> Tk.textMuted
+                                    },
+                                    fontSize = 12.sp,
+                                ),
                                 modifier = Modifier.weight(1f),
                             )
                             ToolButton("Pick file") { scope.launch { pickImageFile()?.let { du -> state.update(selected.id) { (it as Node.Image).copy(url = du) } } } }

@@ -248,15 +248,26 @@ fun RenderNode(
         is Node.Image -> {
             if (node.url.isNotEmpty()) LaunchedEffect(node.url) { LocalImages.load(node.url) }
             val bitmap = node.url.takeIf { it.isNotEmpty() }?.let { LocalImages.loaded[it] }
-            if (bitmap != null) {
-                Image(
+            when {
+                bitmap != null -> Image(
                     bitmap = bitmap,
                     contentDescription = node.contentDescription.ifBlank { null },
                     modifier = modifier,
                     contentScale = ContentScale.Crop,
                 )
-            } else {
-                Image(
+                // Failed fetch/decode (CORS, 404) — a plain placeholder here reads
+                // as "still loading" forever, so show an explicit broken-image state.
+                node.url.isNotEmpty() && LocalImages.isFailed(node.url) -> Box(
+                    modifier = modifier.background(Color(node.placeholderColor).copy(alpha = 0.4f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    SymbolIcon(
+                        "broken_image",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                else -> Image(
                     painter = ColorPainter(Color(node.placeholderColor)),
                     contentDescription = node.contentDescription.ifBlank { null },
                     modifier = modifier,

@@ -212,7 +212,16 @@ fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
         verticalArrangement = Arrangement.spacedBy(Tk.gap),
     ) {
         Toolbar(state, ws, embedded)
-        if (!embedded) ws.saveError?.let { SaveErrorBanner(it, ws::dismissSaveError) }
+        if (!embedded) {
+            ws.saveError?.let { SaveErrorBanner(it, onAction = ws::dismissSaveError) }
+            if (ws.loadFailed) SaveErrorBanner(
+                "Couldn't read this file's saved design — showing an empty canvas. " +
+                    "Auto-save is paused so the stored data stays intact; Save anyway overwrites it.",
+                actionLabel = "Save anyway",
+                onAction = { ws.saveOverwriting(state.root) },
+            )
+            ws.importError?.let { SaveErrorBanner(it, onAction = { ws.importError = null }) }
+        }
         Row(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Tk.gap),
@@ -303,10 +312,12 @@ private fun LogoMenu(state: EditorState, ws: Workspace) {
         }
         TkMenu(expanded = open, onDismissRequest = { open = false }) {
             MenuItem("New design") { ws.newDesign(); open = false }
-            MenuItem("Save") { ws.save(state.root); open = false }
+            MenuItem("Save") { ws.saveOverwriting(state.root); open = false }
             MenuItem("Import JSON…") {
                 importTextFile(".json,application/json") { text ->
-                    runCatching { DesignJson.decode(text) }.getOrNull()?.let(state::load)
+                    runCatching { DesignJson.decode(text) }
+                        .onSuccess { ws.importError = null; state.load(it) }
+                        .onFailure { ws.importError = "Couldn't import — that file isn't a valid Composer design JSON." }
                 }
                 open = false
             }
@@ -425,9 +436,9 @@ private fun TopDivider() {
     }
 }
 
-/** A full-width warning shown when a save fails, so data loss is never silent. */
+/** A full-width warning shown when a save/load/import fails, so data loss is never silent. */
 @Composable
-private fun SaveErrorBanner(message: String, onDismiss: () -> Unit) {
+private fun SaveErrorBanner(message: String, actionLabel: String = "Dismiss", onAction: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -442,7 +453,7 @@ private fun SaveErrorBanner(message: String, onDismiss: () -> Unit) {
             modifier = Modifier.weight(1f),
             style = TextStyle(color = Tk.danger, fontSize = 13.sp),
         )
-        ToolButton("Dismiss", onClick = onDismiss)
+        ToolButton(actionLabel, onClick = onAction)
     }
 }
 
@@ -1296,7 +1307,9 @@ private fun CodePanel(state: EditorState, modifier: Modifier = Modifier) {
                 style = TextStyle(color = Tk.textSecondary, fontSize = 12.sp, fontFamily = codeFont),
                 modifier = Modifier.weight(1f),
             )
-            ToolButton("Copy", onClick = { copyToClipboard(code) })
+            var copied by remember { mutableStateOf(false) }
+            LaunchedEffect(copied) { if (copied) { delay(1500); copied = false } }
+            ToolButton(if (copied) "Copied ✓" else "Copy", onClick = { copyToClipboard(code); copied = true })
         }
         HDivider(Modifier.background(Tk.border))
         Row(modifier = Modifier.fillMaxWidth().weight(1f)) {

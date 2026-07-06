@@ -43,7 +43,18 @@ class Workspace {
     /** Live persistence state, surfaced as a status chip in the toolbar (like Figma/Docs). */
     var saveStatus by mutableStateOf(SaveStatus.Saved)
 
-    fun markDirty() { if (saveStatus != SaveStatus.Error) saveStatus = SaveStatus.Saving }
+    /**
+     * True when the open file's stored JSON exists but couldn't be decoded. The editor
+     * shows an empty canvas and auto-save is PAUSED so the intact stored data isn't
+     * overwritten; an explicit save ([saveOverwriting]) opts into overwriting.
+     */
+    var loadFailed by mutableStateOf(false)
+        private set
+
+    /** Non-null after a failed Import JSON — shown as a banner (the import is otherwise a silent no-op). */
+    var importError by mutableStateOf<String?>(null)
+
+    fun markDirty() { if (saveStatus != SaveStatus.Error && !loadFailed) saveStatus = SaveStatus.Saving }
 
     init {
         // Restore the open file from the URL on first load / hard refresh.
@@ -59,6 +70,7 @@ class Workspace {
         currentId = FileStore.newId()
         currentName = "Untitled"
         initialDesign = emptyDesign
+        loadFailed = false
         openToken++
         go(Route.Edit)
     }
@@ -68,6 +80,7 @@ class Workspace {
         currentId = FileStore.newId()
         currentName = name
         initialDesign = design
+        loadFailed = false
         openToken++
         go(Route.Edit)
     }
@@ -86,6 +99,7 @@ class Workspace {
 
     /** Persist the current editor tree to its file (creating one if needed). Records [saveError] on failure. */
     fun save(root: Node): FileMeta? {
+        if (loadFailed) return null // paused — never auto-overwrite data we couldn't read
         val id = currentId ?: FileStore.newId().also { currentId = it }
         return when (val r = FileStore.save(id, currentName.ifBlank { "Untitled" }, DesignJson.encode(root))) {
             is SaveResult.Ok -> { saveError = null; saveStatus = SaveStatus.Saved; r.meta }
@@ -100,6 +114,12 @@ class Workspace {
                 null
             }
         }
+    }
+
+    /** Explicit user save: opts into overwriting a file whose stored data failed to load. */
+    fun saveOverwriting(root: Node): FileMeta? {
+        loadFailed = false
+        return save(root)
     }
 
     /** Re-sync route + open file from the URL (browser back/forward via popstate). */
@@ -128,10 +148,14 @@ class Workspace {
         }
     }
 
-    private fun loadDesignOrEmpty(id: String): Node =
-        FileStore.loadDesign(id)
-            ?.let { runCatching { DesignJson.decode(it) }.getOrNull() }
-            ?: emptyDesign
+    private fun loadDesignOrEmpty(id: String): Node {
+        loadFailed = false
+        val json = FileStore.loadDesign(id) ?: return emptyDesign // no file yet — a fresh design
+        return runCatching { DesignJson.decode(json) }.getOrElse {
+            loadFailed = true
+            emptyDesign
+        }
+    }
 
     private fun go(r: Route) {
         route = r
