@@ -1,0 +1,70 @@
+import org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask
+
+// IntelliJ IDEA / Android Studio plugin: hosts the web designer (bundled Wasm
+// build of :app) in a JCEF preview beside the Kotlin editor, and reuses the
+// pure :model/:codegen JVM variants for design JSON + code generation.
+plugins {
+    kotlin("jvm")
+    kotlin("plugin.serialization")
+    id("org.jetbrains.intellij.platform")
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+// The production web bundle from :app, packaged into the plugin's resources
+// under composer-web/ (served by ComposerWebServer). Resolved by explicit
+// configuration name — no variant matching against the KMP variant set.
+val webDist: Configuration by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+}
+
+dependencies {
+    intellijPlatform {
+        // 242 = 2024.2: first baseline whose JCEF Chromium has WasmGC (the
+        // Kotlin/Wasm hard floor) and runs on JBR 21. Covers AS Ladybug+.
+        intellijIdeaCommunity("2024.2.5")
+        bundledPlugin("org.jetbrains.kotlin") // Kotlin PSI for the code parser
+    }
+    implementation(project(":model"))
+    implementation(project(":codegen"))
+    webDist(project(mapOf("path" to ":app", "configuration" to "webDist")))
+    // NEVER add kotlinx-coroutines here — the platform bundles a patched build.
+}
+
+intellijPlatform {
+    buildSearchableOptions = false
+    pluginConfiguration {
+        id = "com.ckgin.composer"
+        name = "Composer Designer"
+        version = "0.1.0"
+        vendor {
+            name = "cinkhangin"
+        }
+        ideaVersion {
+            sinceBuild = "242"
+            untilBuild = provider { null }
+        }
+    }
+}
+
+// Building the wasm dist takes ~1 min; skip bundling for plugin-code-only
+// iteration with -Pcomposer.bundleWeb=false (runIde serves the dev dist dir
+// via the system property below anyway; a distributable zip MUST bundle it).
+if (providers.gradleProperty("composer.bundleWeb").orNull != "false") {
+    tasks.processResources {
+        from(webDist) { into("composer-web") }
+    }
+}
+
+tasks.named<RunIdeTask>("runIde") {
+    // Dev loop: serve the web app straight from :app's dist dir so web-side
+    // changes need only :app:wasmJsBrowserDistribution + a preview reload,
+    // not a plugin rebuild.
+    systemProperty(
+        "composer.web.dist.dir",
+        rootProject.layout.projectDirectory.dir("app/build/dist/wasmJs/productionExecutable").asFile.absolutePath,
+    )
+}

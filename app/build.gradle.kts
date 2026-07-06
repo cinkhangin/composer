@@ -56,3 +56,16 @@ compose.resources {
     publicResClass = true
     packageOfResClass = "composer.res"
 }
+
+// IDE plugin embedding: expose the production web bundle so :idea-plugin can
+// package it (resolved by explicit configuration name — no variant matching,
+// which keeps it clear of the KMP variant set).
+val webDist by configurations.creating {
+    isCanBeConsumed = true
+    isCanBeResolved = false
+}
+artifacts {
+    add(webDist.name, layout.buildDirectory.dir("dist/wasmJs/productionExecutable")) {
+        builtBy(tasks.named("wasmJsBrowserDistribution"))
+    }
+}
