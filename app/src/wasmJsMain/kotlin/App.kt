@@ -165,7 +165,14 @@ fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
                 // guard compares canonical-to-canonical.
                 EmbeddedBridge.noteLoaded(DesignJson.encode(state.root))
             }
-            onDispose { EmbeddedBridge.onLoadDesign = null }
+            // Editor caret → designer selection (ignore ids the current tree doesn't have).
+            EmbeddedBridge.onSelectNode = { id ->
+                if (state.root.findById(id) != null) state.select(id)
+            }
+            onDispose {
+                EmbeddedBridge.onLoadDesign = null
+                EmbeddedBridge.onSelectNode = null
+            }
         }
         LaunchedEffect(Unit) {
             EmbeddedBridge.start()
@@ -178,6 +185,13 @@ fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
                 .drop(1) // the initial (empty) design isn't an edit
                 .debounce(300) // tighter than web auto-save — this drives live code
                 .collect { EmbeddedBridge.postDesign(DesignJson.encode(state.root)) }
+        }
+        // Designer selection → host (IDE moves the editor caret to the node's code).
+        LaunchedEffect(state) {
+            snapshotFlow { state.selectedId }
+                .drop(1)
+                .debounce(100)
+                .collect { EmbeddedBridge.postSelection(it) }
         }
     } else {
         // Auto-save: persist to the current file shortly after the design (or name) changes.

@@ -14,9 +14,15 @@ import kotlinx.serialization.json.Json
  * Protocol (JSON envelope; the design payload is an OPAQUE [DesignJson] string,
  * so envelope parsing never touches the Node schema):
  *  - web → host: `{"type":"ready"}` once the editor is up;
- *    `{"type":"designChanged","rev":N,"design":"…"}` after each (debounced) edit.
- *  - host → web: `{"type":"loadDesign","rev":N,"design":"…"}` via the
+ *    `{"type":"designChanged","rev":N,"design":"…"}` after each (debounced) edit;
+ *    `{"type":"selectionChanged","rev":N,"nodeId":…}` when the designer selection moves.
+ *  - host → web: `{"type":"loadDesign","rev":N,"design":"…"}` and
+ *    `{"type":"selectNode","rev":N,"nodeId":"…"}` via the
  *    `window.__composerEmbed.receive(json)` global this object registers.
+ *
+ * Incoming messages carry a monotonically increasing `rev`; anything at or below
+ * the highest rev seen is dropped (duplicate/reordered delivery). The tracker
+ * resets naturally with the page (a reload restarts this object).
  *
  * The host injects `window.__composerHost = { postMessage: fn }`. Injection can
  * lose the race against wasm boot, so outgoing messages queue in [outbox] until
@@ -38,10 +44,15 @@ object EmbeddedBridge {
     /** Registered by the embedded editor screen; receives host-pushed designs. */
     var onLoadDesign: ((Node) -> Unit)? = null
 
+    /** Registered by the embedded editor screen; host-driven selection (editor caret → designer). */
+    var onSelectNode: ((String) -> Unit)? = null
+
     private val json = Json { ignoreUnknownKeys = true }
     private val outbox = ArrayDeque<String>()
     private var started = false
     private var outRev = 0
+    private var lastInRev = 0
+    private var lastSelection: String? = null
 
     /**
      * Canonical encoding of the last host-loaded design AS APPLIED (post-migration,
@@ -71,6 +82,13 @@ object EmbeddedBridge {
         post(BridgeMsg(type = "designChanged", rev = ++outRev, design = designJson))
     }
 
+    /** Report a designer selection change (deduped; a host `selectNode` isn't echoed back). */
+    fun postSelection(nodeId: String?) {
+        if (nodeId == lastSelection) return
+        lastSelection = nodeId
+        post(BridgeMsg(type = "selectionChanged", rev = ++outRev, nodeId = nodeId))
+    }
+
     /** Try to deliver queued messages; true once the queue is empty. */
     fun flush(): Boolean {
         if (outbox.isEmpty()) return true
@@ -89,10 +107,17 @@ object EmbeddedBridge {
 
     private fun handle(raw: String) {
         val msg = runCatching { json.decodeFromString(BridgeMsg.serializer(), raw) }.getOrNull() ?: return
+        // Staleness guard: drop duplicated/reordered host messages (rev 0 = unstamped).
+        if (msg.rev in 1..lastInRev) return
+        if (msg.rev > 0) lastInRev = msg.rev
         when (msg.type) {
             "loadDesign" -> {
                 val tree = msg.design?.let { runCatching { DesignJson.decode(it) }.getOrNull() } ?: return
                 onLoadDesign?.invoke(tree)
+            }
+            "selectNode" -> msg.nodeId?.let { id ->
+                lastSelection = id // the host already knows — don't echo it back
+                onSelectNode?.invoke(id)
             }
             // The host IDE's look-and-feel drives the editor chrome theme.
             "setTheme" -> msg.dark?.let { composer.ui.Theme.set(it) }
