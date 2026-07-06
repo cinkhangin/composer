@@ -267,6 +267,21 @@ sealed interface Node {
     ) : Node
 
     /**
+     * Opaque preserved Kotlin source (IDE plugin code-import): a statement the
+     * designer can't represent (if/when, loops, state logic, custom composables).
+     * [code] is verbatim dedented source, re-emitted as-is by codegen — the one
+     * deliberate esc()-exempt emission. Locked in the editor (selectable, never
+     * content-editable), never in the palette; created only by the code parser.
+     */
+    @Serializable
+    @SerialName("RawCode")
+    data class RawCode(
+        override val id: String,
+        val code: String = "",
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    /**
      * Not a real UI component — one composable **function scope** (the body of a
      * generated `@Composable fun`). Its children are emitted directly into the
      * function (no wrapper). Lives directly under the [Artboard]; its layer name

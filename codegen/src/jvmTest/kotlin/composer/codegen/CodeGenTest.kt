@@ -769,6 +769,50 @@ class CodeGenTest {
         assertTrue("// Font \"Weird Name\"" in code, code)
     }
 
+    // ---- RawCode (opaque preserved source) ---------------------------------
+
+    @Test
+    fun raw_code_emits_verbatim_reindented() {
+        val raw = Node.RawCode("r", "if (loading) {\n    CircularProgressIndicator()\n}")
+        val code = CodeGen.generate(Node.Composable("root", children = listOf(raw)))
+        // Body indent is 1 (4 spaces); the captured text's own nesting is preserved on top.
+        assertTrue("    if (loading) {\n        CircularProgressIndicator()\n    }\n" in code, code)
+    }
+
+    @Test
+    fun raw_code_nested_in_container_indents_to_that_level() {
+        val raw = Node.RawCode("r", "Foo()")
+        val code = CodeGen.generate(Node.Composable("root", children = listOf(Node.Column("c", children = listOf(raw)))))
+        assertTrue("        Foo()\n" in code, code) // indent 2 inside the Column
+    }
+
+    @Test
+    fun raw_code_is_never_escaped() {
+        // Dollar templates and escapes are CODE here, not string content — they
+        // must survive byte-for-byte (the one deliberate esc()-exempt emission).
+        val raw = Node.RawCode("r", "items.forEach { println(\"item: \$it\") }")
+        val code = CodeGen.generate(Node.Composable("root", children = listOf(raw)))
+        assertTrue("items.forEach { println(\"item: \$it\") }" in code, code)
+        assertTrue("\\\$" !in code, code)
+    }
+
+    @Test
+    fun raw_code_blank_lines_stay_blank() {
+        val raw = Node.RawCode("r", "Foo()\n\nBar()")
+        val code = CodeGen.generate(Node.Composable("root", children = listOf(raw)))
+        assertTrue("    Foo()\n\n    Bar()\n" in code, code) // no trailing-space padding on the blank line
+    }
+
+    @Test
+    fun raw_code_with_raw_string_keeps_original_indentation() {
+        // Re-indenting lines inside a """ literal would change its content — such
+        // text is captured with original indentation and emitted un-padded.
+        val body = "    val s = \"\"\"\n  two spaces matter\n    \"\"\""
+        val raw = Node.RawCode("r", body)
+        val code = CodeGen.generate(Node.Composable("root", children = listOf(raw)))
+        assertTrue(body in code, code)
+    }
+
     @Test
     fun every_node_variant_generates_lexically_valid_source() {
         // A tree touching every Node type with adversarial text — the generated
@@ -846,6 +890,9 @@ class CodeGenTest {
             Node.Slider("sl", 0.5f),
             Node.CircularProgress("cp"),
             Node.LinearProgress("lp"),
+            // Verbatim code — lexically valid Kotlin by contract (it parsed as a
+            // statement in the source file it was captured from).
+            Node.RawCode("raw", "when (state) {\n    is Loading -> Spinner()\n    else -> Content(items.size)\n}"),
             Node.Card("card", children = listOf(Node.Text("ct", tricky))),
             Node.Fab("fab", children = listOf(Node.Icon("fi", composer.model.IconKind.Add))),
             Node.Dialog("dlg", children = listOf(Node.Text("dt", tricky))),

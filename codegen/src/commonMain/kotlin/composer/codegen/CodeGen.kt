@@ -202,6 +202,22 @@ object CodeGen {
             it is ModifierSpec.Weight && (!inWeightScope || it.value <= 0f)
         }
         when (node) {
+            is Node.RawCode -> {
+                // Opaque preserved source (IDE plugin code-import): re-emit VERBATIM,
+                // never through esc() — this is code, not a string literal. Lines are
+                // re-indented to the current level; text containing a raw string ("""
+                // anywhere) keeps its captured indentation untouched, since padding
+                // its lines would change the literal's content.
+                val lines = node.code.lines()
+                val hasRawString = node.code.contains("\"\"\"")
+                for (line in lines) {
+                    when {
+                        line.isBlank() -> out.appendLine()
+                        hasRawString -> out.appendLine(line)
+                        else -> out.appendLine("$pad$line")
+                    }
+                }
+            }
             is Node.Instance -> {
                 val fnName = componentFns[node.refId]
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)

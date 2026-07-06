@@ -23,7 +23,8 @@ fun Node.childNodes(): List<Node> = when (this) {
     is Node.Text, is Node.Spacer, is Node.Image, is Node.Divider,
     is Node.Switch, is Node.Checkbox, is Node.RadioButton, is Node.Slider,
     is Node.Icon, is Node.IconButton, is Node.TextField,
-    is Node.CircularProgress, is Node.LinearProgress, is Node.Instance -> emptyList()
+    is Node.CircularProgress, is Node.LinearProgress, is Node.Instance,
+    is Node.RawCode -> emptyList()
 }
 
 /** The reorderable **content** children (Scaffold → content; TopAppBar → actions; else [childNodes]). */
@@ -51,7 +52,8 @@ fun Node.withChildren(children: List<Node>): Node = when (this) {
     is Node.Text, is Node.Spacer, is Node.Image, is Node.Divider,
     is Node.Switch, is Node.Checkbox, is Node.RadioButton, is Node.Slider,
     is Node.Icon, is Node.IconButton, is Node.TextField,
-    is Node.CircularProgress, is Node.LinearProgress, is Node.Instance -> this
+    is Node.CircularProgress, is Node.LinearProgress, is Node.Instance,
+    is Node.RawCode -> this
 }
 
 /** Apply [transform] to every direct child (content and Scaffold slots), preserving structure. */
@@ -81,7 +83,8 @@ fun Node.mapChildren(transform: (Node) -> Node): Node = when (this) {
     is Node.Text, is Node.Spacer, is Node.Image, is Node.Divider,
     is Node.Switch, is Node.Checkbox, is Node.RadioButton, is Node.Slider,
     is Node.Icon, is Node.IconButton, is Node.TextField,
-    is Node.CircularProgress, is Node.LinearProgress, is Node.Instance -> this
+    is Node.CircularProgress, is Node.LinearProgress, is Node.Instance,
+    is Node.RawCode -> this
 }
 
 /** Depth-first search for the node with [id]. */
@@ -136,6 +139,7 @@ fun Node.typeName(): String = when (this) {
     is Node.Slider -> "Slider"
     is Node.CircularProgress -> "CircularProgress"
     is Node.LinearProgress -> "LinearProgress"
+    is Node.RawCode -> "RawCode"
 }
 
 /** Return a copy of [this] with its id replaced. */
@@ -167,6 +171,7 @@ fun Node.withId(id: String): Node = when (this) {
     is Node.Slider -> copy(id = id)
     is Node.CircularProgress -> copy(id = id)
     is Node.LinearProgress -> copy(id = id)
+    is Node.RawCode -> copy(id = id)
 }
 
 /** Return a copy of [this] with its modifier chain replaced. */
@@ -198,4 +203,5 @@ fun Node.withModifier(modifier: List<ModifierSpec>): Node = when (this) {
     is Node.Slider -> copy(modifier = modifier)
     is Node.CircularProgress -> copy(modifier = modifier)
     is Node.LinearProgress -> copy(modifier = modifier)
+    is Node.RawCode -> copy(modifier = modifier)
 }

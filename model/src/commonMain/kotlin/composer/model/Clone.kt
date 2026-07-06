@@ -41,6 +41,7 @@ fun Node.cloneWithNewIds(newId: () -> String): Node = when (this) {
     is Node.Slider -> copy(id = newId())
     is Node.CircularProgress -> copy(id = newId())
     is Node.LinearProgress -> copy(id = newId())
+    is Node.RawCode -> copy(id = newId())
     is Node.Column -> copy(id = newId(), children = children.map { it.cloneWithNewIds(newId) })
     is Node.Row -> copy(id = newId(), children = children.map { it.cloneWithNewIds(newId) })
     is Node.Box -> copy(id = newId(), children = children.map { it.cloneWithNewIds(newId) })

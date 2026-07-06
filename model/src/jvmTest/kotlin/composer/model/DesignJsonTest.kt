@@ -46,4 +46,18 @@ class DesignJsonTest {
         val twice = DesignJson.decode(DesignJson.encode(once))
         assertEquals(once, twice)
     }
+
+    @Test
+    fun raw_code_round_trips_verbatim() {
+        // Opaque preserved source (IDE plugin) — adversarial content must survive
+        // JSON encode/decode byte-for-byte: quotes, $-templates, raw strings, newlines.
+        val raw = Node.RawCode(
+            "rc",
+            "if (x > 0) {\n    println(\"v: \$x\")\n    val s = \"\"\"raw \" text\"\"\"\n}",
+        )
+        val wrapped = Node.Column("c", children = listOf(raw))
+        val decoded = DesignJson.decode(DesignJson.encode(wrapped))
+        assertEquals(wrapped, decoded)
+        assertTrue("\"type\": \"RawCode\"" in DesignJson.encode(wrapped))
+    }
 }
