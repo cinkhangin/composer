@@ -170,7 +170,7 @@ private fun FileCard(file: FileMeta, onOpen: () -> Unit, onDelete: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            BasicText("Compose design", style = TextStyle(color = Tk.textMuted, fontSize = 12.sp))
+            BasicText(editedLabel(file.updatedAt), style = TextStyle(color = Tk.textMuted, fontSize = 12.sp))
         }
         // Delete is permanent (no trash/undo), so require a confirm click first.
         var confirming by remember { mutableStateOf(false) }
@@ -183,7 +183,7 @@ private fun FileCard(file: FileMeta, onOpen: () -> Unit, onDelete: () -> Unit) {
             SquareIconButton(AppIconKind.Trash, danger = true, onClick = { confirming = false; onDelete() })
         } else {
             ToolButton("Open", onClick = onOpen)
-            SquareIconButton(AppIconKind.Trash, danger = true, onClick = { confirming = true })
+            SquareIconButton(AppIconKind.Trash, danger = true, tip = "Delete", onClick = { confirming = true })
         }
     }
 }

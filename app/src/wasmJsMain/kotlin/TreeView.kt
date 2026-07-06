@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -22,7 +23,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,13 +67,43 @@ private val ROW_HEIGHT = 28.dp
 fun TreeView(state: EditorState, modifier: Modifier = Modifier) {
     val expanded = remember { mutableStateMapOf<String, Boolean>() }
     val dnd = remember { TreeDndState() }
+    val scroll = rememberScrollState()
+    // Window-space viewport of the scrollable area (top, height) — measured OUTSIDE
+    // verticalScroll so it's the clipped panel, not the full content height.
+    var viewport by remember { mutableStateOf<Pair<Float, Float>?>(null) }
+    // Edge auto-scroll while dragging: rows scrolled out of the panel would
+    // otherwise be unreachable drop targets.
+    LaunchedEffect(dnd.draggingId) {
+        if (dnd.draggingId == null) return@LaunchedEffect
+        while (true) {
+            val y = dnd.pointerY
+            val vp = viewport
+            if (y != null && vp != null) {
+                val (top, height) = vp
+                val edge = 48f
+                val step = when {
+                    y < top + edge -> -10f
+                    y > top + height - edge -> 10f
+                    else -> 0f
+                }
+                if (step != 0f) {
+                    scroll.scrollBy(step)
+                    dnd.update(y) // rows moved under the pointer — refresh the drop target
+                }
+            }
+            withFrameNanos { }
+        }
+    }
     Column(modifier = modifier.fillMaxSize()) {
         Box(Modifier.fillMaxWidth().height(46.dp).padding(horizontal = 16.dp), contentAlignment = Alignment.CenterStart) {
             SectionHeader("Layers", icon = AppIconKind.Layers)
         }
         Column(
             modifier = Modifier
-                .verticalScroll(rememberScrollState())
+                .onGloballyPositioned { c ->
+                    viewport = c.positionInWindow().y to c.size.height.toFloat()
+                }
+                .verticalScroll(scroll)
                 .padding(horizontal = 6.dp)
                 .padding(bottom = 8.dp),
         ) {
@@ -226,6 +259,10 @@ private class TreeDndState {
     var drop by mutableStateOf<Drop?>(null)
     val bounds = mutableStateMapOf<String, RowBox>()
 
+    /** Pointer window-Y while dragging — drives the panel's edge auto-scroll. */
+    var pointerY by mutableStateOf<Float?>(null)
+        private set
+
     fun start(id: String, state: EditorState) {
         draggingId = id
         drop = null
@@ -235,6 +272,7 @@ private class TreeDndState {
     /** Recompute the drop target from the pointer's window-Y. */
     fun update(windowY: Float) {
         val dragId = draggingId ?: return
+        pointerY = windowY
         val entry = bounds.entries.firstOrNull { (id, b) ->
             id != dragId && windowY >= b.top && windowY < b.top + b.height
         }
@@ -265,5 +303,6 @@ private class TreeDndState {
     fun cancel() {
         draggingId = null
         drop = null
+        pointerY = null
     }
 }

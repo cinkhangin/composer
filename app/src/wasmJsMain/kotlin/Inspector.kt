@@ -405,7 +405,7 @@ private fun ThemeEditor(state: EditorState) {
                 SquareIconButton(AppIconKind.Trash, danger = true, tip = "Delete theme") { state.deleteTheme(state.activeTheme) }
             }
         }
-        BoolField("dark base scheme", theme.dark) { state.setTheme(theme.copy(dark = it), coalesceKey = null) }
+        BoolField("Dark base scheme", theme.dark) { state.setTheme(theme.copy(dark = it), coalesceKey = null) }
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -417,7 +417,7 @@ private fun ThemeEditor(state: EditorState) {
                 ThemeSwatch(token, theme.effective(token), selected = token == active) { active = token }
             }
         }
-        BasicText("editing: $active", style = TextStyle(color = Tk.textMuted, fontSize = 11.sp))
+        BasicText("Editing: $active", style = TextStyle(color = Tk.textMuted, fontSize = 11.sp))
         ColorField(theme.effective(active), showThemeSwatches = false) { c -> state.setTheme(theme.set(active, c), coalesceKey = "theme:$active") }
     }
 }

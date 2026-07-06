@@ -79,6 +79,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.isMetaPressed
+import androidx.compose.ui.input.pointer.isTertiaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -112,6 +113,7 @@ import composer.model.DesignTheme
 import composer.model.ThemeColorRef
 import composer.model.Node
 import composer.model.backgroundCorner
+import composer.model.childNodes
 import composer.model.findById
 import composer.render.LocalDesignRoot
 import composer.render.RenderNode
@@ -574,6 +576,29 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
                         panY -= delta.y.coerceIn(-15f, 15f) * 6f
                     }
                 }
+                // Middle-button drag pans — plain-mouse users have no two-finger scroll.
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        if (!currentEvent.buttons.isTertiaryPressed) return@awaitEachGesture
+                        down.consume()
+                        setCanvasCursor("grabbing")
+                        var prev = down.position
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) { change.consume(); break }
+                                panX += change.position.x - prev.x
+                                panY += change.position.y - prev.y
+                                prev = change.position
+                                change.consume()
+                            }
+                        } finally {
+                            setCanvasCursor("default")
+                        }
+                    }
+                }
                 // A tap on empty canvas (nothing consumed it) selects the artboard.
                 .pointerInput(Unit) { detectTapGestures { state.select(state.root.id) } },
         ) {
@@ -600,8 +625,10 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
             val bounds = remember { mutableStateMapOf<String, Rect>() }
             var spaceCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
             // Prune bounds of deleted nodes so ghost rects can't win drill hit-tests.
+            // One O(n) id sweep — a findById per key was O(n·m) on every edit keystroke.
             LaunchedEffect(state.root) {
-                val stale = bounds.keys.filter { state.root.findById(it) == null }
+                val ids = HashSet<String>().also { collectIds(state.root, it) }
+                val stale = bounds.keys.filter { it !in ids }
                 stale.forEach { bounds.remove(it) }
             }
 
@@ -710,6 +737,12 @@ private fun zoomLabel(zoom: Float): String {
     // Below 1x a single tenth is too coarse (a fitted view is often 0.0x-something).
     val hundredths = (zoom * 100).roundToInt().coerceAtLeast(1)
     return if (hundredths % 10 == 0) "0.${hundredths / 10}x" else "0.${hundredths.toString().padStart(2, '0')}x"
+}
+
+/** All node ids in the subtree (slots included) — for pruning stale bounds. */
+private fun collectIds(node: Node, out: MutableSet<String>) {
+    out.add(node.id)
+    for (child in node.childNodes()) collectIds(child, out)
 }
 
 @Composable

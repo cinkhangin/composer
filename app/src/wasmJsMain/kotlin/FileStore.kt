@@ -59,6 +59,20 @@ object FileStore {
 
 private fun nowMs(): Double = js("Date.now()")
 
+private fun localeDate(ms: Double): String = js("new Date(ms).toLocaleDateString()")
+
+/** "Edited 5m ago"-style label for file cards, from a [FileMeta.updatedAt] epoch-ms stamp. */
+fun editedLabel(updatedAt: Double): String {
+    val mins = ((nowMs() - updatedAt) / 60_000).toInt()
+    return when {
+        mins < 1 -> "Edited just now"
+        mins < 60 -> "Edited ${mins}m ago"
+        mins < 24 * 60 -> "Edited ${mins / 60}h ago"
+        mins < 7 * 24 * 60 -> "Edited ${mins / (24 * 60)}d ago"
+        else -> "Edited " + localeDate(updatedAt)
+    }
+}
+
 /**
  * `localStorage.setItem` guarded in JS — returns "" on success or the browser error
  * name (e.g. "QuotaExceededError", Firefox's "NS_ERROR_DOM_QUOTA_REACHED") on failure,
