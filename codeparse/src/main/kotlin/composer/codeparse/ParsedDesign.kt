@@ -19,6 +19,8 @@ data class ParsedDesign(
     val existingImports: List<String>,
     /** Offset where new imports are inserted (end of the import list / after package / 0). */
     val importInsertOffset: Int,
+    /** ALL named top-level functions (screens or not) — write-back name dedup. */
+    val topLevelFunctionNames: List<String>,
 )
 
 data class ParsedFunction(
@@ -27,6 +29,15 @@ data class ParsedFunction(
     val functionName: String,
     /** Whole declaration: annotations through the closing brace (parse-time offsets). */
     val fnRange: IntRange,
-    /** Structural hash of the parsed screen — write-back skips screens whose hash is unchanged. */
+    /**
+     * Structural hash of the parsed screen with editor-only canvas geometry
+     * normalized out — dragging a screen on the artboard must NOT count as a
+     * code edit. Write-back skips screens whose hash is unchanged.
+     */
     val treeHash: Int,
-)
+) {
+    companion object {
+        fun hashOf(screen: composer.model.Node.Composable): Int =
+            screen.copy(x = 0, y = 0, width = 390, height = 844).hashCode()
+    }
+}

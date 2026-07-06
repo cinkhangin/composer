@@ -2,6 +2,8 @@ package composer.idea.sync
 
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.editor.event.DocumentEvent
 import com.intellij.openapi.editor.event.DocumentListener
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -11,31 +13,42 @@ import com.intellij.psi.PsiManager
 import com.intellij.util.ui.update.MergingUpdateQueue
 import com.intellij.util.ui.update.Update
 import composer.codeparse.DesignParser
+import composer.codeparse.ParsedDesign
+import composer.codeparse.WriteBackPlanner
 import composer.model.DesignJson
 import composer.model.Node
 import org.jetbrains.kotlin.psi.KtFile
 
 /**
- * Code → designer sync (read direction): watches the file's document, re-parses
- * on a 500ms merge window, and pushes the design JSON to the embedded designer
- * when it actually changed. The write direction (designer → code) lands with
- * write-back; designer edits are ignored here.
+ * Two-way sync between the Kotlin document and the embedded designer.
+ *
+ * Read direction: a DocumentListener + 500ms merge window re-parses and pushes
+ * the design when it actually changed. Write direction ([applyDesignerEdit]):
+ * decode → plan minimal edits ([WriteBackPlanner]) → one undoable write command
+ * → re-parse. Loop guards: [suppressDocEvents] skips our own document writes;
+ * [lastPushed] drops designer echoes; zero-edit plans (e.g. dragging a screen
+ * on the artboard) leave both the document and the designer untouched.
  */
 class DesignSyncController(
     private val project: Project,
     private val file: com.intellij.openapi.vfs.VirtualFile,
     private val push: (designJson: String) -> Unit,
 ) : Disposable {
-
+    private val log = thisLogger()
     private val queue = MergingUpdateQueue("composer-design-sync", 500, true, null, this)
 
     @Volatile
     private var lastPushed: String? = null
 
+    @Volatile
+    private var suppressDocEvents = false
+
     fun start() {
         FileDocumentManager.getInstance().getDocument(file)?.addDocumentListener(
             object : DocumentListener {
-                override fun documentChanged(event: DocumentEvent) = schedule()
+                override fun documentChanged(event: DocumentEvent) {
+                    if (!suppressDocEvents) schedule()
+                }
             },
             this,
         )
@@ -44,6 +57,35 @@ class DesignSyncController(
 
     fun schedule() {
         queue.queue(Update.create("parse") { parseAndPush() })
+    }
+
+    /** Designer → code. Runs on the EDT (bridge messages arrive via invokeLater). */
+    fun applyDesignerEdit(designJson: String) {
+        if (project.isDisposed || !file.isValid) return
+        if (designJson == lastPushed) return // echo of our own push
+        val edited = runCatching { DesignJson.decode(designJson) }.getOrNull() as? Node.Artboard ?: return
+        val doc = FileDocumentManager.getInstance().getDocument(file) ?: return
+        PsiDocumentManager.getInstance(project).commitAllDocuments()
+        val ktFile = PsiManager.getInstance(project).findFile(file) as? KtFile ?: return
+        val previous = ReadAction.compute<ParsedDesign?, RuntimeException> { DesignParser.parse(ktFile) }
+            ?: emptyPrevious(ktFile)
+        val plan = WriteBackPlanner.plan(doc.text, previous, edited)
+        if (plan.edits.isEmpty()) return // geometry-only change or true no-op
+        suppressDocEvents = true
+        try {
+            WriteCommandAction.runWriteCommandAction(project, "Edit Design", "composer.design", {
+                for (e in plan.edits.sortedByDescending { it.start }) {
+                    doc.replaceString(e.start, e.end, e.replacement)
+                }
+            }, ktFile)
+            PsiDocumentManager.getInstance(project).commitDocument(doc)
+        } finally {
+            suppressDocEvents = false
+        }
+        // Re-push the canonical (re-parsed) design so ids stay in sync; skipped
+        // when it decodes back to what the designer already showed.
+        parseAndPush()
+        log.info("Composer write-back applied ${plan.edits.size} edit(s) to ${file.name}")
     }
 
     /** Runs on the EDT (MergingUpdateQueue default) — implicit read access. */
@@ -60,6 +102,17 @@ class DesignSyncController(
             push(json)
         }
     }
+
+    private fun emptyPrevious(ktFile: KtFile): ParsedDesign = ParsedDesign(
+        artboard = Node.Artboard(id = "artboard"),
+        functions = emptyList(),
+        existingImports = ktFile.importDirectives.mapNotNull { it.importPath?.pathStr },
+        importInsertOffset = ktFile.importDirectives.lastOrNull()?.textRange?.endOffset
+            ?: ktFile.packageDirective?.textRange?.endOffset ?: 0,
+        topLevelFunctionNames = ktFile.declarations
+            .filterIsInstance<org.jetbrains.kotlin.psi.KtNamedFunction>()
+            .mapNotNull { it.name },
+    )
 
     override fun dispose() {}
 }

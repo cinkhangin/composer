@@ -80,6 +80,11 @@ internal fun parseBlock(block: KtBlockExpression, ctx: ParseCtx, scopeParam: Str
         if (parsed == null) {
             flushPending()
             out += rawCodeNode(ctx, comments.firstOrNull() ?: stmt, stmt)
+        } else if (parsed.usedPending && stateUsedElsewhere(block, pending!!, stmt)) {
+            // Swallowing renames the var to stateN on regeneration — unsafe when
+            // any OTHER statement references it. Preserve decl + consumer verbatim.
+            flushPending()
+            out += rawCodeNode(ctx, stmt, stmt)
         } else {
             if (parsed.usedPending) pending = null else flushPending()
             out += parsed.node
@@ -225,6 +230,14 @@ private fun singleLambdaStatement(expr: KtExpression?): KtExpression? {
     if (l.valueParameters.isNotEmpty()) return null
     return l.bodyExpression?.statements?.singleOrNull()?.unparen()
 }
+
+/** True when [state]'s var is referenced by any block statement other than its decl and [consumer]. */
+private fun stateUsedElsewhere(block: KtBlockExpression, state: PendingState, consumer: KtExpression): Boolean =
+    block.statements.any { sibling ->
+        if (sibling === state.stmt || sibling === consumer) return@any false
+        com.intellij.psi.util.PsiTreeUtil.findChildrenOfType(sibling, org.jetbrains.kotlin.psi.KtNameReferenceExpression::class.java)
+            .any { it.getReferencedName() == state.name }
+    }
 
 // ---- component dispatch ------------------------------------------------------
 
