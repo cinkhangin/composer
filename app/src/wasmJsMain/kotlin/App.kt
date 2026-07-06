@@ -217,7 +217,7 @@ fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
             modifier = Modifier.weight(1f).fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Tk.gap),
         ) {
-            Island(Modifier.width(216.dp).fillMaxHeight()) { TreeView(state) }
+            Island(Modifier.width(172.dp).fillMaxHeight()) { TreeView(state) }
             Island(
                 Modifier.weight(1f).fillMaxHeight().then(
                     // On any canvas press, reclaim editor focus (Initial pass, no consume) so
@@ -233,7 +233,7 @@ fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
             ) {
                 if (state.showCode) CodePanel(state) else Canvas(state)
             }
-            Island(Modifier.width(216.dp).fillMaxHeight()) { Inspector(state) }
+            Island(Modifier.width(172.dp).fillMaxHeight()) { Inspector(state) }
         }
     }
     }
