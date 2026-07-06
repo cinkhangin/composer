@@ -8,8 +8,11 @@ import composer.model.validComponentIds
 /** One text replacement; offsets into the parse-time text, [end] exclusive. */
 data class TextEdit(val start: Int, val end: Int, val replacement: String)
 
+/** A screen function the plan renames ([from] → [to]). */
+data class ScreenRename(val from: String, val to: String)
+
 /** Edits to apply (unordered) — apply descending by [TextEdit.start]. */
-data class WriteBackPlan(val edits: List<TextEdit>)
+data class WriteBackPlan(val edits: List<TextEdit>, val renames: List<ScreenRename> = emptyList())
 
 /**
  * Designer edits → minimal text edits, honoring the preservation contract:
@@ -23,7 +26,8 @@ data class WriteBackPlan(val edits: List<TextEdit>)
  *    resolve and could strip imports used only inside RawCode.
  * Renaming a screen regenerates every screen that instantiates it (their call
  * sites live in generated bodies); call sites in OTHER FILES are not updated
- * (no resolve) — surfaced as a caveat in the plugin UI.
+ * (no resolve) — each rename is reported in [WriteBackPlan.renames] so the
+ * plugin can surface that caveat.
  */
 object WriteBackPlanner {
 
@@ -131,7 +135,10 @@ object WriteBackPlanner {
             }
         }
 
-        return WriteBackPlan(edits)
+        val renames = renamedIds.mapNotNull { id ->
+            prevById[id]?.let { ScreenRename(from = it.functionName, to = names.getValue(id)) }
+        }
+        return WriteBackPlan(edits, renames)
     }
 
     /** Apply [plan] to [text] (tests / non-IDE callers). */

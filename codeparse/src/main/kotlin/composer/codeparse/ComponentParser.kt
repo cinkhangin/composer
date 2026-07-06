@@ -45,6 +45,13 @@ internal class ParseCtx(
 
     /** Screen ids referenced by parsed instances → Artboard.componentIds. */
     val referencedScreenIds = LinkedHashSet<String>()
+
+    /** Best-effort node id → source range (parse-time offsets, end exclusive). */
+    val sourceRanges = mutableMapOf<String, IntRange>()
+
+    fun record(id: String, element: PsiElement) {
+        sourceRanges[id] = element.textRange.startOffset until element.textRange.endOffset
+    }
 }
 
 // ---- block parsing ---------------------------------------------------------
@@ -86,7 +93,15 @@ internal fun parseBlock(block: KtBlockExpression, ctx: ParseCtx, scopeParam: Str
             flushPending()
             out += rawCodeNode(ctx, stmt, stmt)
         } else {
-            if (parsed.usedPending) pending = null else flushPending()
+            if (parsed.usedPending) {
+                // The swallowed state decl regenerates with its consumer — one range.
+                ctx.sourceRanges[parsed.node.id] =
+                    pending!!.first.textRange.startOffset until stmt.textRange.endOffset
+                pending = null
+            } else {
+                flushPending()
+                ctx.record(parsed.node.id, stmt)
+            }
             out += parsed.node
         }
     }
@@ -161,7 +176,9 @@ internal fun rawCodeNode(ctx: ParseCtx, first: PsiElement, last: PsiElement): No
     var start = first.textRange.startOffset
     val lineStart = text.lastIndexOf('\n', start - 1) + 1
     if (text.substring(lineStart, start).isBlank()) start = lineStart
-    return Node.RawCode(ctx.newId(), dedent(text.substring(start, last.textRange.endOffset)))
+    val node = Node.RawCode(ctx.newId(), dedent(text.substring(start, last.textRange.endOffset)))
+    ctx.sourceRanges[node.id] = start until last.textRange.endOffset
+    return node
 }
 
 private fun dedent(s: String): String {
@@ -624,6 +641,7 @@ private fun parseScaffold(shape: CallShape, ctx: ParseCtx, scopeParam: String?):
         val lambda = shape.lambdaArg(argName) ?: return Node.Slot("$id-$slotId", slotLabel)
         if (lambda.valueParameters.isNotEmpty()) return null
         val kids = lambda.bodyExpression?.let { parseBlock(it, ctx) } ?: emptyList()
+        ctx.record("$id-$slotId", lambda)
         return Node.Slot("$id-$slotId", slotLabel, kids)
     }
     val topBar = slot("topBar", "topBar", "topBar") ?: return null

@@ -21,6 +21,13 @@ data class ParsedDesign(
     val importInsertOffset: Int,
     /** ALL named top-level functions (screens or not) — write-back name dedup. */
     val topLevelFunctionNames: List<String>,
+    /**
+     * Best-effort node id → source text range (parse-time offsets, end exclusive)
+     * of the PSI element that produced the node. Screens map to their whole
+     * function declaration; statement-level nodes to their statement (a swallowed
+     * hoisted-state decl extends its consumer's range). Used for selection sync.
+     */
+    val sourceRanges: Map<String, IntRange> = emptyMap(),
 )
 
 data class ParsedFunction(

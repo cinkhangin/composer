@@ -70,6 +70,7 @@ object DesignParser {
             )
             screens += screen
             layerNames[screenId] = name
+            ctx.record(screenId, fn)
             parsedFns += ParsedFunction(
                 screenId = screenId,
                 functionName = name,
@@ -91,6 +92,7 @@ object DesignParser {
             existingImports = imports,
             importInsertOffset = importInsertOffset(file),
             topLevelFunctionNames = file.declarations.filterIsInstance<KtNamedFunction>().mapNotNull { it.name },
+            sourceRanges = ctx.sourceRanges.toMap(),
         )
     }
 
