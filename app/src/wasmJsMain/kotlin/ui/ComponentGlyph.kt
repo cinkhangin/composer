@@ -44,5 +44,6 @@ private fun glyphIconName(type: String): String = when (type) {
     "Slider" -> "tune"
     "CircularProgress" -> "progress_activity"
     "LinearProgress" -> "linear_scale"
+    "RawCode" -> "code"            // opaque preserved code (IDE plugin)
     else -> "square"
 }

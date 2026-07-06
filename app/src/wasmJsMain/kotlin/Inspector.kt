@@ -314,6 +314,20 @@ fun Inspector(state: EditorState, modifier: Modifier = Modifier) {
                         )
                     }
 
+                    // Opaque preserved code (IDE plugin) — read-only: edited in the
+                    // code editor, never here.
+                    is Node.RawCode -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        BasicText(
+                            "Code the designer can't edit — preserved verbatim. Edit it in the code editor.",
+                            style = TextStyle(color = Tk.textMuted, fontSize = 11.sp),
+                        )
+                        BasicText(
+                            selected.code.ifBlank { "(empty)" },
+                            style = TextStyle(color = Tk.textSecondary, fontSize = 11.sp, fontFamily = FontFamily.Monospace),
+                            maxLines = 12,
+                        )
+                    }
+
                     is Node.Spacer, is Node.Divider, is Node.Card, is Node.Fab,
                     is Node.Composable, is Node.Artboard, is Node.Slot,
                     is Node.Dialog, is Node.BottomSheet, is Node.Instance,
@@ -423,7 +437,7 @@ private fun ThemeSwatch(label: String, color: Long, selected: Boolean, onClick: 
 private fun Node.hasContentProps(): Boolean = when (this) {
     is Node.Text, is Node.Button, is Node.Image, is Node.Icon, is Node.IconButton,
     is Node.TextField, is Node.Switch, is Node.Checkbox, is Node.RadioButton,
-    is Node.Slider, is Node.Scaffold, is Node.TopAppBar -> true
+    is Node.Slider, is Node.Scaffold, is Node.TopAppBar, is Node.RawCode -> true
     else -> false
 }
 

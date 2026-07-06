@@ -13,7 +13,8 @@ fun Node.isContainer(): Boolean = when (this) {
     is Node.Text, is Node.Spacer, is Node.Image, is Node.Divider,
     is Node.Switch, is Node.Checkbox, is Node.RadioButton, is Node.Slider,
     is Node.Icon, is Node.IconButton, is Node.TextField,
-    is Node.CircularProgress, is Node.LinearProgress, is Node.Instance -> false
+    is Node.CircularProgress, is Node.LinearProgress, is Node.Instance,
+    is Node.RawCode -> false
 }
 
 /**
