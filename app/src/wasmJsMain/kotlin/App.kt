@@ -42,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
@@ -464,10 +465,16 @@ private fun contentBoxOf(screens: List<Node.Composable>): ContentBox {
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
-    // User zoom (1x = fit-to-canvas, up to 500x) + pan offset (px), like Figma.
+    // User zoom (multiplier on the fitted view) + pan offset (px), like Figma.
+    // The EFFECTIVE scale is fit * zoom — that's what the badge shows and what
+    // the limits below apply to, so "500x" is the same true magnification
+    // whether the design fits at 0.1 or 1.
     var zoom by remember { mutableStateOf(1f) }
     var panX by remember { mutableStateOf(0f) }
     var panY by remember { mutableStateOf(0f) }
+    // Fit-to-canvas scale, hoisted from the layout pass below so the zoom badge
+    // and clamp (both outside BoxWithConstraints' scope) can read it.
+    var fitScale by remember { mutableStateOf(1f) }
 
     /**
      * Anchored zoom: the content point under the anchor stays FIXED on screen, so
@@ -480,7 +487,9 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
      * gives `pan' = anchor − (anchor − pan)·(zoom'/zoom)`.
      */
     fun applyZoom(z: Float, anchorX: Float = 0f, anchorY: Float = 0f) {
-        val newZoom = z.coerceIn(0.2f, 500f)
+        // Clamp the EFFECTIVE scale (fit * zoom) to [MIN_SCALE, MAX_SCALE] —
+        // an absolute magnification ceiling, independent of how small fit is.
+        val newZoom = z.coerceIn(MIN_SCALE / fitScale, MAX_SCALE / fitScale)
         if (newZoom == zoom) return
         val ratio = newZoom / zoom
         panX = anchorX - (anchorX - panX) * ratio
@@ -530,7 +539,8 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
             val marginV = 320f
             val fit = minOf(1f, (maxWidth.value - marginH) / content.w, (maxHeight.value - marginV) / content.h)
                 .coerceAtLeast(0.05f)
-            val scale = (fit * zoom).coerceIn(0.04f, 500f) // fit ≤ 1, so 500x user zoom passes uncapped
+            SideEffect { fitScale = fit }
+            val scale = (fit * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
 
             // Shared measurement state: node bounds in the PRE-SCALE space + that
             // space's coordinates. Hoisted here so the screen-space overlay below
@@ -628,16 +638,26 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
             }
         }
         SizeBadge(state, Modifier.align(Alignment.TopStart).padding(12.dp))
-        ZoomBadge(zoom, onZoom = { applyZoom(it) }, onReset = ::resetView, Modifier.align(Alignment.TopEnd).padding(12.dp))
+        // The badge shows/steps the EFFECTIVE scale; applyZoom takes the relative zoom.
+        ZoomBadge(fitScale * zoom, onZoom = { applyZoom(it / fitScale) }, onReset = ::resetView, Modifier.align(Alignment.TopEnd).padding(12.dp))
         FloatingPalette(state, Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp))
     }
 }
 
-/** "1x" = fit-to-canvas; deep zooms read as a multiplier ("500x"), not "50000%". */
+// Effective-scale limits: absolute magnification, independent of the fitted scale.
+private const val MIN_SCALE = 0.02f
+private const val MAX_SCALE = 500f
+
+/** True magnification: "1x" = 1 design dp per screen dp; deep zooms read as a multiplier ("500x"), not "50000%". */
 private fun zoomLabel(zoom: Float): String {
     if (zoom >= 10f) return "${zoom.roundToInt()}x"
-    val tenths = (zoom * 10).roundToInt()
-    return if (tenths % 10 == 0) "${tenths / 10}x" else "${tenths / 10}.${tenths % 10}x"
+    if (zoom >= 0.95f) {
+        val tenths = (zoom * 10).roundToInt()
+        return if (tenths % 10 == 0) "${tenths / 10}x" else "${tenths / 10}.${tenths % 10}x"
+    }
+    // Below 1x a single tenth is too coarse (a fitted view is often 0.0x-something).
+    val hundredths = (zoom * 100).roundToInt().coerceAtLeast(1)
+    return if (hundredths % 10 == 0) "0.${hundredths / 10}x" else "0.${hundredths.toString().padStart(2, '0')}x"
 }
 
 @Composable
@@ -651,7 +671,7 @@ private fun ZoomBadge(zoom: Float, onZoom: (Float) -> Unit, onReset: () -> Unit,
             ToolButton("−") { onZoom(zoom / 1.2f) }
             ToolButton(zoomLabel(zoom), onClick = onReset)
             ToolButton("+") { onZoom(zoom * 1.2f) }
-            // Fit to screen: back to 1x zoom, centered.
+            // Fit to screen: back to the fitted view, centered.
             ToolButton("", icon = AppIconKind.Fit, onClick = onReset)
         }
     }
@@ -825,6 +845,10 @@ private fun ScreenFrame(
                     modifier = Modifier
                         // an EMPTY composable must stay visible/selectable
                         .defaultMinSize(48.dp, 48.dp)
+                        // Per-pixel grid overlay on the measured content area (the
+                        // frame is transparent and hugs content, so this box IS the
+                        // visible screen surface); fades in past 2x zoom.
+                        .pixelGrid(scale)
                         // A tap on a gap (no child consumed it) selects the composable.
                         .pointerInput(screen.id) { detectTapGestures { state.select(screen.id) } },
                 ) {
@@ -1192,6 +1216,25 @@ private fun Modifier.editorGrid(): Modifier = drawBehind {
  * hairline on screen, cells align to the frame's pixel origin, and the color is a neutral
  * translucent gray so it reads over both light and dark fills.
  */
+private fun Modifier.pixelGrid(scale: Float): Modifier = drawWithContent {
+    drawContent()
+    if (scale < GRID_PIXEL_FADE_START) return@drawWithContent
+    val alpha = ((scale - GRID_PIXEL_FADE_START) / (GRID_PIXEL_FULL - GRID_PIXEL_FADE_START)).coerceIn(0f, 1f)
+    if (alpha <= 0f) return@drawWithContent
+    val cell = 1.dp.toPx()          // 1 design unit; the layer scales it to `scale`-dp on screen
+    val sw = 1.dp.toPx() / scale    // constant ~1dp hairline on screen at any zoom
+    val color = Color(0xFF808080).copy(alpha = 0.45f * alpha)
+    var x = cell
+    while (x < size.width) {
+        drawLine(color, Offset(x, 0f), Offset(x, size.height), strokeWidth = sw)
+        x += cell
+    }
+    var y = cell
+    while (y < size.height) {
+        drawLine(color, Offset(0f, y), Offset(size.width, y), strokeWidth = sw)
+        y += cell
+    }
+}
 
 @Composable
 private fun jetBrainsMono(): FontFamily = FontFamily(Font(Res.font.jetbrainsmono_regular))
