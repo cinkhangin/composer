@@ -35,7 +35,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import composer.model.IconKind
-import composer.model.ModifierSpec.Size
 import composer.model.Node
 import composer.model.TextWeight
 import composer.ui.ComponentGlyph
@@ -122,33 +121,34 @@ private fun PaletteTool(type: String, onClick: () -> Unit) {
 private class PaletteItem(val type: String, val factory: (id: String) -> Node)
 private class PaletteGroup(val label: String, val items: List<PaletteItem>)
 
-// Grouped into labeled sections (rendered with dividers). Palette defaults: NO
-// padding, uniform 48×48 Size where a default is needed (containers must have a
-// size to be visible/selectable while empty; intrinsically-sized leaves get none).
+// Grouped into labeled sections (rendered with dividers). Palette components
+// carry NO default modifiers — a new component starts bare and SELECTED, so the
+// user shapes it via the inspector (add modifiers) or the palette (add children).
+// Empty containers render at zero size until given content or a Size modifier.
 private val paletteGroups: List<PaletteGroup> = listOf(
     PaletteGroup("Basics", listOf(
         PaletteItem("Text") { id -> Node.Text(id, "Text") },
         PaletteItem("Button") { id -> Node.Button(id, children = listOf(Node.Text("${id}t", "Button"))) },
-        PaletteItem("TextField") { id -> Node.TextField(id, modifier = listOf(Size(48, 48))) },
+        PaletteItem("TextField") { id -> Node.TextField(id) },
         PaletteItem("Icon") { id -> Node.Icon(id) },
         PaletteItem("IconButton") { id -> Node.IconButton(id) },
-        PaletteItem("Image") { id -> Node.Image(id, modifier = listOf(Size(48, 48))) },
+        PaletteItem("Image") { id -> Node.Image(id) },
         PaletteItem("Divider") { id -> Node.Divider(id) },
-        PaletteItem("Spacer") { id -> Node.Spacer(id, modifier = listOf(Size(48, 48))) },
+        PaletteItem("Spacer") { id -> Node.Spacer(id) },
     )),
     PaletteGroup("Layout", listOf(
-        PaletteItem("Column") { id -> Node.Column(id, modifier = listOf(Size(48, 48))) },
-        PaletteItem("Row") { id -> Node.Row(id, modifier = listOf(Size(48, 48))) },
-        PaletteItem("Box") { id -> Node.Box(id, modifier = listOf(Size(48, 48))) },
-        PaletteItem("Card") { id -> Node.Card(id, modifier = listOf(Size(48, 48))) },
+        PaletteItem("Column") { id -> Node.Column(id) },
+        PaletteItem("Row") { id -> Node.Row(id) },
+        PaletteItem("Box") { id -> Node.Box(id) },
+        PaletteItem("Card") { id -> Node.Card(id) },
     )),
     PaletteGroup("Controls", listOf(
         PaletteItem("Switch") { id -> Node.Switch(id, checked = true) },
         PaletteItem("Checkbox") { id -> Node.Checkbox(id, checked = true) },
         PaletteItem("RadioButton") { id -> Node.RadioButton(id, selected = true) },
-        PaletteItem("Slider") { id -> Node.Slider(id, modifier = listOf(Size(48, 48))) },
+        PaletteItem("Slider") { id -> Node.Slider(id) },
         PaletteItem("CircularProgress") { id -> Node.CircularProgress(id) },
-        PaletteItem("LinearProgress") { id -> Node.LinearProgress(id, modifier = listOf(Size(48, 48))) },
+        PaletteItem("LinearProgress") { id -> Node.LinearProgress(id) },
     )),
     // Scaffolding / app-bar section
     PaletteGroup("Structure", listOf(
