@@ -112,6 +112,11 @@
             document.getElementById('loader').classList.add('light');
             document.getElementById('mobile-gate').classList.add('light');
         }
+        // Embedded host mode (IDE plugin JCEF): the panel can legitimately be
+        // narrower than the mobile breakpoint — never gate it.
+        if (new URLSearchParams(location.search).has('embedded')) {
+            document.getElementById('mobile-gate').remove();
+        }
         // If the app fails to boot (e.g. a stale cached bundle referencing a
         // previous deploy's .wasm), don't spin forever — offer a reload.
         function composerBootFailed() {

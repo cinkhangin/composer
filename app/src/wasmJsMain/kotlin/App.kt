@@ -53,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.browser.window
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.onEach
@@ -140,7 +141,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
  */
 @OptIn(FlowPreview::class)
 @Composable
-fun EditorScreen(ws: Workspace) {
+fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
     val state = remember { EditorState(ws.initialDesign) }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
@@ -151,21 +152,47 @@ fun EditorScreen(ws: Workspace) {
         if (state.selectedId != null) runCatching { focusRequester.requestFocus() }
     }
 
-    // Auto-save: persist to the current file shortly after the design (or name) changes.
-    LaunchedEffect(state, ws) {
-        snapshotFlow { state.root to ws.currentName }
-            .drop(1) // skip the initial state — don't create a file for an untouched design
-            .onEach { ws.markDirty() } // show "Saving…" immediately; the save below settles it
-            .debounce(700)
-            .collect { ws.save(state.root) }
-    }
+    if (embedded) {
+        // Embedded (IDE plugin): the bridge replaces persistence — the host owns
+        // the file. Designs arrive via loadDesign; edits post back designChanged.
+        DisposableEffect(state) {
+            EmbeddedBridge.onLoadDesign = { tree ->
+                state.loadExternal(tree)
+                // Record what was ACTUALLY applied (migrated/deduped) so the echo
+                // guard compares canonical-to-canonical.
+                EmbeddedBridge.noteLoaded(DesignJson.encode(state.root))
+            }
+            onDispose { EmbeddedBridge.onLoadDesign = null }
+        }
+        LaunchedEffect(Unit) {
+            EmbeddedBridge.start()
+            // The host's bridge object can appear after wasm boot — pump until
+            // the ready handshake (and anything queued behind it) is delivered.
+            while (!EmbeddedBridge.flush()) delay(100)
+        }
+        LaunchedEffect(state) {
+            snapshotFlow { state.root }
+                .drop(1) // the initial (empty) design isn't an edit
+                .debounce(300) // tighter than web auto-save — this drives live code
+                .collect { EmbeddedBridge.postDesign(DesignJson.encode(state.root)) }
+        }
+    } else {
+        // Auto-save: persist to the current file shortly after the design (or name) changes.
+        LaunchedEffect(state, ws) {
+            snapshotFlow { state.root to ws.currentName }
+                .drop(1) // skip the initial state — don't create a file for an untouched design
+                .onEach { ws.markDirty() } // show "Saving…" immediately; the save below settles it
+                .debounce(700)
+                .collect { ws.save(state.root) }
+        }
 
-    // Flush on tab close: the 700ms debounce would otherwise drop the last edit.
-    // Only save if the design actually diverged, so closing an untouched new design creates no file.
-    DisposableEffect(state, ws) {
-        val flush: (Event) -> Unit = { if (state.root != ws.initialDesign) ws.save(state.root) }
-        window.addEventListener("beforeunload", flush)
-        onDispose { window.removeEventListener("beforeunload", flush) }
+        // Flush on tab close: the 700ms debounce would otherwise drop the last edit.
+        // Only save if the design actually diverged, so closing an untouched new design creates no file.
+        DisposableEffect(state, ws) {
+            val flush: (Event) -> Unit = { if (state.root != ws.initialDesign) ws.save(state.root) }
+            window.addEventListener("beforeunload", flush)
+            onDispose { window.removeEventListener("beforeunload", flush) }
+        }
     }
 
     // Every ColorPicker in the editor offers the ACTIVE theme's tokens as picks
@@ -184,8 +211,8 @@ fun EditorScreen(ws: Workspace) {
             .focusable(),
         verticalArrangement = Arrangement.spacedBy(Tk.gap),
     ) {
-        Toolbar(state, ws)
-        ws.saveError?.let { SaveErrorBanner(it, ws::dismissSaveError) }
+        Toolbar(state, ws, embedded)
+        if (!embedded) ws.saveError?.let { SaveErrorBanner(it, ws::dismissSaveError) }
         Row(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Tk.gap),
@@ -218,23 +245,28 @@ fun EditorScreen(ws: Workspace) {
  * use. The center segmented control is absolutely centered regardless of side widths.
  */
 @Composable
-private fun Toolbar(state: EditorState, ws: Workspace) {
+private fun Toolbar(state: EditorState, ws: Workspace, embedded: Boolean = false) {
     // 40dp: the tallest controls are 32dp, so this leaves 4dp of air above/below —
     // a slim, Figma-like bar instead of the airy 52dp it started with.
     Box(modifier = Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 12.dp)) {
-        // LEFT — brand/main menu, editable project title, live save status
-        Row(
-            modifier = Modifier.align(Alignment.CenterStart),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            LogoMenu(state, ws)
-            ProjectTitle(ws)
-            SaveStatusChip(ws)
-        }
+        // Embedded (IDE plugin): the host owns files, export, and account — and the
+        // IDE shows the real code next to the panel, so the view switch goes too.
+        // What's left is design-surface chrome: history and the preview theme.
+        if (!embedded) {
+            // LEFT — brand/main menu, editable project title, live save status
+            Row(
+                modifier = Modifier.align(Alignment.CenterStart),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                LogoMenu(state, ws)
+                ProjectTitle(ws)
+                SaveStatusChip(ws)
+            }
 
-        // CENTER — primary view switch
-        Box(Modifier.align(Alignment.Center)) { ViewSwitch(state) }
+            // CENTER — primary view switch
+            Box(Modifier.align(Alignment.Center)) { ViewSwitch(state) }
+        }
 
         // RIGHT — history, theme, export CTA, account
         Row(
@@ -246,8 +278,10 @@ private fun Toolbar(state: EditorState, ws: Workspace) {
             TopIconButton(AppIconKind.Redo, enabled = state.canRedo, onClick = state::redo)
             TopDivider()
             TopIconButton(if (Theme.isDark) AppIconKind.Sun else AppIconKind.Moon, onClick = Theme::toggle)
-            ExportMenu(state)
-            AccountChip()
+            if (!embedded) {
+                ExportMenu(state)
+                AccountChip()
+            }
         }
     }
 }
