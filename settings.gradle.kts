@@ -28,4 +28,4 @@ dependencyResolutionManagement {
     }
 }
 
-include(":app", ":model", ":codegen", ":idea-plugin")
+include(":app", ":model", ":codegen", ":codeparse", ":idea-plugin")

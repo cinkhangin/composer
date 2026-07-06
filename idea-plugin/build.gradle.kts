@@ -30,6 +30,7 @@ dependencies {
     }
     implementation(project(":model"))
     implementation(project(":codegen"))
+    implementation(project(":codeparse")) // its kotlin-compiler dep is compileOnly — never bundled
     webDist(project(mapOf("path" to ":app", "configuration" to "webDist")))
     // NEVER add kotlinx-coroutines here — the platform bundles a patched build.
 }
