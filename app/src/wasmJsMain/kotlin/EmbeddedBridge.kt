@@ -28,6 +28,7 @@ data class BridgeMsg(
     val rev: Int = 0,
     val design: String? = null,
     val nodeId: String? = null,
+    val dark: Boolean? = null,
 )
 
 object EmbeddedBridge {
@@ -93,6 +94,8 @@ object EmbeddedBridge {
                 val tree = msg.design?.let { runCatching { DesignJson.decode(it) }.getOrNull() } ?: return
                 onLoadDesign?.invoke(tree)
             }
+            // The host IDE's look-and-feel drives the editor chrome theme.
+            "setTheme" -> msg.dark?.let { composer.ui.Theme.set(it) }
             // Unknown types are ignored — the envelope is forward-compatible.
         }
     }
