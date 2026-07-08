@@ -128,6 +128,7 @@ import composer.ui.LocalThemeSwatches
 import composer.ui.ThemeSwatch
 import composer.ui.Theme
 import composer.ui.Tip
+import composer.ui.BrandLogo
 import composer.ui.Tk
 import composer.ui.TkMenu
 import composer.ui.TkMenuItem
@@ -325,13 +326,12 @@ private fun LogoMenu(state: EditorState, ws: Workspace) {
     Box {
         Box(
             modifier = Modifier
-                .size(30.dp)
+                .size(32.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(Tk.accent)
                 .clickable { open = true },
             contentAlignment = Alignment.Center,
         ) {
-            BasicText("C", style = TextStyle(color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold))
+            BrandLogo(Modifier.size(28.dp))
         }
         TkMenu(expanded = open, onDismissRequest = { open = false }) {
             MenuItem("New design") { ws.newDesign(); open = false }

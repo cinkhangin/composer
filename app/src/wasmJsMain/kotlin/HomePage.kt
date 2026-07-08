@@ -57,6 +57,7 @@ import composer.model.DesignJson
 import composer.model.Node
 import composer.ui.AppIcon
 import composer.ui.AppIconKind
+import composer.ui.BrandLogo
 import composer.ui.ComponentGlyph
 import composer.ui.SquareIconButton
 import composer.ui.Theme
@@ -207,8 +208,8 @@ private fun TopBar() {
             .padding(horizontal = 24.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(20.dp).clip(RoundedCornerShape(6.dp)).background(Tk.accent))
-        Spacer(Modifier.size(10.dp))
+        BrandLogo(Modifier.size(26.dp))
+        Spacer(Modifier.size(9.dp))
         BasicText("Composer", style = TextStyle(color = Tk.textPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold))
         Spacer(Modifier.size(8.dp))
         VersionBadge()

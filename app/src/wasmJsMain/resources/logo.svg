@@ -1,13 +1,19 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">Composer logo</title>
-  <desc id="desc">A minimalist C-shaped geometric ribbon mark in Composer's indigo brand colors, flat fills only.</desc>
+  <desc id="desc">A minimalist C-shaped hexagonal ribbon mark in Composer's indigo brand colors — three flat segments of uniform thickness with an opening on the right.</desc>
 
-  <!-- Top ribbon segment (light indigo — brand hover tone) -->
-  <path d="M334.67 326.5L501.95 221.77C519.98 210.48 542.9 210.48 560.93 221.77L759.35 346.02C791.6 366.22 785.8 416.6 750.16 429.09C734.87 434.45 718.02 432.44 704.33 423.61L545.92 321.47C535.93 315.03 523.09 315.03 513.1 321.47L374.9 410.58C354.18 423.94 326.6 409.07 326.6 384.43V369.95C326.6 352.02 335.31 335.2 334.67 326.5Z" fill="#8A95F6"/>
+  <!-- Geometry: two concentric pointy-top hexagons centered at (512,512),
+       outer R=330, inner r=108.3 = R − 192/cos30° → a uniform 192-unit band.
+       The right edge is omitted (the C opening); seams are radial miters at
+       the top-left and bottom-left vertices. Flat fills only — keep in sync
+       with favicon.svg and ui/BrandLogo.kt. -->
 
-  <!-- Left ribbon spine (deep indigo) -->
-  <path d="M251.03 365.11C251.03 346.05 260.82 328.34 276.96 318.2L374.94 410.58C365.95 416.38 360.53 426.34 360.53 437.05V624.93C360.53 635.94 366.22 646.17 375.57 651.91L487.52 720.67L373.46 792.05L279.22 734.12C261.72 723.36 251.03 704.3 251.03 683.76V365.11Z" fill="#2B3280"/>
+  <!-- Top ribbon (light indigo — hover tone) -->
+  <path d="M797.79 347L512 182L226.21 347L418.21 457.85L512 403.7L605.79 457.85Z" fill="#8A95F6"/>
 
-  <!-- Bottom ribbon segment (vivid indigo — brand accent) -->
-  <path d="M373.46 792.05L487.52 720.67L659.53 615.77C673.73 607.11 691.54 607.02 705.82 615.53L758.96 647.19C790.87 666.2 789.42 712.87 756.38 729.87L556.33 832.77C539.2 841.58 518.77 841.1 502.07 831.5L373.46 792.05Z" fill="#5563E8"/>
+  <!-- Left spine (deep indigo) -->
+  <path d="M226.21 347L226.21 677L418.21 566.15L418.21 457.85Z" fill="#2B3280"/>
+
+  <!-- Bottom ribbon (vivid indigo — brand accent) -->
+  <path d="M226.21 677L512 842L797.79 677L605.79 566.15L512 620.3L418.21 566.15Z" fill="#5563E8"/>
 </svg>
