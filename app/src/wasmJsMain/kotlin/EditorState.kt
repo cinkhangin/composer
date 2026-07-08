@@ -265,29 +265,14 @@ class EditorState(initial: Node) {
     }
 
     /**
-     * Figma-style click selection. A single tap selects the **top-level component**
-     * (direct child of the screen) under the cursor — the screen itself only when
-     * the tap hits its empty area; tapping the already-selected node **drills one
-     * level deeper** toward the clicked node.
+     * Click selection: selects the **deepest** node under the cursor — exactly what
+     * the hover outline previews (product decision; replaced the old screen-first +
+     * level-by-level drill model). Containers are reachable through their own
+     * padding/empty areas, the screen by its empty area or name label, and any
+     * node via the Layers tree. [deep] is kept for call-site compatibility.
      */
-    fun selectAt(deepestId: String, deep: Boolean) {
-        select(clickTarget(deepestId, deep))
-    }
-
-    /**
-     * What [selectAt] WOULD select, without selecting it — drives the hover
-     * outline (Figma-style preview of the click target).
-     */
-    fun clickTarget(deepestId: String, deep: Boolean): String {
-        // path[0] = artboard, path[1] = screen, path[2] = top-level component.
-        val path = pathFromRoot(deepestId)
-        if (!deep) return path.getOrNull(2) ?: path.getOrNull(1) ?: deepestId
-        val idx = path.indexOf(selectedId)
-        return when {
-            idx < 0 -> deepestId                  // not drilling yet → select the clicked child directly
-            idx < path.lastIndex -> path[idx + 1] // already an ancestor is selected → one level deeper
-            else -> path.last()                   // already at the deepest
-        }
+    fun selectAt(deepestId: String, deep: Boolean = false) {
+        select(deepestId)
     }
 
     fun clearSelection() {

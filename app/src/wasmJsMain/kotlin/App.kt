@@ -699,12 +699,10 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
             val sel = state.selectedId
             val b = sel?.let { bounds[it] }
 
-            // Figma-style hover preview: outline what a click at the cursor WOULD
-            // select (the top-level component under the cursor — screen on empty
-            // area; one level deeper when the cursor is over the current selection
-            // — mirroring the tap/drill semantics exactly).
-            // Hit-testing reuses the bounds map, so it works over interactive
-            // components too. Selection still happens only on click.
+            // Hover preview: outline the DEEPEST node under the cursor — exactly
+            // what a click selects (see EditorState.selectAt). Hit-testing reuses
+            // the bounds map (smallest rect containing the point), so it works over
+            // interactive components too. Selection still happens only on click.
             val hoverTarget = hoverPos?.let { p ->
                 val px = (p.x - cw / 2f - panX) / scale + cw / 2f
                 val py = (p.y - ch / 2f - panY) / scale + ch / 2f
@@ -719,7 +717,7 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
                     val nearSelEdge = b != null && !overSel &&
                         px >= b.left - margin && px <= b.right + margin &&
                         py >= b.top - margin && py <= b.bottom + margin
-                    if (nearSelEdge) null else state.clickTarget(it, deep = overSel)
+                    if (nearSelEdge) null else it
                 }
             }
             val hb = hoverTarget?.takeIf { it != sel && it != state.root.id }?.let { bounds[it] }
