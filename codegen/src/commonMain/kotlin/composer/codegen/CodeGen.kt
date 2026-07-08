@@ -384,23 +384,39 @@ object CodeGen {
 
             is Node.Icon -> {
                 imports += "androidx.compose.material3.Icon"
-                imports += "androidx.compose.material.icons.Icons"
-                imports += "androidx.compose.material.icons.filled.${node.icon.name}"
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
                 val desc = if (node.contentDescription.isBlank()) "null" else "\"${esc(node.contentDescription)}\""
-                val args = listOfNotNull("Icons.Default.${node.icon.name}", "contentDescription = $desc", mod?.let { "modifier = $it" })
-                appendCall(out, indent, "Icon", args)
+                val symbol = safeSymbol(node.symbol)
+                if (symbol != null) {
+                    imports += "org.jetbrains.compose.resources.painterResource"
+                    out.appendLine("$pad${symbolComment(symbol)}")
+                    appendCall(out, indent, "Icon", listOfNotNull("painterResource(Res.drawable.ic_$symbol)", "contentDescription = $desc", mod?.let { "modifier = $it" }))
+                } else {
+                    imports += "androidx.compose.material.icons.Icons"
+                    imports += "androidx.compose.material.icons.filled.${node.icon.name}"
+                    appendCall(out, indent, "Icon", listOfNotNull("Icons.Default.${node.icon.name}", "contentDescription = $desc", mod?.let { "modifier = $it" }))
+                }
             }
 
             is Node.IconButton -> {
                 imports += "androidx.compose.material3.IconButton"
                 imports += "androidx.compose.material3.Icon"
-                imports += "androidx.compose.material.icons.Icons"
-                imports += "androidx.compose.material.icons.filled.${node.icon.name}"
+                val symbol = safeSymbol(node.symbol)
+                if (symbol != null) {
+                    imports += "org.jetbrains.compose.resources.painterResource"
+                } else {
+                    imports += "androidx.compose.material.icons.Icons"
+                    imports += "androidx.compose.material.icons.filled.${node.icon.name}"
+                }
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
                 val args = listOfNotNull("onClick = {}", mod?.let { "modifier = $it" })
                 appendCall(out, indent, "IconButton", args, open = true)
-                out.appendLine("$pad    Icon(Icons.Default.${node.icon.name}, contentDescription = null)")
+                if (symbol != null) {
+                    out.appendLine("$pad    ${symbolComment(symbol)}")
+                    out.appendLine("$pad    Icon(painterResource(Res.drawable.ic_$symbol), contentDescription = null)")
+                } else {
+                    out.appendLine("$pad    Icon(Icons.Default.${node.icon.name}, contentDescription = null)")
+                }
                 out.appendLine("$pad}")
             }
 
@@ -667,6 +683,20 @@ object CodeGen {
         emitSiblings(children, indent + 1, out, imports, seq, childScope)
         out.appendLine("$pad}")
     }
+
+    /**
+     * A [Node.Icon.symbol] sanitized to a resource-safe form (`[a-z0-9_]`), or null
+     * when empty. Both the emitted `Res.drawable.ic_<x>` and the sourcing comment
+     * use the SAME sanitized name, so the parser round-trips byte-identically.
+     */
+    fun safeSymbol(symbol: String): String? = symbol
+        .lowercase()
+        .replace(Regex("[^a-z0-9_]"), "_")
+        .takeIf { it.isNotBlank() && it.any { c -> c != '_' } }
+
+    /** The sourcing note emitted above a symbol icon — a fixed, parseable format. */
+    fun symbolComment(symbol: String): String =
+        "// Icon \"$symbol\" — Material Symbols: download ic_$symbol.xml from https://fonts.google.com/icons into your resources."
 
     private fun buttonComposable(v: ButtonVariant): String = when (v) {
         ButtonVariant.Filled -> "Button"

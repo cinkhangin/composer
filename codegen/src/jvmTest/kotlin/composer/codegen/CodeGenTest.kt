@@ -367,6 +367,26 @@ class CodeGenTest {
     }
 
     @Test
+    fun symbol_icon_emits_painter_resource_with_sourcing_comment() {
+        val code = CodeGen.generate(Node.Icon("i", symbol = "shopping_cart"))
+        assertTrue("Icon(painterResource(Res.drawable.ic_shopping_cart), contentDescription = null)" in code, code)
+        assertTrue(CodeGen.symbolComment("shopping_cart") in code, code)
+        assertTrue("import org.jetbrains.compose.resources.painterResource" in code, code)
+        assertTrue("Icons.Default" !in code, code)
+        // Legacy curated form is untouched when symbol is empty.
+        val legacy = CodeGen.generate(Node.Icon("i", composer.model.IconKind.Menu))
+        assertTrue("Icon(Icons.Default.Menu, contentDescription = null)" in legacy, legacy)
+    }
+
+    @Test
+    fun symbol_icon_button_wraps_painter_icon() {
+        val code = CodeGen.generate(Node.IconButton("b", symbol = "rocket_launch"))
+        assertTrue("IconButton(onClick = {}) {" in code, code)
+        assertTrue("Icon(painterResource(Res.drawable.ic_rocket_launch), contentDescription = null)" in code, code)
+        assertTrue(CodeGen.symbolComment("rocket_launch") in code, code)
+    }
+
+    @Test
     fun fill_modifiers_emit_fraction_only_when_not_full() {
         val full = CodeGen.generate(Node.Box("x", modifier = listOf(FillMaxWidth())))
         assertTrue("Modifier.fillMaxWidth()" in full, full)

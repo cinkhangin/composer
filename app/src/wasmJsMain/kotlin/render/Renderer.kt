@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
@@ -284,9 +285,21 @@ fun RenderNode(
             }
         }
         is Node.Divider -> HorizontalDivider(modifier = modifier)
-        is Node.Icon -> Icon(node.icon.toVector(), contentDescription = node.contentDescription.ifBlank { null }, modifier = modifier)
+        // A free-form Material Symbols name wins over the curated IconKind; the
+        // preview draws from the bundled symbol set, sized like a Material icon.
+        is Node.Icon -> if (node.symbol.isNotEmpty()) {
+            SymbolIcon(node.symbol, modifier.size(24.dp), tint = LocalContentColor.current)
+        } else {
+            Icon(node.icon.toVector(), contentDescription = node.contentDescription.ifBlank { null }, modifier = modifier)
+        }
         is Node.IconButton -> InteractiveNode(node, onSelect, onBounds, scopeModifier) { m ->
-            IconButton(onClick = {}, modifier = m) { Icon(node.icon.toVector(), contentDescription = null) }
+            IconButton(onClick = {}, modifier = m) {
+                if (node.symbol.isNotEmpty()) {
+                    SymbolIcon(node.symbol, Modifier.size(24.dp), tint = LocalContentColor.current)
+                } else {
+                    Icon(node.icon.toVector(), contentDescription = null)
+                }
+            }
         }
         is Node.TextField -> InteractiveNode(node, onSelect, onBounds, scopeModifier) { m ->
             OutlinedTextField(

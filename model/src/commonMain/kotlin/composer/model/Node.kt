@@ -111,6 +111,12 @@ sealed interface Node {
         val icon: IconKind = IconKind.Favorite,
         val contentDescription: String = "",
         override val modifier: List<ModifierSpec> = emptyList(),
+        // Free-form Material Symbols name (e.g. "shopping_cart"). Non-empty WINS
+        // over [icon]: the editor renders the bundled symbol; codegen emits
+        // painterResource(Res.drawable.ic_<name>) + a sourcing comment. Empty =
+        // legacy curated [IconKind] (Icons.Default.X). Placed after [modifier] so
+        // positional calls and old JSON keep working.
+        val symbol: String = "",
     ) : Node
 
     @Serializable
@@ -119,6 +125,7 @@ sealed interface Node {
         override val id: String,
         val icon: IconKind = IconKind.Menu,
         override val modifier: List<ModifierSpec> = emptyList(),
+        val symbol: String = "", // same contract as [Icon.symbol]
     ) : Node
 
     @Serializable

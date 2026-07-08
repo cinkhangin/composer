@@ -293,7 +293,7 @@ private fun parseComponent(
     // comment forces RawCode so it is never silently dropped.
     val specialComment = comments.singleOrNull()?.text
     val hasPlainComments = comments.isNotEmpty() &&
-        !(specialComment != null && (isFontComment(specialComment) || specialComment == LOCAL_IMAGE_COMMENT))
+        !(specialComment != null && (isFontComment(specialComment) || specialComment == LOCAL_IMAGE_COMMENT || isSymbolComment(specialComment)))
 
     if (hasPlainComments) return null
 
@@ -304,7 +304,7 @@ private fun parseComponent(
         "AsyncImage" -> if (specialComment == null) parseAsyncImage(shape, ctx, scopeParam) else null
         "Image" -> parseImagePlaceholder(shape, ctx, scopeParam) // local-image comment consumed (data: URL unrecoverable)
         "HorizontalDivider", "Divider" -> simpleLeaf(shape, ctx, scopeParam) { id, m -> Node.Divider(id, m) }
-        "Icon" -> parseIcon(shape, ctx, scopeParam)
+        "Icon" -> parseIcon(shape, ctx, scopeParam, specialComment)
         "IconButton" -> parseIconButton(shape, ctx, scopeParam)
         "OutlinedTextField" -> parseTextField(shape, pending, ctx, scopeParam)
         "Switch" -> parseChecked(shape, pending, ctx, scopeParam) { id, c, m -> Node.Switch(id, c, m) }
@@ -341,6 +341,10 @@ private fun parseComponent(
 private fun isFontComment(text: String): Boolean =
     text.startsWith(FONT_COMMENT_PREFIX) && text.endsWith(FONT_COMMENT_SUFFIX) &&
         text.length > FONT_COMMENT_PREFIX.length + FONT_COMMENT_SUFFIX.length
+
+/** The symbol-icon sourcing note codegen emits above `painterResource(Res.drawable.ic_x)`. */
+private fun isSymbolComment(text: String): Boolean =
+    text.startsWith("// Icon \"") && "Material Symbols" in text
 
 // ---- shared helpers ----------------------------------------------------------
 
@@ -420,13 +424,33 @@ private fun parseImagePlaceholder(shape: CallShape, ctx: ParseCtx, scopeParam: S
     return Parsed(Node.Image(id = ctx.newId(), contentDescription = desc, placeholderColor = color, modifier = m))
 }
 
-private fun parseIcon(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
+private fun parseIcon(shape: CallShape, ctx: ParseCtx, scopeParam: String?, comment: String? = null): Parsed? {
     if (shape.trailingLambda != null || shape.positional.size != 1) return null
     if (!shape.named.keys.all { it in setOf("contentDescription", "modifier") }) return null
-    val icon = iconKind(shape.positional[0]) ?: return null
     val desc = shape.named["contentDescription"]?.let { stringOrNullLit(it) ?: return null }?.getOrNull() ?: ""
     val m = modifierOf(shape, scopeParam) ?: return null
+    // Free-form Material Symbols form: painterResource(Res.drawable.ic_x) + a
+    // sourcing comment. The comment (when present) must be OUR canonical one for
+    // this symbol — anything else stays verbatim as RawCode.
+    painterSymbol(shape.positional[0])?.let { symbol ->
+        if (comment != null && comment != composer.codegen.CodeGen.symbolComment(symbol)) return null
+        return Parsed(Node.Icon(ctx.newId(), IconKind.Favorite, desc, m, symbol = symbol))
+    }
+    if (comment != null) return null // a symbol comment on a non-symbol Icon — not ours
+    val icon = iconKind(shape.positional[0]) ?: return null
     return Parsed(Node.Icon(ctx.newId(), icon, desc, m))
+}
+
+/** `painterResource(Res.drawable.ic_<x>)` → `x`, or null for any other shape. */
+private fun painterSymbol(expr: KtExpression?): String? {
+    val call = expr?.unparen() as? KtCallExpression ?: return null
+    if (callName(call) != "painterResource") return null
+    val arg = call.singlePositionalArg()?.unparen() as? KtDotQualifiedExpression ?: return null
+    val sel = nameOf(arg.selectorExpression) ?: return null
+    if (!sel.startsWith("ic_")) return null
+    val recv = arg.receiverExpression.unparen() as? KtDotQualifiedExpression ?: return null
+    if (nameOf(recv.receiverExpression) != "Res" || nameOf(recv.selectorExpression) != "drawable") return null
+    return sel.removePrefix("ic_").takeIf { it.isNotEmpty() }
 }
 
 private fun parseIconButton(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
@@ -443,6 +467,9 @@ private fun parseIconButton(shape: CallShape, ctx: ParseCtx, scopeParam: String?
     if (inner.name != "Icon" || inner.trailingLambda != null || inner.positional.size != 1) return null
     if (!inner.named.keys.all { it == "contentDescription" }) return null
     if (inner.named["contentDescription"]?.let { stringOrNullLit(it)?.getOrNull() } != null) return null
+    painterSymbol(inner.positional[0])?.let { symbol ->
+        return Parsed(Node.IconButton(ctx.newId(), IconKind.Menu, m, symbol = symbol))
+    }
     val icon = iconKind(inner.positional[0]) ?: return null
     return Parsed(Node.IconButton(ctx.newId(), icon, m))
 }

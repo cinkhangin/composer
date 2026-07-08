@@ -74,6 +74,7 @@ import composer.ui.ColorField
 import composer.ui.AppIconKind
 import composer.ui.ComponentGlyph
 import composer.ui.Field
+import composer.ui.SymbolPickerField
 import composer.ui.HDivider
 import composer.ui.InspectorSection
 import composer.ui.SectionHeader
@@ -253,8 +254,8 @@ fun Inspector(state: EditorState, modifier: Modifier = Modifier) {
                     }
 
                     is Node.Icon -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        EnumDropdown("Icon", selected.icon, IconKind.entries) { k ->
-                            state.update(selected.id) { (it as Node.Icon).copy(icon = k) }
+                        SymbolPickerField("Icon", selected.symbol, fallbackLabel = selected.icon.name) { name ->
+                            state.update(selected.id) { (it as Node.Icon).copy(symbol = name) }
                         }
                         Field(
                             value = selected.contentDescription,
@@ -264,8 +265,8 @@ fun Inspector(state: EditorState, modifier: Modifier = Modifier) {
                         )
                     }
 
-                    is Node.IconButton -> EnumDropdown("Icon", selected.icon, IconKind.entries) { k ->
-                        state.update(selected.id) { (it as Node.IconButton).copy(icon = k) }
+                    is Node.IconButton -> SymbolPickerField("Icon", selected.symbol, fallbackLabel = selected.icon.name) { name ->
+                        state.update(selected.id) { (it as Node.IconButton).copy(symbol = name) }
                     }
 
                     is Node.TextField -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -39,6 +39,8 @@ internal class TreeGen(seed: Int) {
 
     private fun str() = strings.random(rnd)
 
+    private val SYMBOLS = listOf("shopping_cart", "favorite", "home", "arrow_back", "person", "rocket_launch")
+
     private fun color(): Long =
         if (rnd.nextInt(4) == 0) ThemeColorRef.token(listOf("primary", "onPrimary", "secondary", "background").random(rnd))!!
         else rnd.nextLong(0, 0x1_0000_0000)
@@ -128,8 +130,18 @@ internal class TreeGen(seed: Int) {
         2 -> Node.Image(nid(), contentDescription = str(), modifier = modifiers(weightScope, aligns), url = "https://example.com/a.png?q=\"x\"&b=\$c")
         3 -> Node.Image(nid(), contentDescription = str(), placeholderColor = rnd.nextLong(0, 0x1_0000_0000), modifier = modifiers(weightScope, aligns))
         4 -> Node.Divider(nid(), modifiers(weightScope, aligns))
-        5 -> Node.Icon(nid(), IconKind.entries.random(rnd), str(), modifiers(weightScope, aligns))
-        6 -> Node.IconButton(nid(), IconKind.entries.random(rnd), modifiers(weightScope, aligns))
+        // A non-empty symbol hides the IconKind in the emitted code, so it must sit
+        // at the parse-side default (Favorite/Menu) to round-trip.
+        5 -> if (rnd.nextBoolean()) {
+            Node.Icon(nid(), IconKind.Favorite, str(), modifiers(weightScope, aligns), symbol = SYMBOLS.random(rnd))
+        } else {
+            Node.Icon(nid(), IconKind.entries.random(rnd), str(), modifiers(weightScope, aligns))
+        }
+        6 -> if (rnd.nextBoolean()) {
+            Node.IconButton(nid(), IconKind.Menu, modifiers(weightScope, aligns), symbol = SYMBOLS.random(rnd))
+        } else {
+            Node.IconButton(nid(), IconKind.entries.random(rnd), modifiers(weightScope, aligns))
+        }
         7 -> Node.TextField(nid(), value = str(), placeholder = str(), modifier = modifiers(weightScope, aligns))
         8 -> Node.Switch(nid(), rnd.nextBoolean(), modifiers(weightScope, aligns))
         9 -> Node.Checkbox(nid(), rnd.nextBoolean(), modifiers(weightScope, aligns))
