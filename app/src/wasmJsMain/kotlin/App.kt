@@ -346,6 +346,12 @@ private fun LogoMenu(state: EditorState, ws: Workspace) {
             }
             HorizontalDivider()
             MenuItem("Back to home") { ws.home(); open = false }
+            // Passive footer — the app version, not a menu action.
+            BasicText(
+                "Composer v$APP_VERSION",
+                style = TextStyle(color = Tk.textMuted, fontSize = 11.sp),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            )
         }
     }
 }

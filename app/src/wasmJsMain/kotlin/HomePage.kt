@@ -114,12 +114,28 @@ private fun TopBar() {
         Box(Modifier.size(20.dp).clip(RoundedCornerShape(6.dp)).background(Tk.accent))
         Spacer(Modifier.size(10.dp))
         BasicText("Composer", style = TextStyle(color = Tk.textPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold))
+        Spacer(Modifier.size(8.dp))
+        VersionBadge()
         Spacer(Modifier.weight(1f))
         GitHubButton()
         Spacer(Modifier.size(8.dp))
         ToolButton("", icon = if (Theme.isDark) AppIconKind.Sun else AppIconKind.Moon, onClick = Theme::toggle)
         Spacer(Modifier.size(12.dp))
         AccountChip()
+    }
+}
+
+/** Small "v0.1.0" pill next to the brand — [APP_VERSION] is the source of truth. */
+@Composable
+private fun VersionBadge() {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(Tk.panelAlt)
+            .border(1.dp, Tk.border, RoundedCornerShape(999.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    ) {
+        BasicText("v$APP_VERSION", style = TextStyle(color = Tk.textMuted, fontSize = 11.sp))
     }
 }
 
