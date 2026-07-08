@@ -100,9 +100,11 @@ fun Node.replaceById(id: String, transform: (Node) -> Node): Node {
     return mapChildren { it.replaceById(id, transform) }
 }
 
-/** Corner radius (dp) of this node's background shape, or 0 if rectangular / none. */
-fun Node.backgroundCorner(): Int =
-    modifier.firstNotNullOfOrNull { (it as? ModifierSpec.Background)?.corner }?.takeIf { it > 0 } ?: 0
+/** Corner rounding of this node's background shape (value + unit), or null if rectangular / none. */
+fun Node.backgroundCorner(): Pair<Int, CornerUnit>? =
+    modifier.firstNotNullOfOrNull { it as? ModifierSpec.Background }
+        ?.takeIf { it.corner > 0 }
+        ?.let { it.corner to it.cornerUnit }
 
 /** This node's (x, y) position from its Offset modifier, or (0, 0) if none. */
 fun Node.offsetXY(): Pair<Int, Int> {

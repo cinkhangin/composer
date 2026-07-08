@@ -112,6 +112,7 @@ import composer.model.DesignJson
 import composer.model.DesignTheme
 import composer.model.ThemeColorRef
 import composer.model.Node
+import composer.model.CornerUnit
 import composer.model.backgroundCorner
 import composer.model.childNodes
 import composer.model.findById
@@ -688,7 +689,15 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
                         viewport = Size(cw, ch),
                         dimsLabel = "${with(density) { b.width.toDp().value }.roundToInt()} × ${with(density) { b.height.toDp().value }.roundToInt()}",
                         density = density,
-                        cornerPx = (if (isScreen) 0 else state.selected?.backgroundCorner() ?: 0) * d * scale,
+                        // Percent corners are relative to the node's smaller side (like the
+                        // rendered RoundedCornerShape(percent)); dp corners scale with zoom.
+                        cornerPx = when (val c = if (isScreen) null else state.selected?.backgroundCorner()) {
+                            null -> 0f
+                            else -> when (c.second) {
+                                CornerUnit.Percent -> minOf(b.width, b.height) * scale * (c.first.coerceAtMost(50) / 100f)
+                                CornerUnit.Dp -> c.first * d * scale
+                            }
+                        },
                         scale = scale,
                         frameCoords = spaceCoords,
                         // Screens float freely on the artboard: resizing from a top/left
