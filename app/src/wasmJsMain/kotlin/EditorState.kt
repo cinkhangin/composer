@@ -265,9 +265,10 @@ class EditorState(initial: Node) {
     }
 
     /**
-     * Figma-style click selection. A single tap selects the **top-level** component
-     * (direct child of the root frame) under the cursor; a double tap **drills one
-     * level deeper** toward the clicked node from the current selection.
+     * Figma-style click selection. A single tap selects the **top-level component**
+     * (direct child of the screen) under the cursor — the screen itself only when
+     * the tap hits its empty area; tapping the already-selected node **drills one
+     * level deeper** toward the clicked node.
      */
     fun selectAt(deepestId: String, deep: Boolean) {
         select(clickTarget(deepestId, deep))
@@ -278,8 +279,9 @@ class EditorState(initial: Node) {
      * outline (Figma-style preview of the click target).
      */
     fun clickTarget(deepestId: String, deep: Boolean): String {
+        // path[0] = artboard, path[1] = screen, path[2] = top-level component.
         val path = pathFromRoot(deepestId)
-        if (!deep) return path.getOrNull(1) ?: deepestId // path[0] is the root frame
+        if (!deep) return path.getOrNull(2) ?: path.getOrNull(1) ?: deepestId
         val idx = path.indexOf(selectedId)
         return when {
             idx < 0 -> deepestId                  // not drilling yet → select the clicked child directly
