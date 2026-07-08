@@ -270,19 +270,22 @@ class EditorState(initial: Node) {
      * level deeper** toward the clicked node from the current selection.
      */
     fun selectAt(deepestId: String, deep: Boolean) {
+        select(clickTarget(deepestId, deep))
+    }
+
+    /**
+     * What [selectAt] WOULD select, without selecting it — drives the hover
+     * outline (Figma-style preview of the click target).
+     */
+    fun clickTarget(deepestId: String, deep: Boolean): String {
         val path = pathFromRoot(deepestId)
-        val topLevel = path.getOrNull(1) ?: deepestId // path[0] is the root frame
-        if (!deep) {
-            select(topLevel)
-            return
-        }
+        if (!deep) return path.getOrNull(1) ?: deepestId // path[0] is the root frame
         val idx = path.indexOf(selectedId)
-        val next = when {
+        return when {
             idx < 0 -> deepestId                  // not drilling yet → select the clicked child directly
             idx < path.lastIndex -> path[idx + 1] // already an ancestor is selected → one level deeper
             else -> path.last()                   // already at the deepest
         }
-        select(next)
     }
 
     fun clearSelection() {

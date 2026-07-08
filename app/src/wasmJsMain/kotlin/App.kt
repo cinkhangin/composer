@@ -79,6 +79,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.isMetaPressed
+import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.isTertiaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
@@ -544,6 +545,9 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
     // Fit-to-canvas scale, hoisted from the layout pass below so the zoom badge
     // and clamp (both outside BoxWithConstraints' scope) can read it.
     var fitScale by remember { mutableStateOf(1f) }
+    // Cursor position over the island (px), for the Figma-style hover outline.
+    // Null while a button is down (mid-drag/click) or the pointer is outside.
+    var hoverPos by remember { mutableStateOf<Offset?>(null) }
 
     /**
      * Anchored zoom: the content point under the anchor stays FIXED on screen, so
@@ -591,6 +595,11 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
                         panY -= delta.y.coerceIn(-15f, 15f) * 6f
                     }
                 }
+                .onPointerEvent(PointerEventType.Move) { event ->
+                    hoverPos = if (event.buttons.isPrimaryPressed || event.buttons.isTertiaryPressed) null
+                    else event.changes.firstOrNull()?.position
+                }
+                .onPointerEvent(PointerEventType.Exit) { hoverPos = null }
                 // Middle-button drag pans — plain-mouse users have no two-finger scroll.
                 .pointerInput(Unit) {
                     awaitEachGesture {
@@ -660,44 +669,81 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
                     .offset { IntOffset(panX.roundToInt(), panY.roundToInt()) },
             )
 
-            // Selection overlay in SCREEN space — a sibling of the zoomed layer, so
-            // all its chrome (outline, handles, edge zones, dims pill) is plain dp
-            // and stays crisp/hit-testable at ANY zoom. Inside the layer, /scale
-            // layout sizes round to 0 px past ~150x — dead handles, no cursor.
-            // The pre-scale→screen mapping mirrors the layer's transform (centered
-            // + pan + scale) and READS panX/panY/scale, so it recomposes with them.
+            // Overlays live in SCREEN space — siblings of the zoomed layer, so all
+            // chrome (outline, handles, edge zones, dims pill) is plain dp and stays
+            // crisp/hit-testable at ANY zoom. Inside the layer, /scale layout sizes
+            // round to 0 px past ~150x — dead handles, no cursor. The pre-scale→screen
+            // mapping mirrors the layer's transform (centered + pan + scale) and READS
+            // panX/panY/scale, so it recomposes with them. The layer is island-sized
+            // and scales around its center (= viewport center + pan); bounds are
+            // island-space px with the content-centering already baked in by
+            // ScreenFrame's placement.
+            val d = density.density
+            val cw = with(density) { maxWidth.toPx() }
+            val ch = with(density) { maxHeight.toPx() }
+            fun toScreen(x: Float, y: Float) =
+                Offset(cw / 2f + panX + (x - cw / 2f) * scale, ch / 2f + panY + (y - ch / 2f) * scale)
+
+            // Corner rounding of a node's outline in screen px. Percent corners are
+            // relative to the node's smaller side (like the rendered
+            // RoundedCornerShape(percent)); dp corners scale with zoom.
+            fun outlineCornerPx(node: Node?, r: Rect): Float =
+                when (val c = if (node is Node.Composable) null else node?.backgroundCorner()) {
+                    null -> 0f
+                    else -> when (c.second) {
+                        CornerUnit.Percent -> minOf(r.width, r.height) * scale * (c.first.coerceAtMost(50) / 100f)
+                        CornerUnit.Dp -> c.first * d * scale
+                    }
+                }
+
             val sel = state.selectedId
             val b = sel?.let { bounds[it] }
+
+            // Figma-style hover preview: outline what a click at the cursor WOULD
+            // select (screen first; one level deeper when the cursor is over the
+            // current selection — mirroring the tap/drill semantics exactly).
+            // Hit-testing reuses the bounds map, so it works over interactive
+            // components too. Selection still happens only on click.
+            val hoverTarget = hoverPos?.let { p ->
+                val px = (p.x - cw / 2f - panX) / scale + cw / 2f
+                val py = (p.y - ch / 2f - panY) / scale + ch / 2f
+                val deepest = bounds.entries
+                    .filter { (id, r) -> id != state.root.id && px >= r.left && px <= r.right && py >= r.top && py <= r.bottom }
+                    .minByOrNull { (_, r) -> r.width * r.height }?.key
+                deepest?.let {
+                    val overSel = b != null && px >= b.left && px <= b.right && py >= b.top && py <= b.bottom
+                    // No preview in the resize-handle band just outside the selection —
+                    // an outline flashing under the handles reads as noise (Figma hides it).
+                    val margin = 16f * d / scale
+                    val nearSelEdge = b != null && !overSel &&
+                        px >= b.left - margin && px <= b.right + margin &&
+                        py >= b.top - margin && py <= b.bottom + margin
+                    if (nearSelEdge) null else state.clickTarget(it, deep = overSel)
+                }
+            }
+            val hb = hoverTarget?.takeIf { it != sel && it != state.root.id }?.let { bounds[it] }
+            if (hb != null) {
+                val hoverNode = state.root.findById(hoverTarget)
+                val hCorner = outlineCornerPx(hoverNode, hb)
+                val htl = toScreen(hb.left, hb.top)
+                val hbr = toScreen(hb.right, hb.bottom)
+                HoverOutline(Rect(htl.x, htl.y, hbr.x, hbr.y), hCorner, density)
+            }
+
             if (sel != null && b != null && sel != state.root.id) {
-                val isScreen = state.selected is Node.Composable
-                val d = density.density
-                val cw = with(density) { maxWidth.toPx() }
-                val ch = with(density) { maxHeight.toPx() }
-                // The layer is island-sized and scales around its center (= viewport
-                // center + pan); bounds are island-space px with the content-centering
-                // already baked in by ScreenFrame's placement.
-                fun toScreen(x: Float, y: Float) =
-                    Offset(cw / 2f + panX + (x - cw / 2f) * scale, ch / 2f + panY + (y - ch / 2f) * scale)
                 val tl = toScreen(b.left, b.top)
                 val br = toScreen(b.right, b.bottom)
                 // key(sel) recreates the whole overlay per selection — its pointerInputs
                 // capture callbacks at start, so a reused overlay would keep dragging
                 // the PREVIOUSLY selected node.
                 key(sel) {
+                    val isScreen = state.selected is Node.Composable
                     SelectionOverlay(
                         screen = Rect(tl.x, tl.y, br.x, br.y),
                         viewport = Size(cw, ch),
                         dimsLabel = "${with(density) { b.width.toDp().value }.roundToInt()} × ${with(density) { b.height.toDp().value }.roundToInt()}",
                         density = density,
-                        // Percent corners are relative to the node's smaller side (like the
-                        // rendered RoundedCornerShape(percent)); dp corners scale with zoom.
-                        cornerPx = when (val c = if (isScreen) null else state.selected?.backgroundCorner()) {
-                            null -> 0f
-                            else -> when (c.second) {
-                                CornerUnit.Percent -> minOf(b.width, b.height) * scale * (c.first.coerceAtMost(50) / 100f)
-                                CornerUnit.Dp -> c.first * d * scale
-                            }
-                        },
+                        cornerPx = outlineCornerPx(state.selected, b),
                         scale = scale,
                         frameCoords = spaceCoords,
                         // Screens float freely on the artboard: resizing from a top/left
@@ -985,6 +1031,35 @@ private fun ScreenFrame(
                 ) { state.select(screen.id) },
         )
     }
+}
+
+/**
+ * Figma-style hover preview: a passive accent outline around the node a click
+ * would select. Pure draw — NO pointer handlers, so it never eats a tap/drag.
+ * Same screen-space float-px technique as the SelectionOverlay outline (layout
+ * stays viewport-sized; huge zoomed rects are fine as draws).
+ */
+@Composable
+private fun HoverOutline(screen: Rect, cornerPx: Float, density: Density) {
+    val accent = Tk.accent
+    val onePx = with(density) { 1.dp.toPx() }
+    val gap = onePx // match the selection outline: 1dp OUTSIDE the component
+    val outer = Rect(screen.left - gap, screen.top - gap, screen.right + gap, screen.bottom + gap)
+    Box(
+        Modifier.fillMaxSize().drawBehind {
+            val sw = onePx * 1.5f // slightly heavier than the selection stroke, like Figma
+            val inset = sw / 2f
+            val tl = Offset(outer.left + inset, outer.top + inset)
+            val sz = Size(outer.width - sw, outer.height - sw)
+            if (sz.width <= 0f || sz.height <= 0f) return@drawBehind
+            if (cornerPx > 0f) {
+                val r = (cornerPx + gap - inset).coerceAtLeast(0f)
+                drawRoundRect(accent, topLeft = tl, size = sz, cornerRadius = CornerRadius(r), style = Stroke(sw))
+            } else {
+                drawRect(accent, topLeft = tl, size = sz, style = Stroke(sw))
+            }
+        },
+    )
 }
 
 /**
