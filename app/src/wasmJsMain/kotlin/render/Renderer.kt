@@ -1,5 +1,6 @@
 package composer.render
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -12,6 +13,11 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -370,6 +376,80 @@ fun RenderNode(
                 RenderNode(child, selectedId, onSelect, onBounds, sm)
             }
         }
+        // Shapes are DRAW CALLS inside one Canvas — they have no layout bounds, so
+        // they are selected via the Layers tree. Theme-ref colors resolve live here
+        // (codegen can't reference the scheme inside a draw lambda and emits black).
+        is Node.Canvas -> {
+            val shapes = node.children
+            val colors = shapes.map { s ->
+                val raw = when (s) {
+                    is Node.Line -> s.color
+                    is Node.RectShape -> s.color
+                    is Node.CircleShape -> s.color
+                    is Node.EllipseShape -> s.color
+                    is Node.ArcShape -> s.color
+                    else -> 0xFF000000
+                }
+                themeColor(raw, scheme)
+            }
+            Canvas(modifier = modifier) {
+                shapes.forEachIndexed { i, shape ->
+                    val c = colors[i]
+                    when (shape) {
+                        is Node.Line -> drawLine(
+                            c,
+                            start = Offset(shape.x1.dp.toPx(), shape.y1.dp.toPx()),
+                            end = Offset(shape.x2.dp.toPx(), shape.y2.dp.toPx()),
+                            strokeWidth = shape.strokeWidth.dp.toPx(),
+                        )
+                        is Node.RectShape -> {
+                            val style = if (shape.filled) Fill else Stroke(shape.strokeWidth.dp.toPx())
+                            if (shape.corner > 0) {
+                                drawRoundRect(
+                                    c,
+                                    topLeft = Offset(shape.x.dp.toPx(), shape.y.dp.toPx()),
+                                    size = Size(shape.width.dp.toPx(), shape.height.dp.toPx()),
+                                    cornerRadius = CornerRadius(shape.corner.dp.toPx()),
+                                    style = style,
+                                )
+                            } else {
+                                drawRect(
+                                    c,
+                                    topLeft = Offset(shape.x.dp.toPx(), shape.y.dp.toPx()),
+                                    size = Size(shape.width.dp.toPx(), shape.height.dp.toPx()),
+                                    style = style,
+                                )
+                            }
+                        }
+                        is Node.CircleShape -> drawCircle(
+                            c,
+                            radius = shape.radius.dp.toPx(),
+                            center = Offset(shape.cx.dp.toPx(), shape.cy.dp.toPx()),
+                            style = if (shape.filled) Fill else Stroke(shape.strokeWidth.dp.toPx()),
+                        )
+                        is Node.EllipseShape -> drawOval(
+                            c,
+                            topLeft = Offset(shape.x.dp.toPx(), shape.y.dp.toPx()),
+                            size = Size(shape.width.dp.toPx(), shape.height.dp.toPx()),
+                            style = if (shape.filled) Fill else Stroke(shape.strokeWidth.dp.toPx()),
+                        )
+                        is Node.ArcShape -> drawArc(
+                            c,
+                            startAngle = shape.startAngle.toFloat(),
+                            sweepAngle = shape.sweepAngle.toFloat(),
+                            useCenter = shape.filled,
+                            topLeft = Offset(shape.x.dp.toPx(), shape.y.dp.toPx()),
+                            size = Size(shape.width.dp.toPx(), shape.height.dp.toPx()),
+                            style = if (shape.filled) Fill else Stroke(shape.strokeWidth.dp.toPx()),
+                        )
+                        else -> Unit
+                    }
+                }
+            }
+        }
+        is Node.Line, is Node.RectShape, is Node.CircleShape,
+        is Node.EllipseShape, is Node.ArcShape -> Unit // drawn by the Canvas parent
+
         is Node.TextField -> InteractiveNode(node, onSelect, onBounds, scopeModifier) { m ->
             OutlinedTextField(
                 value = node.value,

@@ -33,6 +33,7 @@ object DesignParser {
             "AssistChip", "FilterChip", "InputChip", "SuggestionChip", "BadgedBox", "Badge",
         )) put("androidx.compose.material3.$n", n)
         for (n in listOf("Column", "Row", "Box", "Spacer")) put("androidx.compose.foundation.layout.$n", n)
+        put("androidx.compose.foundation.Canvas", "Canvas")
         put("androidx.compose.foundation.Image", "Image")
         put("androidx.compose.ui.window.Dialog", "Dialog")
         put("coil3.compose.AsyncImage", "AsyncImage")

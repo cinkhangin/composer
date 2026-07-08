@@ -17,6 +17,7 @@ import composer.model.TextWeight
 import composer.model.ThemeColorRef
 import composer.model.TopAppBarVariant
 import composer.model.effectiveLineHeight
+import composer.model.typeName
 import composer.model.migrateToArtboard
 import composer.model.validComponentIds
 import composer.model.NamedTheme
@@ -553,6 +554,28 @@ object CodeGen {
                 out.appendLine("$pad}")
             }
 
+            is Node.Canvas -> {
+                imports += "androidx.compose.foundation.Canvas"
+                imports += "androidx.compose.ui.Modifier"
+                imports += "androidx.compose.ui.unit.dp"
+                val mod = modifierExpr(mods, imports, scopeModifier, indent) ?: "Modifier" // Canvas has no default modifier param
+                out.appendLine("$pad" + "Canvas(modifier = $mod) {")
+                for (shape in node.children) {
+                    val call = shapeCall(shape, imports)
+                    if (call != null) {
+                        out.appendLine("$pad    $call")
+                    } else {
+                        out.appendLine("$pad    // Unsupported canvas child: ${shape.typeName()}")
+                    }
+                }
+                out.appendLine("$pad}")
+            }
+
+            // Shapes are draw calls, not composables — a stray one outside a Canvas
+            // degrades to a comment (canParent prevents this in the editor).
+            is Node.Line, is Node.RectShape, is Node.CircleShape, is Node.EllipseShape, is Node.ArcShape ->
+                out.appendLine("$pad// ${node.typeName()} shapes must live inside a Canvas")
+
             is Node.TextField -> {
                 imports += "androidx.compose.material3.OutlinedTextField"
                 imports += "androidx.compose.material3.Text"
@@ -830,6 +853,74 @@ object CodeGen {
     /** The sourcing note emitted above a symbol icon — a fixed, parseable format. */
     fun symbolComment(symbol: String): String =
         "// Icon \"$symbol\" — Material Symbols: download ic_$symbol.xml from https://fonts.google.com/icons into your resources."
+
+    /** `N.dp.toPx()` (negatives parenthesized so the parser sees one receiver). */
+    private fun dpPx(n: Int): String = if (n < 0) "($n).dp.toPx()" else "$n.dp.toPx()"
+
+    /** Shape colors are draw-time — theme tokens can't be referenced there; fall back to black. */
+    private fun shapeColorExpr(value: Long, imports: MutableSet<String>): String =
+        colorExpr(if (ThemeColorRef.tokenName(value) != null) 0xFF000000 else value, imports)
+
+    /** One DrawScope call for a shape leaf inside a [Node.Canvas], or null for non-shapes. */
+    private fun shapeCall(shape: Node, imports: MutableSet<String>): String? {
+        fun stroke(width: Int): String {
+            imports += "androidx.compose.ui.graphics.drawscope.Stroke"
+            return "style = Stroke(${dpPx(width)})"
+        }
+        fun offset(x: Int, y: Int): String {
+            imports += "androidx.compose.ui.geometry.Offset"
+            return "Offset(${dpPx(x)}, ${dpPx(y)})"
+        }
+        fun size(w: Int, h: Int): String {
+            imports += "androidx.compose.ui.geometry.Size"
+            return "Size(${dpPx(w)}, ${dpPx(h)})"
+        }
+        return when (shape) {
+            is Node.Line -> "drawLine(${shapeColorExpr(shape.color, imports)}, start = ${offset(shape.x1, shape.y1)}, end = ${offset(shape.x2, shape.y2)}, strokeWidth = ${dpPx(shape.strokeWidth)})"
+            is Node.RectShape -> {
+                val style = if (shape.filled) null else stroke(shape.strokeWidth)
+                if (shape.corner > 0) {
+                    imports += "androidx.compose.ui.geometry.CornerRadius"
+                    listOfNotNull(
+                        shapeColorExpr(shape.color, imports),
+                        "topLeft = ${offset(shape.x, shape.y)}",
+                        "size = ${size(shape.width, shape.height)}",
+                        "cornerRadius = CornerRadius(${dpPx(shape.corner)})",
+                        style,
+                    ).joinToString(", ", prefix = "drawRoundRect(", postfix = ")")
+                } else {
+                    listOfNotNull(
+                        shapeColorExpr(shape.color, imports),
+                        "topLeft = ${offset(shape.x, shape.y)}",
+                        "size = ${size(shape.width, shape.height)}",
+                        style,
+                    ).joinToString(", ", prefix = "drawRect(", postfix = ")")
+                }
+            }
+            is Node.CircleShape -> listOfNotNull(
+                shapeColorExpr(shape.color, imports),
+                "radius = ${dpPx(shape.radius)}",
+                "center = ${offset(shape.cx, shape.cy)}",
+                if (shape.filled) null else stroke(shape.strokeWidth),
+            ).joinToString(", ", prefix = "drawCircle(", postfix = ")")
+            is Node.EllipseShape -> listOfNotNull(
+                shapeColorExpr(shape.color, imports),
+                "topLeft = ${offset(shape.x, shape.y)}",
+                "size = ${size(shape.width, shape.height)}",
+                if (shape.filled) null else stroke(shape.strokeWidth),
+            ).joinToString(", ", prefix = "drawOval(", postfix = ")")
+            is Node.ArcShape -> listOfNotNull(
+                shapeColorExpr(shape.color, imports),
+                "startAngle = ${shape.startAngle}f",
+                "sweepAngle = ${shape.sweepAngle}f",
+                "useCenter = ${shape.filled}",
+                "topLeft = ${offset(shape.x, shape.y)}",
+                "size = ${size(shape.width, shape.height)}",
+                if (shape.filled) null else stroke(shape.strokeWidth),
+            ).joinToString(", ", prefix = "drawArc(", postfix = ")")
+            else -> null
+        }
+    }
 
     private fun chipComposable(v: ChipVariant): String = when (v) {
         ChipVariant.Assist -> "AssistChip"

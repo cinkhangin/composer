@@ -189,6 +189,92 @@ sealed interface Node {
         override val modifier: List<ModifierSpec> = emptyList(),
     ) : Node
 
+    /**
+     * Free-drawing surface: children are SHAPE leaves ([Line]/[RectShape]/[CircleShape]/
+     * [EllipseShape]/[ArcShape]) drawn in order inside ONE `Canvas { }` block — they are
+     * draw calls, not composables, so they have no layout bounds (select them in the
+     * Layers tree). Size the canvas itself with Size/fill modifiers; coordinates are dp.
+     */
+    @Serializable
+    @SerialName("Canvas")
+    data class Canvas(
+        override val id: String,
+        val children: List<Node> = emptyList(),
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    @Serializable
+    @SerialName("Line")
+    data class Line(
+        override val id: String,
+        val x1: Int = 0,
+        val y1: Int = 0,
+        val x2: Int = 120,
+        val y2: Int = 0,
+        val color: Long = 0xFF1F2937,
+        val strokeWidth: Int = 2,
+        override val modifier: List<ModifierSpec> = emptyList(), // unused — shapes aren't layout nodes
+    ) : Node
+
+    @Serializable
+    @SerialName("RectShape")
+    data class RectShape(
+        override val id: String,
+        val x: Int = 0,
+        val y: Int = 0,
+        val width: Int = 120,
+        val height: Int = 80,
+        val color: Long = 0xFF6366F1,
+        val filled: Boolean = true,
+        val strokeWidth: Int = 2,
+        val corner: Int = 0,
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    @Serializable
+    @SerialName("CircleShape")
+    data class CircleShape(
+        override val id: String,
+        val cx: Int = 60,
+        val cy: Int = 60,
+        val radius: Int = 50,
+        val color: Long = 0xFF6366F1,
+        val filled: Boolean = true,
+        val strokeWidth: Int = 2,
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    @Serializable
+    @SerialName("EllipseShape")
+    data class EllipseShape(
+        override val id: String,
+        val x: Int = 0,
+        val y: Int = 0,
+        val width: Int = 140,
+        val height: Int = 80,
+        val color: Long = 0xFF6366F1,
+        val filled: Boolean = true,
+        val strokeWidth: Int = 2,
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    /** [filled] draws a pie wedge (useCenter); unfilled draws the arc stroke only. */
+    @Serializable
+    @SerialName("ArcShape")
+    data class ArcShape(
+        override val id: String,
+        val x: Int = 0,
+        val y: Int = 0,
+        val width: Int = 120,
+        val height: Int = 120,
+        val startAngle: Int = 0,
+        val sweepAngle: Int = 120,
+        val color: Long = 0xFF6366F1,
+        val filled: Boolean = false,
+        val strokeWidth: Int = 2,
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
     @Serializable
     @SerialName("TextField")
     data class TextField(

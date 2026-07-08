@@ -367,6 +367,29 @@ class CodeGenTest {
     }
 
     @Test
+    fun canvas_emits_draw_calls_in_dp() {
+        val code = CodeGen.generate(
+            Node.Canvas(
+                "cv",
+                children = listOf(
+                    Node.Line("l", 0, 0, 120, -4, 0xFF111111, 3),
+                    Node.RectShape("r", 10, 10, 100, 60, 0xFF6366F1, filled = false, strokeWidth = 2, corner = 8),
+                    Node.CircleShape("c", 50, 50, 40, 0xFF22C55E, filled = true),
+                    Node.ArcShape("a", 0, 0, 80, 80, 0, 120, 0xFFF59E0B, filled = false, strokeWidth = 4),
+                ),
+                modifier = listOf(ModifierSpec.Size(200, 200)),
+            ),
+        )
+        assertTrue("Canvas(modifier = Modifier.size(200.dp, 200.dp)) {" in code, code)
+        assertTrue("drawLine(Color(0xFF111111), start = Offset(0.dp.toPx(), 0.dp.toPx()), end = Offset(120.dp.toPx(), (-4).dp.toPx()), strokeWidth = 3.dp.toPx())" in code, code)
+        assertTrue("drawRoundRect(Color(0xFF6366F1), topLeft = Offset(10.dp.toPx(), 10.dp.toPx()), size = Size(100.dp.toPx(), 60.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = Stroke(2.dp.toPx()))" in code, code)
+        assertTrue("drawCircle(Color(0xFF22C55E), radius = 40.dp.toPx(), center = Offset(50.dp.toPx(), 50.dp.toPx()))" in code, code)
+        assertTrue("drawArc(Color(0xFFF59E0B), startAngle = 0f, sweepAngle = 120f, useCenter = false, topLeft = Offset(0.dp.toPx(), 0.dp.toPx()), size = Size(80.dp.toPx(), 80.dp.toPx()), style = Stroke(4.dp.toPx()))" in code, code)
+        assertTrue("import androidx.compose.foundation.Canvas" in code, code)
+        assertTrue("import androidx.compose.ui.graphics.drawscope.Stroke" in code, code)
+    }
+
+    @Test
     fun tab_row_hoists_int_state_and_emits_indexed_tabs() {
         val code = CodeGen.generate(
             Node.TabRow("tr", children = listOf(Node.Tab("a", "One"), Node.Tab("b", "Two")), selectedIndex = 1),

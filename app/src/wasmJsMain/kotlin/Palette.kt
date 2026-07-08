@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import composer.model.IconKind
+import composer.model.ModifierSpec
 import composer.model.Node
 import composer.model.TextWeight
 import composer.ui.ComponentGlyph
@@ -195,6 +196,25 @@ private val paletteGroups: List<PaletteGroup> = listOf(
         },
     )),
     // Overlays / modal section
+    PaletteGroup("Drawing", listOf(
+        // The one palette exception to "no default modifiers": a Canvas has no
+        // intrinsic content size — without a Size it renders 0×0 and is unfindable.
+        PaletteItem("Canvas") { id ->
+            Node.Canvas(
+                id,
+                children = listOf(
+                    Node.RectShape("${id}r", x = 10, y = 10, width = 120, height = 80, corner = 12),
+                    Node.CircleShape("${id}c", cx = 150, cy = 120, radius = 40),
+                ),
+                modifier = listOf(ModifierSpec.Size(200, 200)),
+            )
+        },
+        PaletteItem("Line") { id -> Node.Line(id) },
+        PaletteItem("Rect") { id -> Node.RectShape(id) },
+        PaletteItem("Circle") { id -> Node.CircleShape(id) },
+        PaletteItem("Ellipse") { id -> Node.EllipseShape(id) },
+        PaletteItem("Arc") { id -> Node.ArcShape(id) },
+    )),
     PaletteGroup("Overlays", listOf(
         PaletteItem("Dialog") { id ->
             Node.Dialog(

@@ -334,6 +334,7 @@ private fun parseComponent(
         "NavigationBar" -> parseNavigationBar(shape, pending, ctx, scopeParam)
         in CHIP_VARIANTS -> parseChip(shape, pending, ctx, scopeParam)
         "BadgedBox" -> parseBadgedBox(shape, ctx, scopeParam)
+        "Canvas" -> parseCanvas(shape, ctx, scopeParam)
         "Column" -> parseColumn(shape, ctx, scopeParam)
         "Row" -> parseRow(shape, ctx, scopeParam)
         "Box" -> parseBox(shape, ctx, scopeParam)
@@ -905,6 +906,110 @@ private fun parseBadgedBox(shape: CallShape, ctx: ParseCtx, scopeParam: String?)
     val m = modifierOf(shape, scopeParam) ?: return null
     val kids = childrenOf(shape.trailingLambda, ctx) ?: return null
     return Parsed(Node.BadgedBox(ctx.newId(), badge, kids, m))
+}
+
+// ---- canvas shapes --------------------------------------------------------------
+
+/** `N.dp.toPx()` → N (codegen parenthesizes negatives: `(-8).dp.toPx()`). */
+private fun dpPxValue(expr: KtExpression?): Int? {
+    val dot = expr?.unparen() as? KtDotQualifiedExpression ?: return null
+    val call = dot.selectorExpression?.unparen() as? KtCallExpression ?: return null
+    if (callName(call) != "toPx" || call.valueArguments.isNotEmpty() || call.lambdaArguments.isNotEmpty()) return null
+    return dpInt(dot.receiverExpression)
+}
+
+/** `Offset(a.dp.toPx(), b.dp.toPx())` / `Size(...)` → the two dp ints. */
+private fun dpPxPair(expr: KtExpression?, fnName: String): Pair<Int, Int>? {
+    val call = expr?.unparen() as? KtCallExpression ?: return null
+    if (callName(call) != fnName) return null
+    val cs = callShape(call) ?: return null
+    if (cs.named.isNotEmpty() || cs.trailingLambda != null || cs.positional.size != 2) return null
+    val a = dpPxValue(cs.positional[0]) ?: return null
+    val b = dpPxValue(cs.positional[1]) ?: return null
+    return a to b
+}
+
+/** `Stroke(w.dp.toPx())` → w. */
+private fun strokeWidthOf(expr: KtExpression?): Int? {
+    val call = expr?.unparen() as? KtCallExpression ?: return null
+    if (callName(call) != "Stroke") return null
+    val cs = callShape(call) ?: return null
+    if (cs.named.isNotEmpty() || cs.trailingLambda != null) return null
+    return dpPxValue(cs.positional.singleOrNull())
+}
+
+/** `120f` float literal that is a whole number → 120 (angles are Int in the model). */
+private fun intFromFloat(expr: KtExpression?): Int? =
+    floatLit(expr)?.takeIf { it == it.toInt().toFloat() }?.toInt()
+
+private fun parseCanvas(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
+    if (shape.positional.isNotEmpty()) return null
+    if (!shape.named.keys.all { it == "modifier" }) return null
+    val m = modifierOf(shape, scopeParam) ?: return null
+    val body = shape.trailingLambda ?: return null
+    if (body.valueParameters.isNotEmpty()) return null
+    val shapes = mutableListOf<Node>()
+    for (stmt in body.bodyExpression?.statements ?: emptyList()) {
+        val call = stmt.unparen() as? KtCallExpression ?: return null
+        shapes += parseShapeCall(call, ctx) ?: return null
+    }
+    return Parsed(Node.Canvas(ctx.newId(), shapes, m))
+}
+
+private fun parseShapeCall(call: KtCallExpression, ctx: ParseCtx): Node? {
+    val cs = callShape(call) ?: return null
+    if (cs.trailingLambda != null || cs.positional.size != 1) return null
+    val color = colorValue(cs.positional[0]) ?: return null
+    return when (cs.name) {
+        "drawLine" -> {
+            if (!cs.named.keys.all { it in setOf("start", "end", "strokeWidth") }) return null
+            val (x1, y1) = dpPxPair(cs.named["start"], "Offset") ?: return null
+            val (x2, y2) = dpPxPair(cs.named["end"], "Offset") ?: return null
+            val sw = dpPxValue(cs.named["strokeWidth"]) ?: return null
+            Node.Line(ctx.newId(), x1, y1, x2, y2, color, sw)
+        }
+        "drawRect", "drawRoundRect" -> {
+            if (!cs.named.keys.all { it in setOf("topLeft", "size", "cornerRadius", "style") }) return null
+            if (cs.name == "drawRect" && "cornerRadius" in cs.named.keys) return null
+            val (x, y) = dpPxPair(cs.named["topLeft"], "Offset") ?: return null
+            val (w, h) = dpPxPair(cs.named["size"], "Size") ?: return null
+            val corner = cs.named["cornerRadius"]?.let { cr ->
+                val c = cr.unparen() as? KtCallExpression ?: return null
+                if (callName(c) != "CornerRadius") return null
+                dpPxValue(c.singlePositionalArg()) ?: return null
+            } ?: 0
+            if (cs.name == "drawRoundRect" && corner <= 0) return null
+            val sw = cs.named["style"]?.let { strokeWidthOf(it) ?: return null }
+            Node.RectShape(ctx.newId(), x, y, w, h, color, filled = sw == null, strokeWidth = sw ?: 2, corner = corner)
+        }
+        "drawCircle" -> {
+            if (!cs.named.keys.all { it in setOf("radius", "center", "style") }) return null
+            val r = dpPxValue(cs.named["radius"]) ?: return null
+            val (cx, cy) = dpPxPair(cs.named["center"], "Offset") ?: return null
+            val sw = cs.named["style"]?.let { strokeWidthOf(it) ?: return null }
+            Node.CircleShape(ctx.newId(), cx, cy, r, color, filled = sw == null, strokeWidth = sw ?: 2)
+        }
+        "drawOval" -> {
+            if (!cs.named.keys.all { it in setOf("topLeft", "size", "style") }) return null
+            val (x, y) = dpPxPair(cs.named["topLeft"], "Offset") ?: return null
+            val (w, h) = dpPxPair(cs.named["size"], "Size") ?: return null
+            val sw = cs.named["style"]?.let { strokeWidthOf(it) ?: return null }
+            Node.EllipseShape(ctx.newId(), x, y, w, h, color, filled = sw == null, strokeWidth = sw ?: 2)
+        }
+        "drawArc" -> {
+            if (!cs.named.keys.all { it in setOf("startAngle", "sweepAngle", "useCenter", "topLeft", "size", "style") }) return null
+            val start = intFromFloat(cs.named["startAngle"]) ?: return null
+            val sweep = intFromFloat(cs.named["sweepAngle"]) ?: return null
+            val useCenter = boolLit(cs.named["useCenter"]) ?: return null
+            val (x, y) = dpPxPair(cs.named["topLeft"], "Offset") ?: return null
+            val (w, h) = dpPxPair(cs.named["size"], "Size") ?: return null
+            val sw = cs.named["style"]?.let { strokeWidthOf(it) ?: return null }
+            // Canonical: filled arcs use the center (pie) and carry no style.
+            if ((sw == null) != useCenter) return null
+            Node.ArcShape(ctx.newId(), x, y, w, h, start, sweep, color, filled = useCenter, strokeWidth = sw ?: 2)
+        }
+        else -> null
+    }
 }
 
 private fun iconKind(expr: KtExpression): IconKind? {

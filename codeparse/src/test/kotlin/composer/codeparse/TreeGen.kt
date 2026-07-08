@@ -163,6 +163,23 @@ internal class TreeGen(seed: Int) {
         else -> Node.RawCode(nid(), rawStatement())
     }
 
+    /**
+     * Shape colors are LITERAL only (theme refs can't be referenced in a draw lambda),
+     * and a FILLED shape's strokeWidth is invisible in code — keep it at the parse
+     * default (2) so it round-trips.
+     */
+    private fun shape(): Node {
+        val filled = rnd.nextBoolean()
+        val sw = if (filled) 2 else rnd.nextInt(1, 9)
+        return when (rnd.nextInt(5)) {
+            0 -> Node.Line(nid(), rnd.nextInt(-20, 200), rnd.nextInt(-20, 200), rnd.nextInt(0, 220), rnd.nextInt(0, 220), rnd.nextLong(0, 0x1_0000_0000), rnd.nextInt(1, 9))
+            1 -> Node.RectShape(nid(), rnd.nextInt(0, 100), rnd.nextInt(0, 100), rnd.nextInt(1, 160), rnd.nextInt(1, 160), rnd.nextLong(0, 0x1_0000_0000), filled, sw, rnd.nextInt(0, 25))
+            2 -> Node.CircleShape(nid(), rnd.nextInt(0, 160), rnd.nextInt(0, 160), rnd.nextInt(1, 90), rnd.nextLong(0, 0x1_0000_0000), filled, sw)
+            3 -> Node.EllipseShape(nid(), rnd.nextInt(0, 100), rnd.nextInt(0, 100), rnd.nextInt(1, 160), rnd.nextInt(1, 100), rnd.nextLong(0, 0x1_0000_0000), filled, sw)
+            else -> Node.ArcShape(nid(), rnd.nextInt(0, 100), rnd.nextInt(0, 100), rnd.nextInt(1, 160), rnd.nextInt(1, 160), rnd.nextInt(-360, 361), rnd.nextInt(-360, 361), rnd.nextLong(0, 0x1_0000_0000), filled, sw)
+        }
+    }
+
     private fun rawStatement(): String = listOf(
         "if (loading) {\n    SpinnerWidget()\n}",
         "val cached = repository.load(idx)",
@@ -173,7 +190,7 @@ internal class TreeGen(seed: Int) {
 
     fun node(depth: Int, weightScope: Boolean, aligns: List<ModifierSpec.Align> = emptyList()): Node {
         if (depth <= 0 || rnd.nextInt(3) > 0) return leaf(weightScope, aligns)
-        return when (rnd.nextInt(11)) {
+        return when (rnd.nextInt(12)) {
             0 -> Node.Column(
                 nid(), children(depth, weightScope = true, aligns = hAligns),
                 verticalArrangement = VArrangement.entries.random(rnd),
@@ -203,6 +220,7 @@ internal class TreeGen(seed: Int) {
                 Node.NavigationBar(nid(), items, selectedIndex = rnd.nextInt(items.size), modifier = modifiers(weightScope, aligns))
             }
             9 -> Node.BadgedBox(nid(), if (rnd.nextBoolean()) str() else "", children(depth, weightScope = false, aligns = boxAligns), modifiers(weightScope, aligns))
+            10 -> Node.Canvas(nid(), List(rnd.nextInt(1, 5)) { shape() }, modifiers(weightScope, aligns))
             else -> if (rnd.nextBoolean()) {
                 Node.Dialog(nid(), children(depth, weightScope = true, aligns = hAligns), modifiers(weightScope, aligns))
             } else {
