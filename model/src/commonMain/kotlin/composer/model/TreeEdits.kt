@@ -9,10 +9,13 @@ package composer.model
 fun Node.isContainer(): Boolean = when (this) {
     is Node.Column, is Node.Row, is Node.Box, is Node.Card, is Node.Scaffold, is Node.Button,
     is Node.Fab, is Node.Dialog, is Node.BottomSheet, is Node.TopAppBar,
+    is Node.TabRow, is Node.NavigationBar, is Node.BadgedBox, is Node.Canvas,
     is Node.Composable, is Node.Artboard, is Node.Slot -> true
     is Node.Text, is Node.Spacer, is Node.Image, is Node.Divider,
     is Node.Switch, is Node.Checkbox, is Node.RadioButton, is Node.Slider,
     is Node.Icon, is Node.IconButton, is Node.TextField,
+    is Node.Tab, is Node.NavItem, is Node.Chip,
+    is Node.Line, is Node.RectShape, is Node.CircleShape, is Node.EllipseShape, is Node.ArcShape,
     is Node.CircularProgress, is Node.LinearProgress, is Node.Instance,
     is Node.RawCode -> false
 }
@@ -23,11 +26,25 @@ fun Node.isContainer(): Boolean = when (this) {
  * a [Node.Slot] is permanent — created with its parent, never moved anywhere.
  * Everything else nests freely inside any container.
  */
+/** Canvas draw-call leaves ([Node.Canvas] children). */
+fun Node.isShape(): Boolean =
+    this is Node.Line || this is Node.RectShape || this is Node.CircleShape ||
+        this is Node.EllipseShape || this is Node.ArcShape
+
 fun canParent(parent: Node, child: Node): Boolean = when {
     child is Node.Slot -> false       // slots are fixed to the parent that created them
     parent is Node.Artboard -> child is Node.Composable
     child is Node.Composable -> false // composables live under the artboard only
     child is Node.Artboard -> false   // the artboard is always the root
+    // Typed item containers: a TabRow holds only Tabs (and vice versa), a
+    // NavigationBar only NavItems — the generated slot APIs demand it.
+    parent is Node.TabRow -> child is Node.Tab
+    child is Node.Tab -> false
+    parent is Node.NavigationBar -> child is Node.NavItem
+    child is Node.NavItem -> false
+    // A Canvas draws only shapes; shapes exist only inside a Canvas.
+    parent is Node.Canvas -> child.isShape()
+    child.isShape() -> false
     else -> true
 }
 

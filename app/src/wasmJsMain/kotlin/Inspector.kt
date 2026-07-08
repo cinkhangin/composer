@@ -57,6 +57,7 @@ import composer.model.ButtonVariant
 import composer.model.DesignTheme
 import composer.model.HAlignment
 import composer.model.HArrangement
+import composer.model.ChipVariant
 import composer.model.IconKind
 import composer.model.ModifierSpec
 import composer.model.Node
@@ -74,6 +75,7 @@ import composer.ui.ColorField
 import composer.ui.AppIconKind
 import composer.ui.ComponentGlyph
 import composer.ui.Field
+import composer.ui.SymbolPickerField
 import composer.ui.HDivider
 import composer.ui.InspectorSection
 import composer.ui.SectionHeader
@@ -253,8 +255,8 @@ fun Inspector(state: EditorState, modifier: Modifier = Modifier) {
                     }
 
                     is Node.Icon -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        EnumDropdown("Icon", selected.icon, IconKind.entries) { k ->
-                            state.update(selected.id) { (it as Node.Icon).copy(icon = k) }
+                        SymbolPickerField("Icon", selected.symbol, fallbackLabel = selected.icon.name) { name ->
+                            state.update(selected.id) { (it as Node.Icon).copy(symbol = name) }
                         }
                         Field(
                             value = selected.contentDescription,
@@ -264,8 +266,8 @@ fun Inspector(state: EditorState, modifier: Modifier = Modifier) {
                         )
                     }
 
-                    is Node.IconButton -> EnumDropdown("Icon", selected.icon, IconKind.entries) { k ->
-                        state.update(selected.id) { (it as Node.IconButton).copy(icon = k) }
+                    is Node.IconButton -> SymbolPickerField("Icon", selected.symbol, fallbackLabel = selected.icon.name) { name ->
+                        state.update(selected.id) { (it as Node.IconButton).copy(symbol = name) }
                     }
 
                     is Node.TextField -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -338,6 +340,145 @@ fun Inspector(state: EditorState, modifier: Modifier = Modifier) {
                             style = TextStyle(color = Tk.textSecondary, fontSize = 11.sp, fontFamily = FontFamily.Monospace),
                             maxLines = 12,
                         )
+                    }
+
+                    is Node.TabRow -> NumField("selected tab", selected.selectedIndex, Modifier.fillMaxWidth()) { v ->
+                        state.update(selected.id) { n -> (n as Node.TabRow).copy(selectedIndex = v.coerceIn(0, (n.children.size - 1).coerceAtLeast(0))) }
+                    }
+
+                    is Node.Tab -> Field(
+                        value = selected.label,
+                        onValueChange = { v -> state.update(selected.id, coalesceKey = "tab:${selected.id}") { (it as Node.Tab).copy(label = v) } },
+                        label = "Label",
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    is Node.NavigationBar -> NumField("selected item", selected.selectedIndex, Modifier.fillMaxWidth()) { v ->
+                        state.update(selected.id) { n -> (n as Node.NavigationBar).copy(selectedIndex = v.coerceIn(0, (n.children.size - 1).coerceAtLeast(0))) }
+                    }
+
+                    is Node.NavItem -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Field(
+                            value = selected.label,
+                            onValueChange = { v -> state.update(selected.id, coalesceKey = "nav:${selected.id}") { (it as Node.NavItem).copy(label = v) } },
+                            label = "Label",
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        SymbolPickerField("Icon", selected.symbol, fallbackLabel = "pick an icon") { name ->
+                            state.update(selected.id) { (it as Node.NavItem).copy(symbol = name) }
+                        }
+                    }
+
+                    is Node.Chip -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Field(
+                            value = selected.label,
+                            onValueChange = { v -> state.update(selected.id, coalesceKey = "chip:${selected.id}") { (it as Node.Chip).copy(label = v) } },
+                            label = "Label",
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        EnumDropdown("Style", selected.variant, ChipVariant.entries) { v ->
+                            state.update(selected.id) { (it as Node.Chip).copy(variant = v) }
+                        }
+                        if (selected.variant == ChipVariant.Filter || selected.variant == ChipVariant.Input) {
+                            BoolField("Selected", selected.selected) { v ->
+                                state.update(selected.id) { (it as Node.Chip).copy(selected = v) }
+                            }
+                        }
+                        SymbolPickerField("Leading icon", selected.symbol, fallbackLabel = "none") { name ->
+                            state.update(selected.id) { (it as Node.Chip).copy(symbol = name) }
+                        }
+                    }
+
+                    is Node.BadgedBox -> Field(
+                        value = selected.badge,
+                        onValueChange = { v -> state.update(selected.id, coalesceKey = "badge:${selected.id}") { (it as Node.BadgedBox).copy(badge = v) } },
+                        label = "Badge text (empty = dot)",
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    is Node.Canvas -> BasicText(
+                        "A drawing surface — add Line/Rect/Circle/Ellipse/Arc shapes from the palette. " +
+                            "Shapes have no layout bounds; select them in the Layers tree. Size the canvas with a Size modifier.",
+                        style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
+                    )
+
+                    is Node.Line -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            NumField("x1", selected.x1, Modifier.weight(1f), allowNegative = true) { v -> state.update(selected.id) { (it as Node.Line).copy(x1 = v) } }
+                            NumField("y1", selected.y1, Modifier.weight(1f), allowNegative = true) { v -> state.update(selected.id) { (it as Node.Line).copy(y1 = v) } }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            NumField("x2", selected.x2, Modifier.weight(1f), allowNegative = true) { v -> state.update(selected.id) { (it as Node.Line).copy(x2 = v) } }
+                            NumField("y2", selected.y2, Modifier.weight(1f), allowNegative = true) { v -> state.update(selected.id) { (it as Node.Line).copy(y2 = v) } }
+                        }
+                        ColorField(selected.color, showThemeSwatches = false) { c -> state.update(selected.id) { (it as Node.Line).copy(color = c) } }
+                        NumField("stroke (dp)", selected.strokeWidth, Modifier.fillMaxWidth()) { v -> state.update(selected.id) { (it as Node.Line).copy(strokeWidth = v) } }
+                    }
+
+                    is Node.RectShape -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            NumField("x", selected.x, Modifier.weight(1f), allowNegative = true) { v -> state.update(selected.id) { (it as Node.RectShape).copy(x = v) } }
+                            NumField("y", selected.y, Modifier.weight(1f), allowNegative = true) { v -> state.update(selected.id) { (it as Node.RectShape).copy(y = v) } }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            NumField("width", selected.width, Modifier.weight(1f)) { v -> state.update(selected.id) { (it as Node.RectShape).copy(width = v) } }
+                            NumField("height", selected.height, Modifier.weight(1f)) { v -> state.update(selected.id) { (it as Node.RectShape).copy(height = v) } }
+                        }
+                        ColorField(selected.color, showThemeSwatches = false) { c -> state.update(selected.id) { (it as Node.RectShape).copy(color = c) } }
+                        BoolField("Filled", selected.filled) { v -> state.update(selected.id) { (it as Node.RectShape).copy(filled = v) } }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            NumField("stroke", selected.strokeWidth, Modifier.weight(1f)) { v -> state.update(selected.id) { (it as Node.RectShape).copy(strokeWidth = v) } }
+                            NumField("corner", selected.corner, Modifier.weight(1f)) { v -> state.update(selected.id) { (it as Node.RectShape).copy(corner = v) } }
+                        }
+                    }
+
+                    is Node.CircleShape -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            NumField("center x", selected.cx, Modifier.weight(1f), allowNegative = true) { v -> state.update(selected.id) { (it as Node.CircleShape).copy(cx = v) } }
+                            NumField("center y", selected.cy, Modifier.weight(1f), allowNegative = true) { v -> state.update(selected.id) { (it as Node.CircleShape).copy(cy = v) } }
+                        }
+                        NumField("radius", selected.radius, Modifier.fillMaxWidth()) { v -> state.update(selected.id) { (it as Node.CircleShape).copy(radius = v) } }
+                        ColorField(selected.color, showThemeSwatches = false) { c -> state.update(selected.id) { (it as Node.CircleShape).copy(color = c) } }
+                        BoolField("Filled", selected.filled) { v -> state.update(selected.id) { (it as Node.CircleShape).copy(filled = v) } }
+                        if (!selected.filled) {
+                            NumField("stroke (dp)", selected.strokeWidth, Modifier.fillMaxWidth()) { v -> state.update(selected.id) { (it as Node.CircleShape).copy(strokeWidth = v) } }
+                        }
+                    }
+
+                    is Node.EllipseShape -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            NumField("x", selected.x, Modifier.weight(1f), allowNegative = true) { v -> state.update(selected.id) { (it as Node.EllipseShape).copy(x = v) } }
+                            NumField("y", selected.y, Modifier.weight(1f), allowNegative = true) { v -> state.update(selected.id) { (it as Node.EllipseShape).copy(y = v) } }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            NumField("width", selected.width, Modifier.weight(1f)) { v -> state.update(selected.id) { (it as Node.EllipseShape).copy(width = v) } }
+                            NumField("height", selected.height, Modifier.weight(1f)) { v -> state.update(selected.id) { (it as Node.EllipseShape).copy(height = v) } }
+                        }
+                        ColorField(selected.color, showThemeSwatches = false) { c -> state.update(selected.id) { (it as Node.EllipseShape).copy(color = c) } }
+                        BoolField("Filled", selected.filled) { v -> state.update(selected.id) { (it as Node.EllipseShape).copy(filled = v) } }
+                        if (!selected.filled) {
+                            NumField("stroke (dp)", selected.strokeWidth, Modifier.fillMaxWidth()) { v -> state.update(selected.id) { (it as Node.EllipseShape).copy(strokeWidth = v) } }
+                        }
+                    }
+
+                    is Node.ArcShape -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            NumField("x", selected.x, Modifier.weight(1f), allowNegative = true) { v -> state.update(selected.id) { (it as Node.ArcShape).copy(x = v) } }
+                            NumField("y", selected.y, Modifier.weight(1f), allowNegative = true) { v -> state.update(selected.id) { (it as Node.ArcShape).copy(y = v) } }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            NumField("width", selected.width, Modifier.weight(1f)) { v -> state.update(selected.id) { (it as Node.ArcShape).copy(width = v) } }
+                            NumField("height", selected.height, Modifier.weight(1f)) { v -> state.update(selected.id) { (it as Node.ArcShape).copy(height = v) } }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            NumField("start °", selected.startAngle, Modifier.weight(1f), allowNegative = true) { v -> state.update(selected.id) { (it as Node.ArcShape).copy(startAngle = v) } }
+                            NumField("sweep °", selected.sweepAngle, Modifier.weight(1f), allowNegative = true) { v -> state.update(selected.id) { (it as Node.ArcShape).copy(sweepAngle = v) } }
+                        }
+                        ColorField(selected.color, showThemeSwatches = false) { c -> state.update(selected.id) { (it as Node.ArcShape).copy(color = c) } }
+                        BoolField("Filled (pie)", selected.filled) { v -> state.update(selected.id) { (it as Node.ArcShape).copy(filled = v) } }
+                        if (!selected.filled) {
+                            NumField("stroke (dp)", selected.strokeWidth, Modifier.fillMaxWidth()) { v -> state.update(selected.id) { (it as Node.ArcShape).copy(strokeWidth = v) } }
+                        }
                     }
 
                     is Node.Spacer, is Node.Divider, is Node.Card, is Node.Fab,
@@ -449,7 +590,11 @@ private fun ThemeSwatch(label: String, color: Long, selected: Boolean, onClick: 
 private fun Node.hasContentProps(): Boolean = when (this) {
     is Node.Text, is Node.Button, is Node.Image, is Node.Icon, is Node.IconButton,
     is Node.TextField, is Node.Switch, is Node.Checkbox, is Node.RadioButton,
-    is Node.Slider, is Node.Scaffold, is Node.TopAppBar, is Node.RawCode -> true
+    is Node.Slider, is Node.Scaffold, is Node.TopAppBar, is Node.RawCode,
+    is Node.TabRow, is Node.Tab, is Node.NavigationBar, is Node.NavItem,
+    is Node.Chip, is Node.BadgedBox, is Node.Canvas,
+    is Node.Line, is Node.RectShape, is Node.CircleShape,
+    is Node.EllipseShape, is Node.ArcShape -> true
     else -> false
 }
 
@@ -670,7 +815,7 @@ private fun DeviceFontPicker(current: String, onPick: (String) -> Unit) {
 }
 
 @Composable
-private fun <T> EnumDropdown(label: String, value: T, options: List<T>, modifier: Modifier = Modifier, itemLabel: (T) -> String = { Vocab.label(it) }, onChange: (T) -> Unit) {
+fun <T> EnumDropdown(label: String, value: T, options: List<T>, modifier: Modifier = Modifier, itemLabel: (T) -> String = { Vocab.label(it) }, onChange: (T) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()

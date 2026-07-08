@@ -29,8 +29,11 @@ object DesignParser {
             "CircularProgressIndicator", "LinearProgressIndicator", "Card", "Scaffold", "Surface",
             "TopAppBar", "CenterAlignedTopAppBar", "MediumTopAppBar", "LargeTopAppBar",
             "ModalBottomSheet", "HorizontalDivider", "Divider", "FloatingActionButton",
+            "TabRow", "Tab", "NavigationBar", "NavigationBarItem",
+            "AssistChip", "FilterChip", "InputChip", "SuggestionChip", "BadgedBox", "Badge",
         )) put("androidx.compose.material3.$n", n)
         for (n in listOf("Column", "Row", "Box", "Spacer")) put("androidx.compose.foundation.layout.$n", n)
+        put("androidx.compose.foundation.Canvas", "Canvas")
         put("androidx.compose.foundation.Image", "Image")
         put("androidx.compose.ui.window.Dialog", "Dialog")
         put("coil3.compose.AsyncImage", "AsyncImage")
@@ -76,6 +79,7 @@ object DesignParser {
                 functionName = name,
                 fnRange = fn.textRange.startOffset until fn.textRange.endOffset,
                 treeHash = ParsedFunction.hashOf(screen),
+                paramList = fn.valueParameterList?.text ?: "()",
             )
         }
         if (screens.isEmpty()) return null
@@ -96,10 +100,11 @@ object DesignParser {
         )
     }
 
+    // Value parameters ARE allowed (the signature is preserved verbatim on
+    // write-back); statements that reference them simply become RawCode.
     private fun isScreenFunction(fn: KtNamedFunction): Boolean =
         fn.name != null &&
             fn.annotationEntries.any { it.shortName?.asString() == "Composable" } &&
-            fn.valueParameters.isEmpty() &&
             fn.receiverTypeReference == null &&
             fn.typeParameters.isEmpty() &&
             fn.typeReference == null &&

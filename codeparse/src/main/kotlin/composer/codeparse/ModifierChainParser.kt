@@ -1,9 +1,12 @@
 package composer.codeparse
 
+import composer.model.BoxAlignment
 import composer.model.CornerUnit
 import composer.model.GradientDirection
+import composer.model.HAlignment
 import composer.model.ModifierSpec
 import composer.model.PaddingMode
+import composer.model.VAlignment
 import org.jetbrains.kotlin.psi.KtBinaryExpression
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
@@ -94,10 +97,40 @@ private fun parseModifierCall(call: KtCallExpression): ModifierSpec? {
             }
             else -> null
         }
-        "fillMaxWidth" -> if (noArgs(shape)) ModifierSpec.FillMaxWidth else null
-        "fillMaxHeight" -> if (noArgs(shape)) ModifierSpec.FillMaxHeight else null
-        "fillMaxSize" -> if (noArgs(shape)) ModifierSpec.FillMaxSize else null
+        "align" -> single(shape)?.let { alignSpec(it) }
+        "zIndex" -> single(shape)?.let { floatLit(it) }?.let { ModifierSpec.ZIndex(it) }
+        "blur" -> single(shape)?.let { dpInt(it) }?.let { ModifierSpec.Blur(it) }
+        "fillMaxWidth" -> fillFraction(shape)?.let { ModifierSpec.FillMaxWidth(it) }
+        "fillMaxHeight" -> fillFraction(shape)?.let { ModifierSpec.FillMaxHeight(it) }
+        "fillMaxSize" -> fillFraction(shape)?.let { ModifierSpec.FillMaxSize(it) }
         else -> null
+    }
+}
+
+/** `fillMax*()` → 1f, `fillMax*(0.5f)` → the fraction; anything else fails. */
+private fun fillFraction(shape: CallShape): Float? = when {
+    shape.named.isNotEmpty() -> null
+    shape.positional.isEmpty() -> 1f
+    shape.positional.size == 1 -> floatLit(shape.positional[0])
+    else -> null
+}
+
+/**
+ * `Alignment.<name>` → a scope-typed [ModifierSpec.Align]. The name alone decides
+ * the scope (Row's Top/CenterVertically/Bottom, Column's Start/CenterHorizontally/End,
+ * Box's 2D names) — the sets don't overlap.
+ */
+private fun alignSpec(expr: KtExpression): ModifierSpec.Align? {
+    val dot = expr.unparen() as? KtDotQualifiedExpression ?: return null
+    if (nameOf(dot.receiverExpression) != "Alignment") return null
+    return when (val name = nameOf(dot.selectorExpression) ?: return null) {
+        "Top" -> ModifierSpec.Align(vertical = VAlignment.Top)
+        "CenterVertically" -> ModifierSpec.Align(vertical = VAlignment.Center)
+        "Bottom" -> ModifierSpec.Align(vertical = VAlignment.Bottom)
+        "Start" -> ModifierSpec.Align(horizontal = HAlignment.Start)
+        "CenterHorizontally" -> ModifierSpec.Align(horizontal = HAlignment.Center)
+        "End" -> ModifierSpec.Align(horizontal = HAlignment.End)
+        else -> BoxAlignment.entries.firstOrNull { it.name == name }?.let { ModifierSpec.Align(box = it) }
     }
 }
 

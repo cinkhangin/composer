@@ -42,6 +42,13 @@ data class ParsedFunction(
      * code edit. Write-back skips screens whose hash is unchanged.
      */
     val treeHash: Int,
+    /**
+     * The declaration's verbatim parameter-list text, parens included (e.g.
+     * `(modifier: Modifier = Modifier)`). Write-back regenerates a changed
+     * screen's BODY but preserves this signature exactly — the model has no
+     * notion of parameters, and statements that use them are RawCode anyway.
+     */
+    val paramList: String = "()",
 ) {
     companion object {
         fun hashOf(screen: composer.model.Node.Composable): Int =

@@ -155,6 +155,31 @@ sealed interface ModifierSpec {
         val cornerUnit: CornerUnit = CornerUnit.Dp,
     ) : ModifierSpec
 
+    /**
+     * `Modifier.align(...)` — a Box/Row/Column **scope member** (like [Weight]).
+     * Exactly one field is set, matching the parent scope: [box] inside a Box,
+     * [vertical] inside a Row (or Button), [horizontal] inside a Column (or
+     * Dialog/BottomSheet). Renderer and codegen drop it when the parent scope
+     * doesn't match the set field.
+     */
+    @Serializable
+    @SerialName("align")
+    data class Align(
+        val box: BoxAlignment? = null,
+        val vertical: VAlignment? = null,
+        val horizontal: HAlignment? = null,
+    ) : ModifierSpec
+
+    /** `Modifier.zIndex(value)` — stacking order among overlapping siblings. */
+    @Serializable
+    @SerialName("zIndex")
+    data class ZIndex(val value: Float) : ModifierSpec
+
+    /** `Modifier.blur(radius.dp)` — gaussian-blurs the content. */
+    @Serializable
+    @SerialName("blur")
+    data class Blur(val radius: Int) : ModifierSpec
+
     /** `Modifier.rotate(degrees)` — rotates the drawn content around its center (positive = clockwise). */
     @Serializable
     @SerialName("rotate")
@@ -168,15 +193,20 @@ sealed interface ModifierSpec {
     @SerialName("scale")
     data class Scale(val x: Float, val y: Float) : ModifierSpec
 
+    /**
+     * `Modifier.fillMaxWidth([fraction])` — [fraction] 1 (default) fills the parent;
+     * old saved JSON (which had no field) decodes to the default. Data classes since
+     * the fraction landed; emission stays `fillMaxWidth()` at 1f.
+     */
     @Serializable
     @SerialName("fillMaxWidth")
-    data object FillMaxWidth : ModifierSpec
+    data class FillMaxWidth(val fraction: Float = 1f) : ModifierSpec
 
     @Serializable
     @SerialName("fillMaxHeight")
-    data object FillMaxHeight : ModifierSpec
+    data class FillMaxHeight(val fraction: Float = 1f) : ModifierSpec
 
     @Serializable
     @SerialName("fillMaxSize")
-    data object FillMaxSize : ModifierSpec
+    data class FillMaxSize(val fraction: Float = 1f) : ModifierSpec
 }

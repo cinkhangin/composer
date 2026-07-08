@@ -141,7 +141,7 @@ class ParserCasesTest {
     }
 
     @Test
-    fun functions_with_parameters_are_not_screens() {
+    fun functions_with_parameters_parse_with_signature_preserved() {
         val file = PsiTestEnv.ktFile(
             """
             import androidx.compose.runtime.Composable
@@ -152,13 +152,20 @@ class ParserCasesTest {
             }
 
             @Composable
-            fun Helper(label: String) {
+            fun Helper(label: String, count: Int = 0) {
                 Text(label)
+                Text("static")
             }
             """.trimIndent(),
         )
         val parsed = DesignParser.parse(file)!!
-        assertEquals(listOf("Screen"), parsed.functions.map { it.functionName })
+        assertEquals(listOf("Screen", "Helper"), parsed.functions.map { it.functionName })
+        val helper = parsed.functions.last()
+        assertEquals("(label: String, count: Int = 0)", helper.paramList)
+        // Statements that use the params degrade to RawCode; static ones parse.
+        val screen = parsed.artboard.composables.last() as composer.model.Node.Composable
+        assertTrue(screen.children.first() is composer.model.Node.RawCode)
+        assertTrue((screen.children.last() as composer.model.Node.Text).text == "static")
     }
 
     @Test

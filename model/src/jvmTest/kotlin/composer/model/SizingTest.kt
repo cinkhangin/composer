@@ -33,13 +33,13 @@ class SizingTest {
     }
 
     @Test fun fillMaxWidthReadsFill() {
-        val m = listOf(FillMaxWidth)
+        val m = listOf(FillMaxWidth())
         assertEquals(SizeMode.Fill, m.sizeMode(SizeAxis.Width, weightIsFill = false))
         assertEquals(SizeMode.Hug, m.sizeMode(SizeAxis.Height, weightIsFill = false))
     }
 
     @Test fun fillMaxSizeReadsFillOnBothAxes() {
-        val m = listOf(FillMaxSize)
+        val m = listOf(FillMaxSize())
         assertEquals(SizeMode.Fill, m.sizeMode(SizeAxis.Width, weightIsFill = false))
         assertEquals(SizeMode.Fill, m.sizeMode(SizeAxis.Height, weightIsFill = false))
     }
@@ -60,7 +60,7 @@ class SizingTest {
 
     @Test fun setFillWidthAddsFillMaxWidthOffMainAxis() {
         val next = emptyList<ModifierSpec>().withSizeMode(SizeAxis.Width, SizeMode.Fill, weightIsFill = false)
-        assertEquals(listOf(FillMaxWidth), next)
+        assertEquals(listOf(FillMaxWidth()), next)
     }
 
     @Test fun setFillWidthAddsWeightOnMainAxis() {
@@ -96,6 +96,6 @@ class SizingTest {
 
     @Test fun heightFillOffMainAxisUsesFillMaxHeight() {
         val next = emptyList<ModifierSpec>().withSizeMode(SizeAxis.Height, SizeMode.Fill, weightIsFill = false)
-        assertEquals(listOf(FillMaxHeight), next)
+        assertEquals(listOf(FillMaxHeight()), next)
     }
 }

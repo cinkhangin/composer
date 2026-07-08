@@ -60,7 +60,7 @@ fun List<ModifierSpec>.withSizeMode(axis: SizeAxis, mode: SizeMode, weightIsFill
     val decomposed = flatMap { spec ->
         when (spec) {
             is ModifierSpec.Size -> listOf(ModifierSpec.Width(spec.width), ModifierSpec.Height(spec.height))
-            ModifierSpec.FillMaxSize -> listOf(ModifierSpec.FillMaxWidth, ModifierSpec.FillMaxHeight)
+            is ModifierSpec.FillMaxSize -> listOf(ModifierSpec.FillMaxWidth(spec.fraction), ModifierSpec.FillMaxHeight(spec.fraction))
             else -> listOf(spec)
         }
     }
@@ -81,8 +81,8 @@ fun List<ModifierSpec>.withSizeMode(axis: SizeAxis, mode: SizeMode, weightIsFill
         }
         SizeMode.Fill -> when {
             weightIsFill -> ModifierSpec.Weight(1f)
-            axis == SizeAxis.Width -> ModifierSpec.FillMaxWidth
-            else -> ModifierSpec.FillMaxHeight
+            axis == SizeAxis.Width -> ModifierSpec.FillMaxWidth()
+            else -> ModifierSpec.FillMaxHeight()
         }
         SizeMode.Hug -> null
     }

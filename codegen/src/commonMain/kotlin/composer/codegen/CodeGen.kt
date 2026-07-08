@@ -2,6 +2,7 @@ package composer.codegen
 
 import composer.model.BoxAlignment
 import composer.model.ButtonVariant
+import composer.model.ChipVariant
 import composer.model.CornerUnit
 import composer.model.DesignTheme
 import composer.model.GradientDirection
@@ -16,6 +17,7 @@ import composer.model.TextWeight
 import composer.model.ThemeColorRef
 import composer.model.TopAppBarVariant
 import composer.model.effectiveLineHeight
+import composer.model.typeName
 import composer.model.migrateToArtboard
 import composer.model.validComponentIds
 import composer.model.NamedTheme
@@ -131,7 +133,7 @@ object CodeGen {
      * for this screen inside a full file, including a per-function
      * `@OptIn(ExperimentalMaterial3Api::class)` when its own body needs it.
      */
-    fun screenFunction(screen: Node.Composable, name: String, componentFns: Map<String, String> = emptyMap()): ScreenCode {
+    fun screenFunction(screen: Node.Composable, name: String, componentFns: Map<String, String> = emptyMap(), params: String = "()"): ScreenCode {
         val imports = mutableSetOf("androidx.compose.runtime.Composable")
         this.componentFns = componentFns
         val body = StringBuilder()
@@ -142,7 +144,7 @@ object CodeGen {
         val text = buildString {
             if (needsOptIn) appendLine("@OptIn(ExperimentalMaterial3Api::class)")
             appendLine("@Composable")
-            appendLine("fun $name() {")
+            appendLine("fun $name$params {")
             append(body)
             append("}")
         }
@@ -219,22 +221,40 @@ object CodeGen {
     }
 
     /**
-     * @param inWeightScope whether the node's parent is a Row/Column, so a
-     * `weight` modifier on this node is valid. Weight is dropped otherwise.
+     * The Compose scope the node's PARENT puts its children in — gates the
+     * scope-member modifiers: `weight` needs a Row/Column scope, `align` needs
+     * the matching scope kind (Box = 2D, Row = vertical, Column = horizontal).
      */
+    private enum class ChildScope { NONE, BOX, ROW, COLUMN }
+
+    private val ChildScope.isLinear get() = this == ChildScope.ROW || this == ChildScope.COLUMN
+
+    /** Project an Align onto [scope]: keep only the matching field, or drop it. */
+    private fun projectAlign(spec: ModifierSpec.Align, scope: ChildScope): ModifierSpec.Align? = when (scope) {
+        ChildScope.BOX -> spec.box?.let { ModifierSpec.Align(box = it) }
+        ChildScope.ROW -> spec.vertical?.let { ModifierSpec.Align(vertical = it) }
+        ChildScope.COLUMN -> spec.horizontal?.let { ModifierSpec.Align(horizontal = it) }
+        ChildScope.NONE -> null
+    }
+
     /** Emit sibling components with ONE blank line between them (readability). */
-    private fun emitSiblings(children: List<Node>, indent: Int, out: StringBuilder, imports: MutableSet<String>, seq: IntArray, inWeightScope: Boolean = false, scopeModifier: String? = null) {
+    private fun emitSiblings(children: List<Node>, indent: Int, out: StringBuilder, imports: MutableSet<String>, seq: IntArray, scope: ChildScope = ChildScope.NONE, scopeModifier: String? = null) {
         children.forEachIndexed { i, child ->
             if (i > 0) out.appendLine()
-            emit(child, indent, out, imports, seq, inWeightScope, scopeModifier)
+            emit(child, indent, out, imports, seq, scope, scopeModifier)
         }
     }
 
-    private fun emit(node: Node, indent: Int, out: StringBuilder, imports: MutableSet<String>, seq: IntArray, inWeightScope: Boolean = false, scopeModifier: String? = null) {
+    private fun emit(node: Node, indent: Int, out: StringBuilder, imports: MutableSet<String>, seq: IntArray, scope: ChildScope = ChildScope.NONE, scopeModifier: String? = null) {
         val pad = "    ".repeat(indent)
-        // weight is RowScope/ColumnScope-only, and weight(<=0) throws — strip both cases.
-        val mods = node.modifier.filterNot {
-            it is ModifierSpec.Weight && (!inWeightScope || it.value <= 0f)
+        // Scope members are stripped/projected per the parent scope: weight only in
+        // Row/Column (and weight(<=0) throws), align only where its kind matches.
+        val mods = node.modifier.mapNotNull { spec ->
+            when {
+                spec is ModifierSpec.Weight && (!scope.isLinear || spec.value <= 0f) -> null
+                spec is ModifierSpec.Align -> projectAlign(spec, scope)
+                else -> spec
+            }
         }
         when (node) {
             is Node.RawCode -> {
@@ -312,7 +332,7 @@ object CodeGen {
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
                 val args = listOfNotNull("onClick = {}", mod?.let { "modifier = $it" })
                 appendCall(out, indent, name, args, open = true)
-                emitSiblings(node.children, indent + 1, out, imports, seq, inWeightScope = true)
+                emitSiblings(node.children, indent + 1, out, imports, seq, ChildScope.ROW)
                 out.appendLine("$pad}")
             }
 
@@ -366,25 +386,195 @@ object CodeGen {
 
             is Node.Icon -> {
                 imports += "androidx.compose.material3.Icon"
-                imports += "androidx.compose.material.icons.Icons"
-                imports += "androidx.compose.material.icons.filled.${node.icon.name}"
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
                 val desc = if (node.contentDescription.isBlank()) "null" else "\"${esc(node.contentDescription)}\""
-                val args = listOfNotNull("Icons.Default.${node.icon.name}", "contentDescription = $desc", mod?.let { "modifier = $it" })
-                appendCall(out, indent, "Icon", args)
+                val symbol = safeSymbol(node.symbol)
+                if (symbol != null) {
+                    imports += "org.jetbrains.compose.resources.painterResource"
+                    out.appendLine("$pad${symbolComment(symbol)}")
+                    appendCall(out, indent, "Icon", listOfNotNull("painterResource(Res.drawable.ic_$symbol)", "contentDescription = $desc", mod?.let { "modifier = $it" }))
+                } else {
+                    imports += "androidx.compose.material.icons.Icons"
+                    imports += "androidx.compose.material.icons.filled.${node.icon.name}"
+                    appendCall(out, indent, "Icon", listOfNotNull("Icons.Default.${node.icon.name}", "contentDescription = $desc", mod?.let { "modifier = $it" }))
+                }
             }
 
             is Node.IconButton -> {
                 imports += "androidx.compose.material3.IconButton"
                 imports += "androidx.compose.material3.Icon"
-                imports += "androidx.compose.material.icons.Icons"
-                imports += "androidx.compose.material.icons.filled.${node.icon.name}"
+                val symbol = safeSymbol(node.symbol)
+                if (symbol != null) {
+                    imports += "org.jetbrains.compose.resources.painterResource"
+                } else {
+                    imports += "androidx.compose.material.icons.Icons"
+                    imports += "androidx.compose.material.icons.filled.${node.icon.name}"
+                }
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
                 val args = listOfNotNull("onClick = {}", mod?.let { "modifier = $it" })
                 appendCall(out, indent, "IconButton", args, open = true)
-                out.appendLine("$pad    Icon(Icons.Default.${node.icon.name}, contentDescription = null)")
+                if (symbol != null) {
+                    out.appendLine("$pad    ${symbolComment(symbol)}")
+                    out.appendLine("$pad    Icon(painterResource(Res.drawable.ic_$symbol), contentDescription = null)")
+                } else {
+                    out.appendLine("$pad    Icon(Icons.Default.${node.icon.name}, contentDescription = null)")
+                }
                 out.appendLine("$pad}")
             }
+
+            is Node.TabRow -> {
+                imports += "androidx.compose.material3.TabRow"
+                imports += "androidx.compose.material3.Tab"
+                imports += "androidx.compose.material3.Text"
+                stateImports(imports)
+                val state = "state${++seq[0]}"
+                val mod = modifierExpr(mods, imports, scopeModifier, indent)
+                out.appendLine("${pad}var $state by remember { mutableStateOf(${node.selectedIndex}) }")
+                appendCall(out, indent, "TabRow", listOfNotNull("selectedTabIndex = $state", mod?.let { "modifier = $it" }), open = true)
+                node.children.forEachIndexed { i, child ->
+                    if (child is Node.Tab) {
+                        // Tab chains never carry scope members (weight/align) — no scope here.
+                        val tmod = modifierExpr(child.modifier.filterNot { it is ModifierSpec.Weight || it is ModifierSpec.Align }, imports, null, indent + 1)
+                        appendCall(
+                            out, indent + 1, "Tab",
+                            listOfNotNull(
+                                "selected = $state == $i",
+                                "onClick = { $state = $i }",
+                                "text = { Text(\"${esc(child.label)}\") }",
+                                tmod?.let { "modifier = $it" },
+                            ),
+                        )
+                    } else {
+                        emit(child, indent + 1, out, imports, seq)
+                    }
+                }
+                out.appendLine("$pad}")
+            }
+
+            // Standalone Tab (outside a TabRow — tolerated defensively): a static tab.
+            is Node.Tab -> {
+                imports += "androidx.compose.material3.Tab"
+                imports += "androidx.compose.material3.Text"
+                val mod = modifierExpr(mods, imports, scopeModifier, indent)
+                appendCall(out, indent, "Tab", listOfNotNull("selected = false", "onClick = {}", "text = { Text(\"${esc(node.label)}\") }", mod?.let { "modifier = $it" }))
+            }
+
+            is Node.NavigationBar -> {
+                imports += "androidx.compose.material3.NavigationBar"
+                imports += "androidx.compose.material3.NavigationBarItem"
+                imports += "androidx.compose.material3.Icon"
+                imports += "androidx.compose.material3.Text"
+                stateImports(imports)
+                val state = "state${++seq[0]}"
+                val mod = modifierExpr(mods, imports, scopeModifier, indent)
+                out.appendLine("${pad}var $state by remember { mutableStateOf(${node.selectedIndex}) }")
+                if (mod != null) {
+                    appendCall(out, indent, "NavigationBar", listOf("modifier = $mod"), open = true)
+                } else {
+                    out.appendLine("$pad" + "NavigationBar {")
+                }
+                node.children.forEachIndexed { i, child ->
+                    if (child is Node.NavItem) {
+                        val symbol = safeSymbol(child.symbol)
+                        if (symbol != null) imports += "org.jetbrains.compose.resources.painterResource"
+                        val imod = modifierExpr(child.modifier.filterNot { it is ModifierSpec.Weight || it is ModifierSpec.Align }, imports, null, indent + 1)
+                        out.appendLine("$pad    NavigationBarItem(")
+                        out.appendLine("$pad        selected = $state == $i,")
+                        out.appendLine("$pad        onClick = { $state = $i },")
+                        if (symbol != null) {
+                            out.appendLine("$pad        icon = {")
+                            out.appendLine("$pad            ${symbolComment(symbol)}")
+                            out.appendLine("$pad            Icon(painterResource(Res.drawable.ic_$symbol), contentDescription = null)")
+                            out.appendLine("$pad        },")
+                        } else {
+                            out.appendLine("$pad        icon = {},")
+                        }
+                        out.appendLine("$pad        label = { Text(\"${esc(child.label)}\") },")
+                        imod?.let { out.appendLine("$pad        modifier = $it,") }
+                        out.appendLine("$pad    )")
+                    } else {
+                        emit(child, indent + 1, out, imports, seq)
+                    }
+                }
+                out.appendLine("$pad}")
+            }
+
+            // A NavigationBarItem is a RowScope member of NavigationBar — it cannot
+            // compile anywhere else, so a stray one degrades to a comment.
+            is Node.NavItem -> {
+                out.appendLine("$pad// NavItem \"${node.label.replace(Regex("[\\r\\n]"), " ")}\" must live inside a NavigationBar")
+            }
+
+            is Node.Chip -> {
+                val name = chipComposable(node.variant)
+                imports += "androidx.compose.material3.$name"
+                imports += "androidx.compose.material3.Text"
+                val stateful = node.variant == ChipVariant.Filter || node.variant == ChipVariant.Input
+                val state = if (stateful) "state${++seq[0]}" else null
+                if (state != null) {
+                    stateImports(imports)
+                    out.appendLine("${pad}var $state by remember { mutableStateOf(${node.selected}) }")
+                }
+                val mod = modifierExpr(mods, imports, scopeModifier, indent)
+                val symbol = safeSymbol(node.symbol)
+                val iconParam = if (node.variant == ChipVariant.Suggestion) "icon" else "leadingIcon"
+                val head = listOfNotNull(
+                    state?.let { "selected = $it" },
+                    if (state != null) "onClick = { $state = !$state }" else "onClick = {}",
+                    "label = { Text(\"${esc(node.label)}\") }",
+                )
+                if (symbol == null) {
+                    appendCall(out, indent, name, head + listOfNotNull(mod?.let { "modifier = $it" }))
+                } else {
+                    imports += "androidx.compose.material3.Icon"
+                    imports += "org.jetbrains.compose.resources.painterResource"
+                    out.appendLine("$pad$name(")
+                    head.forEach { out.appendLine("$pad    $it,") }
+                    out.appendLine("$pad    $iconParam = {")
+                    out.appendLine("$pad        ${symbolComment(symbol)}")
+                    out.appendLine("$pad        Icon(painterResource(Res.drawable.ic_$symbol), contentDescription = null)")
+                    out.appendLine("$pad    },")
+                    mod?.let { out.appendLine("$pad    modifier = $it,") }
+                    out.appendLine("$pad)")
+                }
+            }
+
+            is Node.BadgedBox -> {
+                imports += "androidx.compose.material3.BadgedBox"
+                imports += "androidx.compose.material3.Badge"
+                val mod = modifierExpr(mods, imports, scopeModifier, indent)
+                val badge = if (node.badge.isEmpty()) {
+                    "badge = { Badge() }"
+                } else {
+                    imports += "androidx.compose.material3.Text"
+                    "badge = { Badge { Text(\"${esc(node.badge)}\") } }"
+                }
+                appendCall(out, indent, "BadgedBox", listOfNotNull(badge, mod?.let { "modifier = $it" }), open = true)
+                emitSiblings(node.children, indent + 1, out, imports, seq, ChildScope.BOX)
+                out.appendLine("$pad}")
+            }
+
+            is Node.Canvas -> {
+                imports += "androidx.compose.foundation.Canvas"
+                imports += "androidx.compose.ui.Modifier"
+                imports += "androidx.compose.ui.unit.dp"
+                val mod = modifierExpr(mods, imports, scopeModifier, indent) ?: "Modifier" // Canvas has no default modifier param
+                out.appendLine("$pad" + "Canvas(modifier = $mod) {")
+                for (shape in node.children) {
+                    val call = shapeCall(shape, imports)
+                    if (call != null) {
+                        out.appendLine("$pad    $call")
+                    } else {
+                        out.appendLine("$pad    // Unsupported canvas child: ${shape.typeName()}")
+                    }
+                }
+                out.appendLine("$pad}")
+            }
+
+            // Shapes are draw calls, not composables — a stray one outside a Canvas
+            // degrades to a comment (canParent prevents this in the editor).
+            is Node.Line, is Node.RectShape, is Node.CircleShape, is Node.EllipseShape, is Node.ArcShape ->
+                out.appendLine("$pad// ${node.typeName()} shapes must live inside a Canvas")
 
             is Node.TextField -> {
                 imports += "androidx.compose.material3.OutlinedTextField"
@@ -455,7 +645,7 @@ object CodeGen {
 
             is Node.Card -> emitContainer(
                 "Card", "androidx.compose.material3.Card",
-                mods, node.children, indent, out, imports, seq = seq, childWeightScope = false,
+                mods, node.children, indent, out, imports, seq = seq, childScope = ChildScope.NONE,
                 scopeModifier = scopeModifier,
             )
 
@@ -464,7 +654,7 @@ object CodeGen {
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
                 val args = listOfNotNull("onClick = {}", mod?.let { "modifier = $it" })
                 appendCall(out, indent, "FloatingActionButton", args, open = true)
-                emitSiblings(node.children, indent + 1, out, imports, seq, inWeightScope = false)
+                emitSiblings(node.children, indent + 1, out, imports, seq)
                 out.appendLine("$pad}")
             }
 
@@ -481,7 +671,7 @@ object CodeGen {
                 val surfaceArgs = listOfNotNull(mod?.let { "modifier = $it" }, "shape = RoundedCornerShape(16.dp)")
                 appendCall(out, indent + 1, "Surface", surfaceArgs, open = true)
                 out.appendLine("$pad        Column(modifier = Modifier.padding(24.dp)) {")
-                emitSiblings(node.children, indent + 3, out, imports, seq, inWeightScope = true)
+                emitSiblings(node.children, indent + 3, out, imports, seq, ChildScope.COLUMN)
                 out.appendLine("$pad        }")
                 out.appendLine("$pad    }")
                 out.appendLine("$pad}")
@@ -497,7 +687,7 @@ object CodeGen {
                 val args = listOfNotNull("onDismissRequest = {}", mod?.let { "modifier = $it" })
                 appendCall(out, indent, "ModalBottomSheet", args, open = true)
                 out.appendLine("$pad    Column(modifier = Modifier.padding(16.dp)) {")
-                emitSiblings(node.children, indent + 2, out, imports, seq, inWeightScope = true)
+                emitSiblings(node.children, indent + 2, out, imports, seq, ChildScope.COLUMN)
                 out.appendLine("$pad    }")
                 out.appendLine("$pad}")
             }
@@ -527,7 +717,7 @@ object CodeGen {
                     fun slot(name: String, kids: List<Node>) {
                         if (kids.isEmpty()) return
                         out.appendLine("$pad    $name = {")
-                        emitSiblings(kids, indent + 2, out, imports, seq, inWeightScope = false)
+                        emitSiblings(kids, indent + 2, out, imports, seq)
                         out.appendLine("$pad    },")
                     }
                     slot("topBar", topKids)
@@ -537,7 +727,7 @@ object CodeGen {
                 } else {
                     out.appendLine("$pad" + "Scaffold$lambdaOpen")
                 }
-                emitSiblings(node.children, indent + 1, out, imports, seq, inWeightScope = false, scopeModifier = contentScope)
+                emitSiblings(node.children, indent + 1, out, imports, seq, scopeModifier = contentScope)
                 out.appendLine("$pad}")
             }
 
@@ -557,7 +747,7 @@ object CodeGen {
                 }
                 emitContainer(
                     "Column", "androidx.compose.foundation.layout.Column",
-                    mods, node.children, indent, out, imports, seq = seq, childWeightScope = true, extraArgs = extra,
+                    mods, node.children, indent, out, imports, seq = seq, childScope = ChildScope.COLUMN, extraArgs = extra,
                     scopeModifier = scopeModifier,
                 )
             }
@@ -578,7 +768,7 @@ object CodeGen {
                 }
                 emitContainer(
                     "Row", "androidx.compose.foundation.layout.Row",
-                    mods, node.children, indent, out, imports, seq = seq, childWeightScope = true, extraArgs = extra,
+                    mods, node.children, indent, out, imports, seq = seq, childScope = ChildScope.ROW, extraArgs = extra,
                     scopeModifier = scopeModifier,
                 )
             }
@@ -591,7 +781,7 @@ object CodeGen {
                 }
                 emitContainer(
                     "Box", "androidx.compose.foundation.layout.Box",
-                    mods, node.children, indent, out, imports, seq = seq, childWeightScope = false, extraArgs = extra,
+                    mods, node.children, indent, out, imports, seq = seq, childScope = ChildScope.BOX, extraArgs = extra,
                     scopeModifier = scopeModifier,
                 )
             }
@@ -602,16 +792,16 @@ object CodeGen {
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
                 out.appendLine("$pad" + "$name(")
                 out.appendLine("$pad    title = {")
-                node.title?.let { emit(it, indent + 2, out, imports, seq = seq, inWeightScope = false) }
+                node.title?.let { emit(it, indent + 2, out, imports, seq = seq) }
                 out.appendLine("$pad    },")
                 node.navigationIcon?.let {
                     out.appendLine("$pad    navigationIcon = {")
-                    emit(it, indent + 2, out, imports, seq = seq, inWeightScope = false)
+                    emit(it, indent + 2, out, imports, seq = seq)
                     out.appendLine("$pad    },")
                 }
                 if (node.actions.isNotEmpty()) {
                     out.appendLine("$pad    actions = {")
-                    emitSiblings(node.actions, indent + 2, out, imports, seq, inWeightScope = false)
+                    emitSiblings(node.actions, indent + 2, out, imports, seq)
                     out.appendLine("$pad    },")
                 }
                 mod?.let { out.appendLine("$pad    modifier = $it,") }
@@ -619,12 +809,12 @@ object CodeGen {
             }
 
             // A Composable is the function scope — emit its children directly, no wrapper.
-            is Node.Composable -> emitSiblings(node.children, indent, out, imports, seq, inWeightScope = false)
+            is Node.Composable -> emitSiblings(node.children, indent, out, imports, seq)
             // A Slot is a slot-argument scope — normally emitted by its parent
             // (e.g. the Scaffold branch); defensively emit children directly.
-            is Node.Slot -> emitSiblings(node.children, indent, out, imports, seq, inWeightScope = false)
+            is Node.Slot -> emitSiblings(node.children, indent, out, imports, seq)
             // The artboard is handled by [generate]; defensively emit its screens' bodies.
-            is Node.Artboard -> for (screen in node.composables) emit(screen, indent, out, imports, seq = seq, inWeightScope = false)
+            is Node.Artboard -> for (screen in node.composables) emit(screen, indent, out, imports, seq = seq)
         }
     }
 
@@ -637,7 +827,7 @@ object CodeGen {
         out: StringBuilder,
         imports: MutableSet<String>,
         seq: IntArray,
-        childWeightScope: Boolean,
+        childScope: ChildScope,
         extraArgs: List<String> = emptyList(),
         scopeModifier: String? = null,
     ) {
@@ -646,8 +836,97 @@ object CodeGen {
         val mod = modifierExpr(modifier, imports, scopeModifier, indent)
         val args = listOfNotNull(mod?.let { "modifier = $it" }) + extraArgs
         if (args.isEmpty()) out.appendLine("$pad$name {") else appendCall(out, indent, name, args, open = true)
-        emitSiblings(children, indent + 1, out, imports, seq, inWeightScope = childWeightScope)
+        emitSiblings(children, indent + 1, out, imports, seq, childScope)
         out.appendLine("$pad}")
+    }
+
+    /**
+     * A [Node.Icon.symbol] sanitized to a resource-safe form (`[a-z0-9_]`), or null
+     * when empty. Both the emitted `Res.drawable.ic_<x>` and the sourcing comment
+     * use the SAME sanitized name, so the parser round-trips byte-identically.
+     */
+    fun safeSymbol(symbol: String): String? = symbol
+        .lowercase()
+        .replace(Regex("[^a-z0-9_]"), "_")
+        .takeIf { it.isNotBlank() && it.any { c -> c != '_' } }
+
+    /** The sourcing note emitted above a symbol icon — a fixed, parseable format. */
+    fun symbolComment(symbol: String): String =
+        "// Icon \"$symbol\" — Material Symbols: download ic_$symbol.xml from https://fonts.google.com/icons into your resources."
+
+    /** `N.dp.toPx()` (negatives parenthesized so the parser sees one receiver). */
+    private fun dpPx(n: Int): String = if (n < 0) "($n).dp.toPx()" else "$n.dp.toPx()"
+
+    /** Shape colors are draw-time — theme tokens can't be referenced there; fall back to black. */
+    private fun shapeColorExpr(value: Long, imports: MutableSet<String>): String =
+        colorExpr(if (ThemeColorRef.tokenName(value) != null) 0xFF000000 else value, imports)
+
+    /** One DrawScope call for a shape leaf inside a [Node.Canvas], or null for non-shapes. */
+    private fun shapeCall(shape: Node, imports: MutableSet<String>): String? {
+        fun stroke(width: Int): String {
+            imports += "androidx.compose.ui.graphics.drawscope.Stroke"
+            return "style = Stroke(${dpPx(width)})"
+        }
+        fun offset(x: Int, y: Int): String {
+            imports += "androidx.compose.ui.geometry.Offset"
+            return "Offset(${dpPx(x)}, ${dpPx(y)})"
+        }
+        fun size(w: Int, h: Int): String {
+            imports += "androidx.compose.ui.geometry.Size"
+            return "Size(${dpPx(w)}, ${dpPx(h)})"
+        }
+        return when (shape) {
+            is Node.Line -> "drawLine(${shapeColorExpr(shape.color, imports)}, start = ${offset(shape.x1, shape.y1)}, end = ${offset(shape.x2, shape.y2)}, strokeWidth = ${dpPx(shape.strokeWidth)})"
+            is Node.RectShape -> {
+                val style = if (shape.filled) null else stroke(shape.strokeWidth)
+                if (shape.corner > 0) {
+                    imports += "androidx.compose.ui.geometry.CornerRadius"
+                    listOfNotNull(
+                        shapeColorExpr(shape.color, imports),
+                        "topLeft = ${offset(shape.x, shape.y)}",
+                        "size = ${size(shape.width, shape.height)}",
+                        "cornerRadius = CornerRadius(${dpPx(shape.corner)})",
+                        style,
+                    ).joinToString(", ", prefix = "drawRoundRect(", postfix = ")")
+                } else {
+                    listOfNotNull(
+                        shapeColorExpr(shape.color, imports),
+                        "topLeft = ${offset(shape.x, shape.y)}",
+                        "size = ${size(shape.width, shape.height)}",
+                        style,
+                    ).joinToString(", ", prefix = "drawRect(", postfix = ")")
+                }
+            }
+            is Node.CircleShape -> listOfNotNull(
+                shapeColorExpr(shape.color, imports),
+                "radius = ${dpPx(shape.radius)}",
+                "center = ${offset(shape.cx, shape.cy)}",
+                if (shape.filled) null else stroke(shape.strokeWidth),
+            ).joinToString(", ", prefix = "drawCircle(", postfix = ")")
+            is Node.EllipseShape -> listOfNotNull(
+                shapeColorExpr(shape.color, imports),
+                "topLeft = ${offset(shape.x, shape.y)}",
+                "size = ${size(shape.width, shape.height)}",
+                if (shape.filled) null else stroke(shape.strokeWidth),
+            ).joinToString(", ", prefix = "drawOval(", postfix = ")")
+            is Node.ArcShape -> listOfNotNull(
+                shapeColorExpr(shape.color, imports),
+                "startAngle = ${shape.startAngle}f",
+                "sweepAngle = ${shape.sweepAngle}f",
+                "useCenter = ${shape.filled}",
+                "topLeft = ${offset(shape.x, shape.y)}",
+                "size = ${size(shape.width, shape.height)}",
+                if (shape.filled) null else stroke(shape.strokeWidth),
+            ).joinToString(", ", prefix = "drawArc(", postfix = ")")
+            else -> null
+        }
+    }
+
+    private fun chipComposable(v: ChipVariant): String = when (v) {
+        ChipVariant.Assist -> "AssistChip"
+        ChipVariant.Filter -> "FilterChip"
+        ChipVariant.Input -> "InputChip"
+        ChipVariant.Suggestion -> "SuggestionChip"
     }
 
     private fun buttonComposable(v: ButtonVariant): String = when (v) {
@@ -815,19 +1094,41 @@ object CodeGen {
                     if (spec.x == spec.y) "scale(${spec.x}f)" else "scale(${spec.x}f, ${spec.y}f)"
                 }
 
-                ModifierSpec.FillMaxWidth -> {
+                // align() is a Box/Row/Column scope member (no import, like weight);
+                // emit() has already projected the spec onto the parent scope.
+                is ModifierSpec.Align -> {
+                    imports += "androidx.compose.ui.Alignment"
+                    val alignment = spec.box?.let { "Alignment.${it.name}" }
+                        ?: spec.vertical?.let { vAlignmentCode(it) }
+                        ?: spec.horizontal?.let { hAlignmentCode(it) }
+                        ?: "Alignment.Center" // unreachable post-projection
+                    "align($alignment)"
+                }
+
+                is ModifierSpec.ZIndex -> {
+                    imports += "androidx.compose.ui.zIndex"
+                    "zIndex(${spec.value}f)"
+                }
+
+                is ModifierSpec.Blur -> {
+                    imports += "androidx.compose.ui.draw.blur"
+                    imports += "androidx.compose.ui.unit.dp"
+                    "blur(${spec.radius}.dp)"
+                }
+
+                is ModifierSpec.FillMaxWidth -> {
                     imports += "androidx.compose.foundation.layout.fillMaxWidth"
-                    "fillMaxWidth()"
+                    if (spec.fraction == 1f) "fillMaxWidth()" else "fillMaxWidth(${spec.fraction}f)"
                 }
 
-                ModifierSpec.FillMaxHeight -> {
+                is ModifierSpec.FillMaxHeight -> {
                     imports += "androidx.compose.foundation.layout.fillMaxHeight"
-                    "fillMaxHeight()"
+                    if (spec.fraction == 1f) "fillMaxHeight()" else "fillMaxHeight(${spec.fraction}f)"
                 }
 
-                ModifierSpec.FillMaxSize -> {
+                is ModifierSpec.FillMaxSize -> {
                     imports += "androidx.compose.foundation.layout.fillMaxSize"
-                    "fillMaxSize()"
+                    if (spec.fraction == 1f) "fillMaxSize()" else "fillMaxSize(${spec.fraction}f)"
                 }
             }
         }

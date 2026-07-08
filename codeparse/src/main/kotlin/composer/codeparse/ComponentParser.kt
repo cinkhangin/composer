@@ -1,6 +1,7 @@
 package composer.codeparse
 
 import composer.model.BoxAlignment
+import composer.model.ChipVariant
 import composer.model.ButtonVariant
 import composer.model.HAlignment
 import composer.model.HArrangement
@@ -203,6 +204,7 @@ internal class PendingState(
     val bool: Boolean? = null,
     val str: String? = null,
     val float: Float? = null,
+    val int: Int? = null,
     val stmt: KtProperty,
     val first: PsiElement,
 )
@@ -222,6 +224,7 @@ private fun matchStateDecl(stmt: KtExpression): PendingState? {
     boolLit(arg)?.let { return PendingState(name, bool = it, stmt = p, first = p) }
     stringLit(arg)?.let { return PendingState(name, str = it, stmt = p, first = p) }
     floatLit(arg)?.let { return PendingState(name, float = it, stmt = p, first = p) }
+    intLit(arg)?.let { return PendingState(name, int = it, stmt = p, first = p) }
     return null
 }
 
@@ -273,6 +276,13 @@ private val TOP_BAR_VARIANTS = mapOf(
     "LargeTopAppBar" to TopAppBarVariant.Large,
 )
 
+private val CHIP_VARIANTS = mapOf(
+    "AssistChip" to ChipVariant.Assist,
+    "FilterChip" to ChipVariant.Filter,
+    "InputChip" to ChipVariant.Input,
+    "SuggestionChip" to ChipVariant.Suggestion,
+)
+
 private const val FONT_COMMENT_PREFIX = "// Font \""
 private const val FONT_COMMENT_SUFFIX = "\" — embed it as a font resource and set fontFamily = FontFamily(Font(...))."
 private const val LOCAL_IMAGE_COMMENT = "// Local image — set a URL or wire up a real painter/resource here."
@@ -293,7 +303,7 @@ private fun parseComponent(
     // comment forces RawCode so it is never silently dropped.
     val specialComment = comments.singleOrNull()?.text
     val hasPlainComments = comments.isNotEmpty() &&
-        !(specialComment != null && (isFontComment(specialComment) || specialComment == LOCAL_IMAGE_COMMENT))
+        !(specialComment != null && (isFontComment(specialComment) || specialComment == LOCAL_IMAGE_COMMENT || isSymbolComment(specialComment)))
 
     if (hasPlainComments) return null
 
@@ -304,7 +314,7 @@ private fun parseComponent(
         "AsyncImage" -> if (specialComment == null) parseAsyncImage(shape, ctx, scopeParam) else null
         "Image" -> parseImagePlaceholder(shape, ctx, scopeParam) // local-image comment consumed (data: URL unrecoverable)
         "HorizontalDivider", "Divider" -> simpleLeaf(shape, ctx, scopeParam) { id, m -> Node.Divider(id, m) }
-        "Icon" -> parseIcon(shape, ctx, scopeParam)
+        "Icon" -> parseIcon(shape, ctx, scopeParam, specialComment)
         "IconButton" -> parseIconButton(shape, ctx, scopeParam)
         "OutlinedTextField" -> parseTextField(shape, pending, ctx, scopeParam)
         "Switch" -> parseChecked(shape, pending, ctx, scopeParam) { id, c, m -> Node.Switch(id, c, m) }
@@ -319,6 +329,12 @@ private fun parseComponent(
         "ModalBottomSheet" -> parseBottomSheet(shape, ctx, scopeParam)
         "Scaffold" -> parseScaffold(shape, ctx, scopeParam)
         in TOP_BAR_VARIANTS -> parseTopAppBar(shape, ctx, scopeParam)
+        "TabRow" -> parseTabRow(shape, pending, ctx, scopeParam)
+        "Tab" -> parseStandaloneTab(shape, ctx, scopeParam)
+        "NavigationBar" -> parseNavigationBar(shape, pending, ctx, scopeParam)
+        in CHIP_VARIANTS -> parseChip(shape, pending, ctx, scopeParam)
+        "BadgedBox" -> parseBadgedBox(shape, ctx, scopeParam)
+        "Canvas" -> parseCanvas(shape, ctx, scopeParam)
         "Column" -> parseColumn(shape, ctx, scopeParam)
         "Row" -> parseRow(shape, ctx, scopeParam)
         "Box" -> parseBox(shape, ctx, scopeParam)
@@ -341,6 +357,10 @@ private fun parseComponent(
 private fun isFontComment(text: String): Boolean =
     text.startsWith(FONT_COMMENT_PREFIX) && text.endsWith(FONT_COMMENT_SUFFIX) &&
         text.length > FONT_COMMENT_PREFIX.length + FONT_COMMENT_SUFFIX.length
+
+/** The symbol-icon sourcing note codegen emits above `painterResource(Res.drawable.ic_x)`. */
+private fun isSymbolComment(text: String): Boolean =
+    text.startsWith("// Icon \"") && "Material Symbols" in text
 
 // ---- shared helpers ----------------------------------------------------------
 
@@ -420,13 +440,33 @@ private fun parseImagePlaceholder(shape: CallShape, ctx: ParseCtx, scopeParam: S
     return Parsed(Node.Image(id = ctx.newId(), contentDescription = desc, placeholderColor = color, modifier = m))
 }
 
-private fun parseIcon(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
+private fun parseIcon(shape: CallShape, ctx: ParseCtx, scopeParam: String?, comment: String? = null): Parsed? {
     if (shape.trailingLambda != null || shape.positional.size != 1) return null
     if (!shape.named.keys.all { it in setOf("contentDescription", "modifier") }) return null
-    val icon = iconKind(shape.positional[0]) ?: return null
     val desc = shape.named["contentDescription"]?.let { stringOrNullLit(it) ?: return null }?.getOrNull() ?: ""
     val m = modifierOf(shape, scopeParam) ?: return null
+    // Free-form Material Symbols form: painterResource(Res.drawable.ic_x) + a
+    // sourcing comment. The comment (when present) must be OUR canonical one for
+    // this symbol — anything else stays verbatim as RawCode.
+    painterSymbol(shape.positional[0])?.let { symbol ->
+        if (comment != null && comment != composer.codegen.CodeGen.symbolComment(symbol)) return null
+        return Parsed(Node.Icon(ctx.newId(), IconKind.Favorite, desc, m, symbol = symbol))
+    }
+    if (comment != null) return null // a symbol comment on a non-symbol Icon — not ours
+    val icon = iconKind(shape.positional[0]) ?: return null
     return Parsed(Node.Icon(ctx.newId(), icon, desc, m))
+}
+
+/** `painterResource(Res.drawable.ic_<x>)` → `x`, or null for any other shape. */
+private fun painterSymbol(expr: KtExpression?): String? {
+    val call = expr?.unparen() as? KtCallExpression ?: return null
+    if (callName(call) != "painterResource") return null
+    val arg = call.singlePositionalArg()?.unparen() as? KtDotQualifiedExpression ?: return null
+    val sel = nameOf(arg.selectorExpression) ?: return null
+    if (!sel.startsWith("ic_")) return null
+    val recv = arg.receiverExpression.unparen() as? KtDotQualifiedExpression ?: return null
+    if (nameOf(recv.receiverExpression) != "Res" || nameOf(recv.selectorExpression) != "drawable") return null
+    return sel.removePrefix("ic_").takeIf { it.isNotEmpty() }
 }
 
 private fun parseIconButton(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
@@ -443,6 +483,9 @@ private fun parseIconButton(shape: CallShape, ctx: ParseCtx, scopeParam: String?
     if (inner.name != "Icon" || inner.trailingLambda != null || inner.positional.size != 1) return null
     if (!inner.named.keys.all { it == "contentDescription" }) return null
     if (inner.named["contentDescription"]?.let { stringOrNullLit(it)?.getOrNull() } != null) return null
+    painterSymbol(inner.positional[0])?.let { symbol ->
+        return Parsed(Node.IconButton(ctx.newId(), IconKind.Menu, m, symbol = symbol))
+    }
     val icon = iconKind(inner.positional[0]) ?: return null
     return Parsed(Node.IconButton(ctx.newId(), icon, m))
 }
@@ -720,6 +763,255 @@ private fun vAlignFrom(expr: KtExpression): VAlignment? = when (dottedName(expr)
 }
 
 /** `Icons.Default.X` → [IconKind.X]. */
+// ---- tabs / navigation / chips / badge ----------------------------------------
+
+/** `state == N` → N (the item index codegen derives selection from). */
+private fun intEqValue(expr: KtExpression?, v: String): Int? {
+    val b = expr?.unparen() as? KtBinaryExpression ?: return null
+    if (b.operationReference.getReferencedName() != "==") return null
+    if (nameOf(b.left) != v) return null
+    return intLit(b.right)
+}
+
+/** `{ state = N }` → N. */
+private fun assignIntLambda(expr: KtExpression?, v: String): Int? {
+    val body = singleLambdaStatement(expr) as? KtBinaryExpression ?: return null
+    if (body.operationReference.getReferencedName() != "=") return null
+    if (nameOf(body.left) != v) return null
+    return intLit(body.right)
+}
+
+/** `{ Text("x") }` → x. */
+private fun lambdaTextLabel(expr: KtExpression?): String? {
+    val only = singleLambdaStatement(expr ?: return null) as? KtCallExpression ?: return null
+    val ls = callShape(only) ?: return null
+    if (ls.name != "Text" || ls.positional.size != 1 || ls.named.isNotEmpty() || ls.trailingLambda != null) return null
+    return stringLit(ls.positional[0])
+}
+
+/**
+ * An icon slot lambda: `{}` → "" (no icon), `{ Icon(painterResource(Res.drawable.ic_x),
+ * contentDescription = null) }` → x (a sourcing comment inside the lambda is
+ * tolerated — regeneration reproduces it from the symbol). Anything else → null.
+ */
+private fun lambdaIconSymbol(expr: KtExpression?): String? {
+    val lam = expr?.unparen() as? KtLambdaExpression ?: return null
+    if (lam.valueParameters.isNotEmpty()) return null
+    val stmts = lam.bodyExpression?.statements ?: return ""
+    if (stmts.isEmpty()) return ""
+    val only = stmts.singleOrNull()?.unparen() as? KtCallExpression ?: return null
+    val ish = callShape(only) ?: return null
+    if (ish.name != "Icon" || ish.trailingLambda != null || ish.positional.size != 1) return null
+    if (!ish.named.keys.all { it == "contentDescription" }) return null
+    if (ish.named["contentDescription"]?.let { stringOrNullLit(it)?.getOrNull() } != null) return null
+    return painterSymbol(ish.positional[0])
+}
+
+private fun parseTabRow(shape: CallShape, pending: PendingState?, ctx: ParseCtx, scopeParam: String?): Parsed? {
+    val v = pending?.takeIf { it.int != null } ?: return null
+    if (shape.positional.isNotEmpty()) return null
+    if (!shape.named.keys.all { it in setOf("selectedTabIndex", "modifier") }) return null
+    if (nameOf(shape.named["selectedTabIndex"]) != v.name) return null
+    val m = modifierOf(shape, scopeParam) ?: return null
+    val body = shape.trailingLambda ?: return null
+    if (body.valueParameters.isNotEmpty()) return null
+    val tabs = mutableListOf<Node>()
+    for ((i, stmt) in (body.bodyExpression?.statements ?: emptyList()).withIndex()) {
+        val call = stmt.unparen() as? KtCallExpression ?: return null
+        val ts = callShape(call) ?: return null
+        if (ts.name != "Tab" || ts.positional.isNotEmpty() || ts.trailingLambda != null) return null
+        if (!ts.named.keys.all { it in setOf("selected", "onClick", "text", "modifier") }) return null
+        if (intEqValue(ts.named["selected"], v.name) != i) return null
+        if (assignIntLambda(ts.named["onClick"], v.name) != i) return null
+        val label = lambdaTextLabel(ts.named["text"]) ?: return null
+        val tm = modifierOf(ts, null) ?: return null
+        tabs += Node.Tab(ctx.newId(), label, tm)
+    }
+    return Parsed(Node.TabRow(ctx.newId(), tabs, selectedIndex = v.int!!, modifier = m), usedPending = true)
+}
+
+private fun parseStandaloneTab(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
+    if (shape.positional.isNotEmpty() || shape.trailingLambda != null) return null
+    if (!shape.named.keys.all { it in setOf("selected", "onClick", "text", "modifier") }) return null
+    if (boolLit(shape.named["selected"]) != false) return null
+    if (!isEmptyLambda(shape.named["onClick"] ?: return null)) return null
+    val label = lambdaTextLabel(shape.named["text"]) ?: return null
+    val m = modifierOf(shape, scopeParam) ?: return null
+    return Parsed(Node.Tab(ctx.newId(), label, m))
+}
+
+private fun parseNavigationBar(shape: CallShape, pending: PendingState?, ctx: ParseCtx, scopeParam: String?): Parsed? {
+    val v = pending?.takeIf { it.int != null } ?: return null
+    if (shape.positional.isNotEmpty()) return null
+    if (!shape.named.keys.all { it == "modifier" }) return null
+    val m = modifierOf(shape, scopeParam) ?: return null
+    val body = shape.trailingLambda ?: return null
+    if (body.valueParameters.isNotEmpty()) return null
+    val items = mutableListOf<Node>()
+    for ((i, stmt) in (body.bodyExpression?.statements ?: emptyList()).withIndex()) {
+        val call = stmt.unparen() as? KtCallExpression ?: return null
+        val ns = callShape(call) ?: return null
+        if (ns.name != "NavigationBarItem" || ns.positional.isNotEmpty() || ns.trailingLambda != null) return null
+        if (!ns.named.keys.all { it in setOf("selected", "onClick", "icon", "label", "modifier") }) return null
+        if (intEqValue(ns.named["selected"], v.name) != i) return null
+        if (assignIntLambda(ns.named["onClick"], v.name) != i) return null
+        val symbol = lambdaIconSymbol(ns.named["icon"] ?: return null) ?: return null
+        val label = lambdaTextLabel(ns.named["label"]) ?: return null
+        val im = modifierOf(ns, null) ?: return null
+        items += Node.NavItem(ctx.newId(), label, symbol, im)
+    }
+    return Parsed(Node.NavigationBar(ctx.newId(), items, selectedIndex = v.int!!, modifier = m), usedPending = true)
+}
+
+private fun parseChip(shape: CallShape, pending: PendingState?, ctx: ParseCtx, scopeParam: String?): Parsed? {
+    val variant = CHIP_VARIANTS[shape.name] ?: return null
+    if (shape.positional.isNotEmpty() || shape.trailingLambda != null) return null
+    val iconParam = if (variant == ChipVariant.Suggestion) "icon" else "leadingIcon"
+    val stateful = variant == ChipVariant.Filter || variant == ChipVariant.Input
+    val allowed = buildSet {
+        add("onClick"); add("label"); add("modifier"); add(iconParam)
+        if (stateful) add("selected")
+    }
+    if (!shape.named.keys.all { it in allowed }) return null
+    val label = lambdaTextLabel(shape.named["label"]) ?: return null
+    val symbol = shape.named[iconParam]?.let { lambdaIconSymbol(it) ?: return null } ?: ""
+    val m = modifierOf(shape, scopeParam) ?: return null
+    if (stateful) {
+        val v = pending?.takeIf { it.bool != null } ?: return null
+        if (nameOf(shape.named["selected"]) != v.name) return null
+        if (!isToggleLambda(shape.named["onClick"], v.name)) return null
+        return Parsed(Node.Chip(ctx.newId(), label, variant, selected = v.bool!!, symbol = symbol, modifier = m), usedPending = true)
+    }
+    if (!isEmptyLambda(shape.named["onClick"] ?: return null)) return null
+    return Parsed(Node.Chip(ctx.newId(), label, variant, symbol = symbol, modifier = m))
+}
+
+private fun parseBadgedBox(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
+    if (shape.positional.isNotEmpty()) return null
+    if (!shape.named.keys.all { it in setOf("badge", "modifier") }) return null
+    val badgeLambda = shape.named["badge"] ?: return null
+    val badgeCall = singleLambdaStatement(badgeLambda) as? KtCallExpression ?: return null
+    val bs = callShape(badgeCall) ?: return null
+    if (bs.name != "Badge" || bs.positional.isNotEmpty() || bs.named.isNotEmpty()) return null
+    val badge = when (val lam = bs.trailingLambda) {
+        null -> ""
+        else -> {
+            if (lam.valueParameters.isNotEmpty()) return null
+            val only = lam.bodyExpression?.statements?.singleOrNull()?.unparen() as? KtCallExpression ?: return null
+            val tsh = callShape(only) ?: return null
+            if (tsh.name != "Text" || tsh.positional.size != 1 || tsh.named.isNotEmpty() || tsh.trailingLambda != null) return null
+            stringLit(tsh.positional[0]) ?: return null
+        }
+    }
+    val m = modifierOf(shape, scopeParam) ?: return null
+    val kids = childrenOf(shape.trailingLambda, ctx) ?: return null
+    return Parsed(Node.BadgedBox(ctx.newId(), badge, kids, m))
+}
+
+// ---- canvas shapes --------------------------------------------------------------
+
+/** `N.dp.toPx()` → N (codegen parenthesizes negatives: `(-8).dp.toPx()`). */
+private fun dpPxValue(expr: KtExpression?): Int? {
+    val dot = expr?.unparen() as? KtDotQualifiedExpression ?: return null
+    val call = dot.selectorExpression?.unparen() as? KtCallExpression ?: return null
+    if (callName(call) != "toPx" || call.valueArguments.isNotEmpty() || call.lambdaArguments.isNotEmpty()) return null
+    return dpInt(dot.receiverExpression)
+}
+
+/** `Offset(a.dp.toPx(), b.dp.toPx())` / `Size(...)` → the two dp ints. */
+private fun dpPxPair(expr: KtExpression?, fnName: String): Pair<Int, Int>? {
+    val call = expr?.unparen() as? KtCallExpression ?: return null
+    if (callName(call) != fnName) return null
+    val cs = callShape(call) ?: return null
+    if (cs.named.isNotEmpty() || cs.trailingLambda != null || cs.positional.size != 2) return null
+    val a = dpPxValue(cs.positional[0]) ?: return null
+    val b = dpPxValue(cs.positional[1]) ?: return null
+    return a to b
+}
+
+/** `Stroke(w.dp.toPx())` → w. */
+private fun strokeWidthOf(expr: KtExpression?): Int? {
+    val call = expr?.unparen() as? KtCallExpression ?: return null
+    if (callName(call) != "Stroke") return null
+    val cs = callShape(call) ?: return null
+    if (cs.named.isNotEmpty() || cs.trailingLambda != null) return null
+    return dpPxValue(cs.positional.singleOrNull())
+}
+
+/** `120f` float literal that is a whole number → 120 (angles are Int in the model). */
+private fun intFromFloat(expr: KtExpression?): Int? =
+    floatLit(expr)?.takeIf { it == it.toInt().toFloat() }?.toInt()
+
+private fun parseCanvas(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
+    if (shape.positional.isNotEmpty()) return null
+    if (!shape.named.keys.all { it == "modifier" }) return null
+    val m = modifierOf(shape, scopeParam) ?: return null
+    val body = shape.trailingLambda ?: return null
+    if (body.valueParameters.isNotEmpty()) return null
+    val shapes = mutableListOf<Node>()
+    for (stmt in body.bodyExpression?.statements ?: emptyList()) {
+        val call = stmt.unparen() as? KtCallExpression ?: return null
+        shapes += parseShapeCall(call, ctx) ?: return null
+    }
+    return Parsed(Node.Canvas(ctx.newId(), shapes, m))
+}
+
+private fun parseShapeCall(call: KtCallExpression, ctx: ParseCtx): Node? {
+    val cs = callShape(call) ?: return null
+    if (cs.trailingLambda != null || cs.positional.size != 1) return null
+    val color = colorValue(cs.positional[0]) ?: return null
+    return when (cs.name) {
+        "drawLine" -> {
+            if (!cs.named.keys.all { it in setOf("start", "end", "strokeWidth") }) return null
+            val (x1, y1) = dpPxPair(cs.named["start"], "Offset") ?: return null
+            val (x2, y2) = dpPxPair(cs.named["end"], "Offset") ?: return null
+            val sw = dpPxValue(cs.named["strokeWidth"]) ?: return null
+            Node.Line(ctx.newId(), x1, y1, x2, y2, color, sw)
+        }
+        "drawRect", "drawRoundRect" -> {
+            if (!cs.named.keys.all { it in setOf("topLeft", "size", "cornerRadius", "style") }) return null
+            if (cs.name == "drawRect" && "cornerRadius" in cs.named.keys) return null
+            val (x, y) = dpPxPair(cs.named["topLeft"], "Offset") ?: return null
+            val (w, h) = dpPxPair(cs.named["size"], "Size") ?: return null
+            val corner = cs.named["cornerRadius"]?.let { cr ->
+                val c = cr.unparen() as? KtCallExpression ?: return null
+                if (callName(c) != "CornerRadius") return null
+                dpPxValue(c.singlePositionalArg()) ?: return null
+            } ?: 0
+            if (cs.name == "drawRoundRect" && corner <= 0) return null
+            val sw = cs.named["style"]?.let { strokeWidthOf(it) ?: return null }
+            Node.RectShape(ctx.newId(), x, y, w, h, color, filled = sw == null, strokeWidth = sw ?: 2, corner = corner)
+        }
+        "drawCircle" -> {
+            if (!cs.named.keys.all { it in setOf("radius", "center", "style") }) return null
+            val r = dpPxValue(cs.named["radius"]) ?: return null
+            val (cx, cy) = dpPxPair(cs.named["center"], "Offset") ?: return null
+            val sw = cs.named["style"]?.let { strokeWidthOf(it) ?: return null }
+            Node.CircleShape(ctx.newId(), cx, cy, r, color, filled = sw == null, strokeWidth = sw ?: 2)
+        }
+        "drawOval" -> {
+            if (!cs.named.keys.all { it in setOf("topLeft", "size", "style") }) return null
+            val (x, y) = dpPxPair(cs.named["topLeft"], "Offset") ?: return null
+            val (w, h) = dpPxPair(cs.named["size"], "Size") ?: return null
+            val sw = cs.named["style"]?.let { strokeWidthOf(it) ?: return null }
+            Node.EllipseShape(ctx.newId(), x, y, w, h, color, filled = sw == null, strokeWidth = sw ?: 2)
+        }
+        "drawArc" -> {
+            if (!cs.named.keys.all { it in setOf("startAngle", "sweepAngle", "useCenter", "topLeft", "size", "style") }) return null
+            val start = intFromFloat(cs.named["startAngle"]) ?: return null
+            val sweep = intFromFloat(cs.named["sweepAngle"]) ?: return null
+            val useCenter = boolLit(cs.named["useCenter"]) ?: return null
+            val (x, y) = dpPxPair(cs.named["topLeft"], "Offset") ?: return null
+            val (w, h) = dpPxPair(cs.named["size"], "Size") ?: return null
+            val sw = cs.named["style"]?.let { strokeWidthOf(it) ?: return null }
+            // Canonical: filled arcs use the center (pie) and carry no style.
+            if ((sw == null) != useCenter) return null
+            Node.ArcShape(ctx.newId(), x, y, w, h, start, sweep, color, filled = useCenter, strokeWidth = sw ?: 2)
+        }
+        else -> null
+    }
+}
+
 private fun iconKind(expr: KtExpression): IconKind? {
     val outer = expr.unparen() as? KtDotQualifiedExpression ?: return null
     val name = nameOf(outer.selectorExpression) ?: return null

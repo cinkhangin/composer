@@ -245,8 +245,8 @@ class CodeGenTest {
 
     @Test
     fun modifier_order_is_preserved() {
-        val a = CodeGen.generate(Node.Box("x", modifier = listOf(FillMaxWidth, Padding(4))))
-        val b = CodeGen.generate(Node.Box("x", modifier = listOf(Padding(4), FillMaxWidth)))
+        val a = CodeGen.generate(Node.Box("x", modifier = listOf(FillMaxWidth(), Padding(4))))
+        val b = CodeGen.generate(Node.Box("x", modifier = listOf(Padding(4), FillMaxWidth())))
         // 2+ modifiers wrap one-per-line; assert relative order is preserved.
         assertTrue(a.indexOf(".fillMaxWidth()") < a.indexOf(".padding(4.dp)"), a)
         assertTrue(b.indexOf(".padding(4.dp)") < b.indexOf(".fillMaxWidth()"), b)
@@ -364,6 +364,135 @@ class CodeGenTest {
         assertTrue(first >= 0 && second > first, code)
         assertTrue("radius = 4.dp" in code, code)
         assertTrue("radius = 16.dp" in code, code)
+    }
+
+    @Test
+    fun canvas_emits_draw_calls_in_dp() {
+        val code = CodeGen.generate(
+            Node.Canvas(
+                "cv",
+                children = listOf(
+                    Node.Line("l", 0, 0, 120, -4, 0xFF111111, 3),
+                    Node.RectShape("r", 10, 10, 100, 60, 0xFF6366F1, filled = false, strokeWidth = 2, corner = 8),
+                    Node.CircleShape("c", 50, 50, 40, 0xFF22C55E, filled = true),
+                    Node.ArcShape("a", 0, 0, 80, 80, 0, 120, 0xFFF59E0B, filled = false, strokeWidth = 4),
+                ),
+                modifier = listOf(ModifierSpec.Size(200, 200)),
+            ),
+        )
+        assertTrue("Canvas(modifier = Modifier.size(200.dp, 200.dp)) {" in code, code)
+        assertTrue("drawLine(Color(0xFF111111), start = Offset(0.dp.toPx(), 0.dp.toPx()), end = Offset(120.dp.toPx(), (-4).dp.toPx()), strokeWidth = 3.dp.toPx())" in code, code)
+        assertTrue("drawRoundRect(Color(0xFF6366F1), topLeft = Offset(10.dp.toPx(), 10.dp.toPx()), size = Size(100.dp.toPx(), 60.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = Stroke(2.dp.toPx()))" in code, code)
+        assertTrue("drawCircle(Color(0xFF22C55E), radius = 40.dp.toPx(), center = Offset(50.dp.toPx(), 50.dp.toPx()))" in code, code)
+        assertTrue("drawArc(Color(0xFFF59E0B), startAngle = 0f, sweepAngle = 120f, useCenter = false, topLeft = Offset(0.dp.toPx(), 0.dp.toPx()), size = Size(80.dp.toPx(), 80.dp.toPx()), style = Stroke(4.dp.toPx()))" in code, code)
+        assertTrue("import androidx.compose.foundation.Canvas" in code, code)
+        assertTrue("import androidx.compose.ui.graphics.drawscope.Stroke" in code, code)
+    }
+
+    @Test
+    fun tab_row_hoists_int_state_and_emits_indexed_tabs() {
+        val code = CodeGen.generate(
+            Node.TabRow("tr", children = listOf(Node.Tab("a", "One"), Node.Tab("b", "Two")), selectedIndex = 1),
+        )
+        assertTrue("var state1 by remember { mutableStateOf(1) }" in code, code)
+        assertTrue("TabRow(selectedTabIndex = state1) {" in code, code)
+        assertTrue("Tab(selected = state1 == 0, onClick = { state1 = 0 }, text = { Text(\"One\") })" in code, code)
+        assertTrue("Tab(selected = state1 == 1, onClick = { state1 = 1 }, text = { Text(\"Two\") })" in code, code)
+        assertTrue("import androidx.compose.material3.TabRow" in code, code)
+    }
+
+    @Test
+    fun navigation_bar_emits_items_with_symbol_icons() {
+        val code = CodeGen.generate(
+            Node.NavigationBar("nb", children = listOf(Node.NavItem("i1", "Home", "home"), Node.NavItem("i2", "Feed", ""))),
+        )
+        assertTrue("NavigationBar {" in code, code)
+        assertTrue("selected = state1 == 0," in code, code)
+        assertTrue("Icon(painterResource(Res.drawable.ic_home), contentDescription = null)" in code, code)
+        assertTrue("icon = {}," in code, code) // empty symbol → empty icon slot
+        assertTrue("label = { Text(\"Feed\") }," in code, code)
+    }
+
+    @Test
+    fun chips_emit_per_variant_with_state_for_filter() {
+        val assist = CodeGen.generate(Node.Chip("c", "Tag", composer.model.ChipVariant.Assist))
+        assertTrue("AssistChip(onClick = {}, label = { Text(\"Tag\") })" in assist, assist)
+        val filter = CodeGen.generate(Node.Chip("c", "Tag", composer.model.ChipVariant.Filter, selected = true))
+        assertTrue("var state1 by remember { mutableStateOf(true) }" in filter, filter)
+        assertTrue("FilterChip(selected = state1, onClick = { state1 = !state1 }, label = { Text(\"Tag\") })" in filter, filter)
+    }
+
+    @Test
+    fun badged_box_emits_badge_slot_and_content() {
+        val code = CodeGen.generate(Node.BadgedBox("bb", "3", children = listOf(Node.Icon("i", symbol = "notifications"))))
+        assertTrue("BadgedBox(badge = { Badge { Text(\"3\") } }) {" in code, code)
+        val dot = CodeGen.generate(Node.BadgedBox("bb", "", children = emptyList()))
+        assertTrue("BadgedBox(badge = { Badge() }) {" in dot, dot)
+    }
+
+    @Test
+    fun symbol_icon_emits_painter_resource_with_sourcing_comment() {
+        val code = CodeGen.generate(Node.Icon("i", symbol = "shopping_cart"))
+        assertTrue("Icon(painterResource(Res.drawable.ic_shopping_cart), contentDescription = null)" in code, code)
+        assertTrue(CodeGen.symbolComment("shopping_cart") in code, code)
+        assertTrue("import org.jetbrains.compose.resources.painterResource" in code, code)
+        assertTrue("Icons.Default" !in code, code)
+        // Legacy curated form is untouched when symbol is empty.
+        val legacy = CodeGen.generate(Node.Icon("i", composer.model.IconKind.Menu))
+        assertTrue("Icon(Icons.Default.Menu, contentDescription = null)" in legacy, legacy)
+    }
+
+    @Test
+    fun symbol_icon_button_wraps_painter_icon() {
+        val code = CodeGen.generate(Node.IconButton("b", symbol = "rocket_launch"))
+        assertTrue("IconButton(onClick = {}) {" in code, code)
+        assertTrue("Icon(painterResource(Res.drawable.ic_rocket_launch), contentDescription = null)" in code, code)
+        assertTrue(CodeGen.symbolComment("rocket_launch") in code, code)
+    }
+
+    @Test
+    fun fill_modifiers_emit_fraction_only_when_not_full() {
+        val full = CodeGen.generate(Node.Box("x", modifier = listOf(FillMaxWidth())))
+        assertTrue("Modifier.fillMaxWidth()" in full, full)
+        val half = CodeGen.generate(Node.Box("x", modifier = listOf(FillMaxWidth(0.5f))))
+        assertTrue("Modifier.fillMaxWidth(0.5f)" in half, half)
+        val size = CodeGen.generate(Node.Box("x", modifier = listOf(FillMaxSize(0.25f))))
+        assertTrue("Modifier.fillMaxSize(0.25f)" in size, size)
+    }
+
+    @Test
+    fun zindex_and_blur_emit() {
+        val z = CodeGen.generate(Node.Box("x", modifier = listOf(ModifierSpec.ZIndex(2f))))
+        assertTrue("Modifier.zIndex(2.0f)" in z, z)
+        assertTrue("import androidx.compose.ui.zIndex" in z, z)
+        val b = CodeGen.generate(Node.Box("x", modifier = listOf(ModifierSpec.Blur(8))))
+        assertTrue("Modifier.blur(8.dp)" in b, b)
+        assertTrue("import androidx.compose.ui.draw.blur" in b, b)
+    }
+
+    @Test
+    fun align_emits_per_scope() {
+        val inRow = CodeGen.generate(
+            Node.Row("r", children = listOf(Node.Text("t", "Hi", listOf(ModifierSpec.Align(vertical = composer.model.VAlignment.Center))))),
+        )
+        assertTrue("Modifier.align(Alignment.CenterVertically)" in inRow, inRow)
+        val inColumn = CodeGen.generate(
+            Node.Column("c", children = listOf(Node.Text("t", "Hi", listOf(ModifierSpec.Align(horizontal = composer.model.HAlignment.End))))),
+        )
+        assertTrue("Modifier.align(Alignment.End)" in inColumn, inColumn)
+        val inBox = CodeGen.generate(
+            Node.Box("b", children = listOf(Node.Text("t", "Hi", listOf(ModifierSpec.Align(box = composer.model.BoxAlignment.BottomEnd))))),
+        )
+        assertTrue("Modifier.align(Alignment.BottomEnd)" in inBox, inBox)
+    }
+
+    @Test
+    fun align_dropped_when_scope_mismatches() {
+        // A vertical (RowScope) align inside a Box doesn't compile — must be stripped.
+        val code = CodeGen.generate(
+            Node.Box("b", children = listOf(Node.Text("t", "Hi", listOf(ModifierSpec.Align(vertical = composer.model.VAlignment.Center))))),
+        )
+        assertTrue("align(" !in code, code)
     }
 
     @Test
@@ -1020,7 +1149,7 @@ class CodeGenTest {
     /** Mirrors app's SampleTree.kt — kept here so codegen tests are self-contained. */
     private fun sampleTree(): Node = Node.Column(
         id = "root",
-        modifier = listOf(FillMaxSize, Padding(16)),
+        modifier = listOf(FillMaxSize(), Padding(16)),
         children = listOf(
             Node.Text("title", "Welcome to Composer", listOf(Padding(8))),
             Node.Row(
@@ -1034,7 +1163,7 @@ class CodeGenTest {
             ),
             Node.Box(
                 "panel",
-                modifier = listOf(FillMaxWidth, Padding(8), Background(0xFFE0E0E0)),
+                modifier = listOf(FillMaxWidth(), Padding(8), Background(0xFFE0E0E0)),
                 children = listOf(Node.Text("panelLabel", "A boxed label", listOf(Padding(16)))),
             ),
         ),
