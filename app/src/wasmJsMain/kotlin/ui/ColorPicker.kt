@@ -4,8 +4,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -210,6 +211,23 @@ private fun EyeDropperButton(onClick: () -> Unit) {
     }
 }
 
+/**
+ * One detector for the picker surfaces: the press applies immediately, then the
+ * drag keeps applying. Replaces the old tap+drag detector pair, which raced on a
+ * press that turned into a drag.
+ */
+private fun Modifier.pressDrag(onPos: (Offset, IntSize) -> Unit): Modifier = pointerInput(Unit) {
+    awaitEachGesture {
+        val down = awaitFirstDown()
+        down.consume()
+        onPos(down.position, size)
+        drag(down.id) { change ->
+            change.consume()
+            onPos(change.position, size)
+        }
+    }
+}
+
 // --- saturation/value square ----------------------------------------------
 
 @Composable
@@ -220,13 +238,7 @@ private fun SVSquare(h: Float, s: Float, v: Float, onChange: (Float, Float) -> U
             .fillMaxWidth()
             .height(128.dp)
             .clip(RoundedCornerShape(6.dp))
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = { svApply(it, size, onChange) },
-                    onDrag = { change, _ -> change.consume(); svApply(change.position, size, onChange) },
-                )
-            }
-            .pointerInput(Unit) { detectTapGestures { svApply(it, size, onChange) } },
+            .pressDrag { pos, sz -> svApply(pos, sz, onChange) },
     ) {
         drawRect(Brush.horizontalGradient(listOf(Color.White, hue)))
         drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
@@ -253,13 +265,7 @@ private fun HueSlider(h: Float, onChange: (Float) -> Unit) {
             .fillMaxWidth()
             .height(16.dp)
             .clip(RoundedCornerShape(8.dp))
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = { hueApply(it, size, onChange) },
-                    onDrag = { change, _ -> change.consume(); hueApply(change.position, size, onChange) },
-                )
-            }
-            .pointerInput(Unit) { detectTapGestures { hueApply(it, size, onChange) } },
+            .pressDrag { pos, sz -> hueApply(pos, sz, onChange) },
     ) {
         drawRect(Brush.horizontalGradient(hueStops))
         drawThumb((h / 360f) * size.width, size.height)
@@ -282,13 +288,7 @@ private fun AlphaSlider(a: Float, h: Float, s: Float, v: Float, onChange: (Float
             .fillMaxWidth()
             .height(16.dp)
             .clip(RoundedCornerShape(8.dp))
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = { alphaApply(it, size, onChange) },
-                    onDrag = { change, _ -> change.consume(); alphaApply(change.position, size, onChange) },
-                )
-            }
-            .pointerInput(Unit) { detectTapGestures { alphaApply(it, size, onChange) } },
+            .pressDrag { pos, sz -> alphaApply(pos, sz, onChange) },
     ) {
         checkerboard(6f)
         drawRect(Brush.horizontalGradient(listOf(opaque.copy(alpha = 0f), opaque)))
@@ -324,7 +324,7 @@ private fun HexField(color: Long, modifier: Modifier, onChange: (Long) -> Unit) 
             text = cleaned
             parseHex(cleaned)?.let { last = it; onChange(it) }
         },
-        label = "hex (AARRGGBB)",
+        label = "Hex (RGB, RRGGBB or AARRGGBB)",
         modifier = modifier,
     )
 }
@@ -430,6 +430,7 @@ private fun hsvaToArgb(h: Float, s: Float, v: Float, a: Float): Long {
 private fun hex8(color: Long): String = color.toString(16).uppercase().padStart(8, '0')
 
 private fun parseHex(text: String): Long? = when (text.length) {
+    3 -> text.map { "$it$it" }.joinToString("").let { ("FF$it").toLongOrNull(16) } // CSS #RGB shorthand
     6 -> ("FF$text").toLongOrNull(16)
     8 -> text.toLongOrNull(16)
     else -> null

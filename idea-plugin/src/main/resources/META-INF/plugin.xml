@@ -16,6 +16,7 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <fileEditorProvider implementation="composer.idea.editor.ComposerSplitEditorProvider"/>
+        <notificationGroup id="Composer" displayType="BALLOON"/>
     </extensions>
 
     <!-- PSI use is syntax-level only, so both Kotlin plugin modes work. -->

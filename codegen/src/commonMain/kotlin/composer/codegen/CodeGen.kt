@@ -805,6 +805,16 @@ object CodeGen {
                     shadowExpr("innerShadow", spec.radius, spec.color, spec.offsetX, spec.offsetY, spec.spread, spec.corner, spec.cornerUnit, imports)
                 }
 
+                is ModifierSpec.Rotate -> {
+                    imports += "androidx.compose.ui.draw.rotate"
+                    "rotate(${spec.degrees}f)"
+                }
+
+                is ModifierSpec.Scale -> {
+                    imports += "androidx.compose.ui.draw.scale"
+                    if (spec.x == spec.y) "scale(${spec.x}f)" else "scale(${spec.x}f, ${spec.y}f)"
+                }
+
                 ModifierSpec.FillMaxWidth -> {
                     imports += "androidx.compose.foundation.layout.fillMaxWidth"
                     "fillMaxWidth()"

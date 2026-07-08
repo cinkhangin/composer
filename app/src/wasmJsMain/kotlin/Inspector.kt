@@ -224,9 +224,21 @@ fun Inspector(state: EditorState, modifier: Modifier = Modifier) {
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val urlFailed = !isLocal && selected.url.isNotEmpty() && LocalImages.isFailed(selected.url)
                             BasicText(
-                                if (isLocal) "✓ local image selected" else "or pick a local file",
-                                style = TextStyle(color = if (isLocal) Tk.accent else Tk.textMuted, fontSize = 12.sp),
+                                when {
+                                    isLocal -> "✓ local image selected"
+                                    urlFailed -> "⚠ couldn't load this URL (blocked or not an image)"
+                                    else -> "or pick a local file"
+                                },
+                                style = TextStyle(
+                                    color = when {
+                                        isLocal -> Tk.accent
+                                        urlFailed -> Tk.danger
+                                        else -> Tk.textMuted
+                                    },
+                                    fontSize = 12.sp,
+                                ),
                                 modifier = Modifier.weight(1f),
                             )
                             ToolButton("Pick file") { scope.launch { pickImageFile()?.let { du -> state.update(selected.id) { (it as Node.Image).copy(url = du) } } } }
@@ -390,10 +402,10 @@ private fun ThemeEditor(state: EditorState) {
                 modifier = Modifier.weight(1f),
             )
             if (state.themes.size > 1) {
-                SquareIconButton(AppIconKind.Trash, danger = true) { state.deleteTheme(state.activeTheme) }
+                SquareIconButton(AppIconKind.Trash, danger = true, tip = "Delete theme") { state.deleteTheme(state.activeTheme) }
             }
         }
-        BoolField("dark base scheme", theme.dark) { state.setTheme(theme.copy(dark = it), coalesceKey = null) }
+        BoolField("Dark base scheme", theme.dark) { state.setTheme(theme.copy(dark = it), coalesceKey = null) }
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -405,7 +417,7 @@ private fun ThemeEditor(state: EditorState) {
                 ThemeSwatch(token, theme.effective(token), selected = token == active) { active = token }
             }
         }
-        BasicText("editing: $active", style = TextStyle(color = Tk.textMuted, fontSize = 11.sp))
+        BasicText("Editing: $active", style = TextStyle(color = Tk.textMuted, fontSize = 11.sp))
         ColorField(theme.effective(active), showThemeSwatches = false) { c -> state.setTheme(theme.set(active, c), coalesceKey = "theme:$active") }
     }
 }
@@ -755,11 +767,11 @@ private fun Arrange(state: EditorState, selected: Node) {
     val isRoot = selected.id == state.root.id
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SquareIconButton(AppIconKind.ArrowUp, enabled = state.canMove(selected.id, -1)) { state.move(selected.id, -1) }
-            SquareIconButton(AppIconKind.ArrowDown, enabled = state.canMove(selected.id, +1)) { state.move(selected.id, +1) }
+            SquareIconButton(AppIconKind.ArrowUp, enabled = state.canMove(selected.id, -1), tip = "Move up") { state.move(selected.id, -1) }
+            SquareIconButton(AppIconKind.ArrowDown, enabled = state.canMove(selected.id, +1), tip = "Move down") { state.move(selected.id, +1) }
             Box(Modifier.weight(1f))
-            SquareIconButton(AppIconKind.Duplicate) { state.duplicate() }
-            SquareIconButton(AppIconKind.Trash, enabled = !isRoot, danger = true) { state.delete(selected.id) }
+            SquareIconButton(AppIconKind.Duplicate, tip = "Duplicate (⌘D)") { state.duplicate() }
+            SquareIconButton(AppIconKind.Trash, enabled = !isRoot, danger = true, tip = "Delete") { state.delete(selected.id) }
         }
     }
 }

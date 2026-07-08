@@ -83,6 +83,17 @@ private fun parseModifierCall(call: KtCallExpression): ModifierSpec? {
         "innerShadow" -> parseShadow(shape) { r, c, x, y, s, corner, unit ->
             ModifierSpec.InnerShadow(r, c, x, y, s, corner, unit)
         }
+        "rotate" -> single(shape)?.let { floatLit(it) }?.let { ModifierSpec.Rotate(it) }
+        "scale" -> when {
+            shape.named.isNotEmpty() -> null
+            shape.positional.size == 1 -> floatLit(shape.positional[0])?.let { ModifierSpec.Scale(it, it) }
+            shape.positional.size == 2 -> {
+                val x = floatLit(shape.positional[0]) ?: return null
+                val y = floatLit(shape.positional[1]) ?: return null
+                ModifierSpec.Scale(x, y)
+            }
+            else -> null
+        }
         "fillMaxWidth" -> if (noArgs(shape)) ModifierSpec.FillMaxWidth else null
         "fillMaxHeight" -> if (noArgs(shape)) ModifierSpec.FillMaxHeight else null
         "fillMaxSize" -> if (noArgs(shape)) ModifierSpec.FillMaxSize else null

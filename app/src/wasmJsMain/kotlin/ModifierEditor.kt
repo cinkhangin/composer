@@ -232,12 +232,14 @@ private fun AddChipsRow(existing: List<ModifierSpec>, canWeight: Boolean, onAdd:
         AddChip("offset") { onAdd(Offset(0, 0)) }
         AddChip("background") { onAdd(Background(0xFF2196F3)) }
         if (canWeight && existing.none { it is Weight }) AddChip("weight") { onAdd(Weight(1f)) }
-        if (existing.none { it is AspectRatio }) AddChip("aspectRatio") { onAdd(AspectRatio(1, 1)) }
-        if (existing.none { it is Clip }) AddChip("clip") { onAdd(Clip(12)) }
-        if (existing.none { it is ModifierSpec.Alpha }) AddChip("opacity") { onAdd(ModifierSpec.Alpha(0.5f)) }
-        if (existing.none { it is ModifierSpec.Border }) AddChip("border") { onAdd(ModifierSpec.Border(1, 0xFF000000)) }
-        if (existing.none { it is ModifierSpec.DropShadow }) AddChip("dropShadow") { onAdd(ModifierSpec.DropShadow()) }
-        if (existing.none { it is ModifierSpec.InnerShadow }) AddChip("innerShadow") { onAdd(ModifierSpec.InnerShadow()) }
+        AddChip("aspectRatio") { onAdd(AspectRatio(1, 1)) }
+        AddChip("clip") { onAdd(Clip(12)) }
+        AddChip("opacity") { onAdd(ModifierSpec.Alpha(0.5f)) }
+        AddChip("border") { onAdd(ModifierSpec.Border(1, 0xFF000000)) }
+        AddChip("dropShadow") { onAdd(ModifierSpec.DropShadow()) }
+        AddChip("innerShadow") { onAdd(ModifierSpec.InnerShadow()) }
+        AddChip("rotate") { onAdd(ModifierSpec.Rotate(45f)) }
+        AddChip("scale") { onAdd(ModifierSpec.Scale(1.5f, 1.5f)) }
         if (FillMaxWidth !in existing) AddChip("fillW") { onAdd(FillMaxWidth) }
         if (FillMaxHeight !in existing) AddChip("fillH") { onAdd(FillMaxHeight) }
         if (FillMaxSize !in existing) AddChip("fillSize") { onAdd(FillMaxSize) }
@@ -481,6 +483,13 @@ private fun ModifierParams(spec: ModifierSpec, onChange: (ModifierSpec) -> Unit)
             CornerField(spec.corner, spec.cornerUnit) { c, u -> onChange(spec.copy(corner = c, cornerUnit = u)) }
         }
 
+        is ModifierSpec.Rotate -> FloatField("degrees", spec.degrees, Modifier.fillMaxWidth()) { onChange(ModifierSpec.Rotate(it)) }
+
+        is ModifierSpec.Scale -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FloatField("x", spec.x, Modifier.weight(1f)) { onChange(spec.copy(x = it)) }
+            FloatField("y", spec.y, Modifier.weight(1f)) { onChange(spec.copy(y = it)) }
+        }
+
         FillMaxWidth, FillMaxHeight, FillMaxSize -> Unit
     }
 }
@@ -581,6 +590,8 @@ private fun specName(spec: ModifierSpec): String = when (spec) {
     is ModifierSpec.Border -> "border"
     is ModifierSpec.DropShadow -> "dropShadow"
     is ModifierSpec.InnerShadow -> "innerShadow"
+    is ModifierSpec.Rotate -> "rotate"
+    is ModifierSpec.Scale -> "scale"
     FillMaxWidth -> "fillMaxWidth"
     FillMaxHeight -> "fillMaxHeight"
     FillMaxSize -> "fillMaxSize"

@@ -40,16 +40,22 @@ private fun pickImageDataUrl(): Promise<JsString?> = js(
 object LocalImages {
     /** url (or data: URL) → decoded bitmap. Snapshot-backed so the canvas updates on load. */
     val loaded = mutableStateMapOf<String, ImageBitmap>()
-    private val failed = mutableSetOf<String>()
+
+    /** urls that failed to fetch/decode (CORS, 404, bad data). Snapshot-backed so the
+     *  canvas/inspector can show a distinct "couldn't load" state instead of an eternal
+     *  loading placeholder. */
+    private val failedUrls = mutableStateMapOf<String, Unit>()
+
+    fun isFailed(url: String): Boolean = failedUrls.containsKey(url)
 
     /** Decode [url] (http(s) or data:) into a Compose bitmap, cached by url. */
     suspend fun load(url: String) {
-        if (url.isEmpty() || loaded.containsKey(url) || url in failed) return
+        if (url.isEmpty() || loaded.containsKey(url) || isFailed(url)) return
         try {
             val bytes = fetchArrayBuffer(url).await<ArrayBuffer>().toByteArray()
             loaded[url] = SkiaImage.makeFromEncoded(bytes).toComposeImageBitmap()
         } catch (t: Throwable) {
-            failed.add(url) // e.g. CORS-blocked URL — show the placeholder instead
+            failedUrls[url] = Unit // e.g. CORS-blocked URL — surfaced as a broken-image state
         }
     }
 }

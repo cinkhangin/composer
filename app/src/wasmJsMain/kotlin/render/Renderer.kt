@@ -6,6 +6,8 @@ import androidx.compose.foundation.border
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.draw.innerShadow
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -248,15 +250,26 @@ fun RenderNode(
         is Node.Image -> {
             if (node.url.isNotEmpty()) LaunchedEffect(node.url) { LocalImages.load(node.url) }
             val bitmap = node.url.takeIf { it.isNotEmpty() }?.let { LocalImages.loaded[it] }
-            if (bitmap != null) {
-                Image(
+            when {
+                bitmap != null -> Image(
                     bitmap = bitmap,
                     contentDescription = node.contentDescription.ifBlank { null },
                     modifier = modifier,
                     contentScale = ContentScale.Crop,
                 )
-            } else {
-                Image(
+                // Failed fetch/decode (CORS, 404) — a plain placeholder here reads
+                // as "still loading" forever, so show an explicit broken-image state.
+                node.url.isNotEmpty() && LocalImages.isFailed(node.url) -> Box(
+                    modifier = modifier.background(Color(node.placeholderColor).copy(alpha = 0.4f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    SymbolIcon(
+                        "broken_image",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                else -> Image(
                     painter = ColorPainter(Color(node.placeholderColor)),
                     contentDescription = node.contentDescription.ifBlank { null },
                     modifier = modifier,
@@ -663,6 +676,8 @@ fun List<ModifierSpec>.toModifier(scheme: ColorScheme): Modifier =
                     offset = DpOffset(spec.offsetX.dp, spec.offsetY.dp),
                 ),
             )
+            is ModifierSpec.Rotate -> acc.rotate(spec.degrees)
+            is ModifierSpec.Scale -> acc.scale(spec.x, spec.y)
             ModifierSpec.FillMaxWidth -> acc.fillMaxWidth()
             ModifierSpec.FillMaxHeight -> acc.fillMaxHeight()
             ModifierSpec.FillMaxSize -> acc.fillMaxSize()

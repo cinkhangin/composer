@@ -333,6 +333,40 @@ class CodeGenTest {
     }
 
     @Test
+    fun rotate_modifier_emits() {
+        val code = CodeGen.generate(Node.Box("x", modifier = listOf(ModifierSpec.Rotate(45f))))
+        assertTrue("Modifier.rotate(45.0f)" in code, code)
+        assertTrue("import androidx.compose.ui.draw.rotate" in code, code)
+    }
+
+    @Test
+    fun scale_modifier_emits_uniform_and_per_axis() {
+        val uniform = CodeGen.generate(Node.Box("x", modifier = listOf(ModifierSpec.Scale(1.5f, 1.5f))))
+        assertTrue("Modifier.scale(1.5f)" in uniform, uniform)
+        assertTrue("import androidx.compose.ui.draw.scale" in uniform, uniform)
+        val perAxis = CodeGen.generate(Node.Box("x", modifier = listOf(ModifierSpec.Scale(1.5f, 2.0f))))
+        assertTrue("Modifier.scale(1.5f, 2.0f)" in perAxis, perAxis)
+    }
+
+    @Test
+    fun duplicate_modifiers_all_emit_in_order() {
+        val code = CodeGen.generate(
+            Node.Box(
+                "x",
+                modifier = listOf(
+                    ModifierSpec.DropShadow(radius = 4),
+                    ModifierSpec.DropShadow(radius = 16, offsetY = 8),
+                ),
+            ),
+        )
+        val first = code.indexOf("dropShadow(")
+        val second = code.indexOf("dropShadow(", first + 1)
+        assertTrue(first >= 0 && second > first, code)
+        assertTrue("radius = 4.dp" in code, code)
+        assertTrue("radius = 16.dp" in code, code)
+    }
+
+    @Test
     fun aspect_ratio_modifier_emits() {
         val code = CodeGen.generate(Node.Box("x", modifier = listOf(ModifierSpec.AspectRatio(16, 9))))
         assertTrue("Modifier.aspectRatio(16f / 9f)" in code, code)

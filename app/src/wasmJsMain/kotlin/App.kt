@@ -79,6 +79,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.isMetaPressed
+import androidx.compose.ui.input.pointer.isPrimaryPressed
+import androidx.compose.ui.input.pointer.isTertiaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -111,7 +113,9 @@ import composer.model.DesignJson
 import composer.model.DesignTheme
 import composer.model.ThemeColorRef
 import composer.model.Node
+import composer.model.CornerUnit
 import composer.model.backgroundCorner
+import composer.model.childNodes
 import composer.model.findById
 import composer.render.LocalDesignRoot
 import composer.render.RenderNode
@@ -123,6 +127,7 @@ import composer.ui.Island
 import composer.ui.LocalThemeSwatches
 import composer.ui.ThemeSwatch
 import composer.ui.Theme
+import composer.ui.Tip
 import composer.ui.Tk
 import composer.ui.TkMenu
 import composer.ui.TkMenuItem
@@ -162,7 +167,14 @@ fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
                 // guard compares canonical-to-canonical.
                 EmbeddedBridge.noteLoaded(DesignJson.encode(state.root))
             }
-            onDispose { EmbeddedBridge.onLoadDesign = null }
+            // Editor caret → designer selection (ignore ids the current tree doesn't have).
+            EmbeddedBridge.onSelectNode = { id ->
+                if (state.root.findById(id) != null) state.select(id)
+            }
+            onDispose {
+                EmbeddedBridge.onLoadDesign = null
+                EmbeddedBridge.onSelectNode = null
+            }
         }
         LaunchedEffect(Unit) {
             EmbeddedBridge.start()
@@ -175,6 +187,13 @@ fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
                 .drop(1) // the initial (empty) design isn't an edit
                 .debounce(300) // tighter than web auto-save — this drives live code
                 .collect { EmbeddedBridge.postDesign(DesignJson.encode(state.root)) }
+        }
+        // Designer selection → host (IDE moves the editor caret to the node's code).
+        LaunchedEffect(state) {
+            snapshotFlow { state.selectedId }
+                .drop(1)
+                .debounce(100)
+                .collect { EmbeddedBridge.postSelection(it) }
         }
     } else {
         // Auto-save: persist to the current file shortly after the design (or name) changes.
@@ -212,7 +231,16 @@ fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
         verticalArrangement = Arrangement.spacedBy(Tk.gap),
     ) {
         Toolbar(state, ws, embedded)
-        if (!embedded) ws.saveError?.let { SaveErrorBanner(it, ws::dismissSaveError) }
+        if (!embedded) {
+            ws.saveError?.let { SaveErrorBanner(it, onAction = ws::dismissSaveError) }
+            if (ws.loadFailed) SaveErrorBanner(
+                "Couldn't read this file's saved design — showing an empty canvas. " +
+                    "Auto-save is paused so the stored data stays intact; Save anyway overwrites it.",
+                actionLabel = "Save anyway",
+                onAction = { ws.saveOverwriting(state.root) },
+            )
+            ws.importError?.let { SaveErrorBanner(it, onAction = { ws.importError = null }) }
+        }
         Row(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Tk.gap),
@@ -274,10 +302,14 @@ private fun Toolbar(state: EditorState, ws: Workspace, embedded: Boolean = false
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            TopIconButton(AppIconKind.Undo, enabled = state.canUndo, onClick = state::undo)
-            TopIconButton(AppIconKind.Redo, enabled = state.canRedo, onClick = state::redo)
+            TopIconButton(AppIconKind.Undo, tip = "Undo (⌘Z)", enabled = state.canUndo, onClick = state::undo)
+            TopIconButton(AppIconKind.Redo, tip = "Redo (⇧⌘Z)", enabled = state.canRedo, onClick = state::redo)
             TopDivider()
-            TopIconButton(if (Theme.isDark) AppIconKind.Sun else AppIconKind.Moon, onClick = Theme::toggle)
+            TopIconButton(
+                if (Theme.isDark) AppIconKind.Sun else AppIconKind.Moon,
+                tip = if (Theme.isDark) "Light mode" else "Dark mode",
+                onClick = Theme::toggle,
+            )
             if (!embedded) {
                 ExportMenu(state)
                 AccountChip()
@@ -303,10 +335,12 @@ private fun LogoMenu(state: EditorState, ws: Workspace) {
         }
         TkMenu(expanded = open, onDismissRequest = { open = false }) {
             MenuItem("New design") { ws.newDesign(); open = false }
-            MenuItem("Save") { ws.save(state.root); open = false }
+            MenuItem("Save") { ws.saveOverwriting(state.root); open = false }
             MenuItem("Import JSON…") {
                 importTextFile(".json,application/json") { text ->
-                    runCatching { DesignJson.decode(text) }.getOrNull()?.let(state::load)
+                    runCatching { DesignJson.decode(text) }
+                        .onSuccess { ws.importError = null; state.load(it) }
+                        .onFailure { ws.importError = "Couldn't import — that file isn't a valid Composer design JSON." }
                 }
                 open = false
             }
@@ -351,27 +385,29 @@ private fun ViewSegment(label: String, icon: AppIconKind, active: Boolean, onCli
 
 /** Borderless hover-highlight icon button for toolbar history/theme actions. */
 @Composable
-private fun TopIconButton(icon: AppIconKind, enabled: Boolean = true, onClick: () -> Unit) {
+private fun TopIconButton(icon: AppIconKind, tip: String, enabled: Boolean = true, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-    Box(
-        modifier = Modifier
-            .size(32.dp)
-            .clip(RoundedCornerShape(Tk.rSm))
-            .background(if (hovered && enabled) Tk.elevated else Color.Transparent)
-            .hoverable(interaction, enabled)
-            .clickable(enabled = enabled) { onClick() },
-        contentAlignment = Alignment.Center,
-    ) {
-        AppIcon(
-            icon,
-            Modifier.size(16.dp),
-            tint = when {
-                !enabled -> Tk.textMuted
-                hovered -> Tk.textPrimary
-                else -> Tk.textSecondary
-            },
-        )
+    Tip(tip) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(Tk.rSm))
+                .background(if (hovered && enabled) Tk.elevated else Color.Transparent)
+                .hoverable(interaction, enabled)
+                .clickable(enabled = enabled) { onClick() },
+            contentAlignment = Alignment.Center,
+        ) {
+            AppIcon(
+                icon,
+                Modifier.size(16.dp),
+                tint = when {
+                    !enabled -> Tk.textMuted
+                    hovered -> Tk.textPrimary
+                    else -> Tk.textSecondary
+                },
+            )
+        }
     }
 }
 
@@ -425,9 +461,9 @@ private fun TopDivider() {
     }
 }
 
-/** A full-width warning shown when a save fails, so data loss is never silent. */
+/** A full-width warning shown when a save/load/import fails, so data loss is never silent. */
 @Composable
-private fun SaveErrorBanner(message: String, onDismiss: () -> Unit) {
+private fun SaveErrorBanner(message: String, actionLabel: String = "Dismiss", onAction: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -442,7 +478,7 @@ private fun SaveErrorBanner(message: String, onDismiss: () -> Unit) {
             modifier = Modifier.weight(1f),
             style = TextStyle(color = Tk.danger, fontSize = 13.sp),
         )
-        ToolButton("Dismiss", onClick = onDismiss)
+        ToolButton(actionLabel, onClick = onAction)
     }
 }
 
@@ -509,6 +545,9 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
     // Fit-to-canvas scale, hoisted from the layout pass below so the zoom badge
     // and clamp (both outside BoxWithConstraints' scope) can read it.
     var fitScale by remember { mutableStateOf(1f) }
+    // Cursor position over the island (px), for the Figma-style hover outline.
+    // Null while a button is down (mid-drag/click) or the pointer is outside.
+    var hoverPos by remember { mutableStateOf<Offset?>(null) }
 
     /**
      * Anchored zoom: the content point under the anchor stays FIXED on screen, so
@@ -556,6 +595,34 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
                         panY -= delta.y.coerceIn(-15f, 15f) * 6f
                     }
                 }
+                .onPointerEvent(PointerEventType.Move) { event ->
+                    hoverPos = if (event.buttons.isPrimaryPressed || event.buttons.isTertiaryPressed) null
+                    else event.changes.firstOrNull()?.position
+                }
+                .onPointerEvent(PointerEventType.Exit) { hoverPos = null }
+                // Middle-button drag pans — plain-mouse users have no two-finger scroll.
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        if (!currentEvent.buttons.isTertiaryPressed) return@awaitEachGesture
+                        down.consume()
+                        setCanvasCursor("grabbing")
+                        var prev = down.position
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) { change.consume(); break }
+                                panX += change.position.x - prev.x
+                                panY += change.position.y - prev.y
+                                prev = change.position
+                                change.consume()
+                            }
+                        } finally {
+                            setCanvasCursor("default")
+                        }
+                    }
+                }
                 // A tap on empty canvas (nothing consumed it) selects the artboard.
                 .pointerInput(Unit) { detectTapGestures { state.select(state.root.id) } },
         ) {
@@ -582,8 +649,10 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
             val bounds = remember { mutableStateMapOf<String, Rect>() }
             var spaceCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
             // Prune bounds of deleted nodes so ghost rects can't win drill hit-tests.
+            // One O(n) id sweep — a findById per key was O(n·m) on every edit keystroke.
             LaunchedEffect(state.root) {
-                val stale = bounds.keys.filter { state.root.findById(it) == null }
+                val ids = HashSet<String>().also { collectIds(state.root, it) }
+                val stale = bounds.keys.filter { it !in ids }
                 stale.forEach { bounds.remove(it) }
             }
 
@@ -600,36 +669,80 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
                     .offset { IntOffset(panX.roundToInt(), panY.roundToInt()) },
             )
 
-            // Selection overlay in SCREEN space — a sibling of the zoomed layer, so
-            // all its chrome (outline, handles, edge zones, dims pill) is plain dp
-            // and stays crisp/hit-testable at ANY zoom. Inside the layer, /scale
-            // layout sizes round to 0 px past ~150x — dead handles, no cursor.
-            // The pre-scale→screen mapping mirrors the layer's transform (centered
-            // + pan + scale) and READS panX/panY/scale, so it recomposes with them.
+            // Overlays live in SCREEN space — siblings of the zoomed layer, so all
+            // chrome (outline, handles, edge zones, dims pill) is plain dp and stays
+            // crisp/hit-testable at ANY zoom. Inside the layer, /scale layout sizes
+            // round to 0 px past ~150x — dead handles, no cursor. The pre-scale→screen
+            // mapping mirrors the layer's transform (centered + pan + scale) and READS
+            // panX/panY/scale, so it recomposes with them. The layer is island-sized
+            // and scales around its center (= viewport center + pan); bounds are
+            // island-space px with the content-centering already baked in by
+            // ScreenFrame's placement.
+            val d = density.density
+            val cw = with(density) { maxWidth.toPx() }
+            val ch = with(density) { maxHeight.toPx() }
+            fun toScreen(x: Float, y: Float) =
+                Offset(cw / 2f + panX + (x - cw / 2f) * scale, ch / 2f + panY + (y - ch / 2f) * scale)
+
+            // Corner rounding of a node's outline in screen px. Percent corners are
+            // relative to the node's smaller side (like the rendered
+            // RoundedCornerShape(percent)); dp corners scale with zoom.
+            fun outlineCornerPx(node: Node?, r: Rect): Float =
+                when (val c = if (node is Node.Composable) null else node?.backgroundCorner()) {
+                    null -> 0f
+                    else -> when (c.second) {
+                        CornerUnit.Percent -> minOf(r.width, r.height) * scale * (c.first.coerceAtMost(50) / 100f)
+                        CornerUnit.Dp -> c.first * d * scale
+                    }
+                }
+
             val sel = state.selectedId
             val b = sel?.let { bounds[it] }
+
+            // Hover preview: outline the DEEPEST node under the cursor — exactly
+            // what a click selects (see EditorState.selectAt). Hit-testing reuses
+            // the bounds map (smallest rect containing the point), so it works over
+            // interactive components too. Selection still happens only on click.
+            val hoverTarget = hoverPos?.let { p ->
+                val px = (p.x - cw / 2f - panX) / scale + cw / 2f
+                val py = (p.y - ch / 2f - panY) / scale + ch / 2f
+                val deepest = bounds.entries
+                    .filter { (id, r) -> id != state.root.id && px >= r.left && px <= r.right && py >= r.top && py <= r.bottom }
+                    .minByOrNull { (_, r) -> r.width * r.height }?.key
+                deepest?.let {
+                    val overSel = b != null && px >= b.left && px <= b.right && py >= b.top && py <= b.bottom
+                    // No preview in the resize-handle band just outside the selection —
+                    // an outline flashing under the handles reads as noise (Figma hides it).
+                    val margin = 16f * d / scale
+                    val nearSelEdge = b != null && !overSel &&
+                        px >= b.left - margin && px <= b.right + margin &&
+                        py >= b.top - margin && py <= b.bottom + margin
+                    if (nearSelEdge) null else it
+                }
+            }
+            val hb = hoverTarget?.takeIf { it != sel && it != state.root.id }?.let { bounds[it] }
+            if (hb != null) {
+                val hoverNode = state.root.findById(hoverTarget)
+                val hCorner = outlineCornerPx(hoverNode, hb)
+                val htl = toScreen(hb.left, hb.top)
+                val hbr = toScreen(hb.right, hb.bottom)
+                HoverOutline(Rect(htl.x, htl.y, hbr.x, hbr.y), hCorner, density)
+            }
+
             if (sel != null && b != null && sel != state.root.id) {
-                val isScreen = state.selected is Node.Composable
-                val d = density.density
-                val cw = with(density) { maxWidth.toPx() }
-                val ch = with(density) { maxHeight.toPx() }
-                // The layer is island-sized and scales around its center (= viewport
-                // center + pan); bounds are island-space px with the content-centering
-                // already baked in by ScreenFrame's placement.
-                fun toScreen(x: Float, y: Float) =
-                    Offset(cw / 2f + panX + (x - cw / 2f) * scale, ch / 2f + panY + (y - ch / 2f) * scale)
                 val tl = toScreen(b.left, b.top)
                 val br = toScreen(b.right, b.bottom)
                 // key(sel) recreates the whole overlay per selection — its pointerInputs
                 // capture callbacks at start, so a reused overlay would keep dragging
                 // the PREVIOUSLY selected node.
                 key(sel) {
+                    val isScreen = state.selected is Node.Composable
                     SelectionOverlay(
                         screen = Rect(tl.x, tl.y, br.x, br.y),
                         viewport = Size(cw, ch),
                         dimsLabel = "${with(density) { b.width.toDp().value }.roundToInt()} × ${with(density) { b.height.toDp().value }.roundToInt()}",
                         density = density,
-                        cornerPx = (if (isScreen) 0 else state.selected?.backgroundCorner() ?: 0) * d * scale,
+                        cornerPx = outlineCornerPx(state.selected, b),
                         scale = scale,
                         frameCoords = spaceCoords,
                         // Screens float freely on the artboard: resizing from a top/left
@@ -694,6 +807,12 @@ private fun zoomLabel(zoom: Float): String {
     return if (hundredths % 10 == 0) "0.${hundredths / 10}x" else "0.${hundredths.toString().padStart(2, '0')}x"
 }
 
+/** All node ids in the subtree (slots included) — for pruning stale bounds. */
+private fun collectIds(node: Node, out: MutableSet<String>) {
+    out.add(node.id)
+    for (child in node.childNodes()) collectIds(child, out)
+}
+
 @Composable
 private fun ZoomBadge(zoom: Float, onZoom: (Float) -> Unit, onReset: () -> Unit, modifier: Modifier = Modifier) {
     Island(modifier) {
@@ -702,11 +821,11 @@ private fun ZoomBadge(zoom: Float, onZoom: (Float) -> Unit, onReset: () -> Unit,
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            ToolButton("−") { onZoom(zoom / 1.2f) }
-            ToolButton(zoomLabel(zoom), onClick = onReset)
-            ToolButton("+") { onZoom(zoom * 1.2f) }
-            // Fit to screen: back to the fitted view, centered.
-            ToolButton("", icon = AppIconKind.Fit, onClick = onReset)
+            Tip("Zoom out") { ToolButton("−") { onZoom(zoom / 1.2f) } }
+            // The readout zooms to TRUE size (1 design dp = 1 screen dp); Fit re-fits the view.
+            Tip("Actual size (1x)") { ToolButton(zoomLabel(zoom), onClick = { onZoom(1f) }) }
+            Tip("Zoom in") { ToolButton("+") { onZoom(zoom * 1.2f) } }
+            Tip("Fit to screen") { ToolButton("", icon = AppIconKind.Fit, onClick = onReset) }
         }
     }
 }
@@ -911,6 +1030,35 @@ private fun ScreenFrame(
                 ) { state.select(screen.id) },
         )
     }
+}
+
+/**
+ * Figma-style hover preview: a passive accent outline around the node a click
+ * would select. Pure draw — NO pointer handlers, so it never eats a tap/drag.
+ * Same screen-space float-px technique as the SelectionOverlay outline (layout
+ * stays viewport-sized; huge zoomed rects are fine as draws).
+ */
+@Composable
+private fun HoverOutline(screen: Rect, cornerPx: Float, density: Density) {
+    val accent = Tk.accent
+    val onePx = with(density) { 1.dp.toPx() }
+    val gap = onePx // match the selection outline: 1dp OUTSIDE the component
+    val outer = Rect(screen.left - gap, screen.top - gap, screen.right + gap, screen.bottom + gap)
+    Box(
+        Modifier.fillMaxSize().drawBehind {
+            val sw = onePx * 1.5f // slightly heavier than the selection stroke, like Figma
+            val inset = sw / 2f
+            val tl = Offset(outer.left + inset, outer.top + inset)
+            val sz = Size(outer.width - sw, outer.height - sw)
+            if (sz.width <= 0f || sz.height <= 0f) return@drawBehind
+            if (cornerPx > 0f) {
+                val r = (cornerPx + gap - inset).coerceAtLeast(0f)
+                drawRoundRect(accent, topLeft = tl, size = sz, cornerRadius = CornerRadius(r), style = Stroke(sw))
+            } else {
+                drawRect(accent, topLeft = tl, size = sz, style = Stroke(sw))
+            }
+        },
+    )
 }
 
 /**
@@ -1296,7 +1444,9 @@ private fun CodePanel(state: EditorState, modifier: Modifier = Modifier) {
                 style = TextStyle(color = Tk.textSecondary, fontSize = 12.sp, fontFamily = codeFont),
                 modifier = Modifier.weight(1f),
             )
-            ToolButton("Copy", onClick = { copyToClipboard(code) })
+            var copied by remember { mutableStateOf(false) }
+            LaunchedEffect(copied) { if (copied) { delay(1500); copied = false } }
+            ToolButton(if (copied) "Copied ✓" else "Copy", onClick = { copyToClipboard(code); copied = true })
         }
         HDivider(Modifier.background(Tk.border))
         Row(modifier = Modifier.fillMaxWidth().weight(1f)) {

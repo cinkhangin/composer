@@ -27,6 +27,9 @@ class DesignerBridge(private val browser: JBCefBrowser) : Disposable {
     /** Bridge messages from the designer, delivered on the EDT. */
     var onMessage: ((BridgeMsg) -> Unit)? = null
 
+    /** A designer message that failed to decode (already logged), on the EDT. */
+    var onUndecodable: (() -> Unit)? = null
+
     private val loadHandler = object : CefLoadHandlerAdapter() {
         override fun onLoadEnd(cefBrowser: CefBrowser, frame: CefFrame?, httpStatusCode: Int) {
             if (frame == null || !frame.isMain) return
@@ -43,6 +46,7 @@ class DesignerBridge(private val browser: JBCefBrowser) : Disposable {
             val msg = runCatching { bridgeJson.decodeFromString(BridgeMsg.serializer(), raw) }.getOrNull()
             if (msg == null) {
                 log.warn("Undecodable bridge message (${raw.length} chars)")
+                ApplicationManager.getApplication().invokeLater { onUndecodable?.invoke() }
             } else {
                 ApplicationManager.getApplication().invokeLater { onMessage?.invoke(msg) }
             }
