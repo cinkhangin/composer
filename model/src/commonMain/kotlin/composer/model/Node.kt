@@ -111,6 +111,12 @@ sealed interface Node {
         val icon: IconKind = IconKind.Favorite,
         val contentDescription: String = "",
         override val modifier: List<ModifierSpec> = emptyList(),
+        // Free-form Material Symbols name (e.g. "shopping_cart"). Non-empty WINS
+        // over [icon]: the editor renders the bundled symbol; codegen emits
+        // painterResource(Res.drawable.ic_<name>) + a sourcing comment. Empty =
+        // legacy curated [IconKind] (Icons.Default.X). Placed after [modifier] so
+        // positional calls and old JSON keep working.
+        val symbol: String = "",
     ) : Node
 
     @Serializable
@@ -118,6 +124,154 @@ sealed interface Node {
     data class IconButton(
         override val id: String,
         val icon: IconKind = IconKind.Menu,
+        override val modifier: List<ModifierSpec> = emptyList(),
+        val symbol: String = "", // same contract as [Icon.symbol]
+    ) : Node
+
+    /** Material3 TabRow: children are [Tab] leaves; [selectedIndex] drives the indicator and the generated initial state. */
+    @Serializable
+    @SerialName("TabRow")
+    data class TabRow(
+        override val id: String,
+        val children: List<Node> = emptyList(),
+        val selectedIndex: Int = 0,
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    /** One tab in a [TabRow] — selection/click are index-derived at emit time. */
+    @Serializable
+    @SerialName("Tab")
+    data class Tab(
+        override val id: String,
+        val label: String = "Tab",
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    /** Material3 NavigationBar: children are [NavItem] leaves. */
+    @Serializable
+    @SerialName("NavigationBar")
+    data class NavigationBar(
+        override val id: String,
+        val children: List<Node> = emptyList(),
+        val selectedIndex: Int = 0,
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    /** One NavigationBar destination: label + Material Symbols icon name. */
+    @Serializable
+    @SerialName("NavItem")
+    data class NavItem(
+        override val id: String,
+        val label: String = "Home",
+        val symbol: String = "home",
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    /** Material3 chip. [selected] applies to Filter/Input variants; [symbol] = optional leading icon. */
+    @Serializable
+    @SerialName("Chip")
+    data class Chip(
+        override val id: String,
+        val label: String = "Chip",
+        val variant: ChipVariant = ChipVariant.Assist,
+        val selected: Boolean = false,
+        val symbol: String = "",
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    /** Material3 BadgedBox: [badge] text over the content children (empty = dot badge). */
+    @Serializable
+    @SerialName("BadgedBox")
+    data class BadgedBox(
+        override val id: String,
+        val badge: String = "3",
+        val children: List<Node> = emptyList(),
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    /**
+     * Free-drawing surface: children are SHAPE leaves ([Line]/[RectShape]/[CircleShape]/
+     * [EllipseShape]/[ArcShape]) drawn in order inside ONE `Canvas { }` block — they are
+     * draw calls, not composables, so they have no layout bounds (select them in the
+     * Layers tree). Size the canvas itself with Size/fill modifiers; coordinates are dp.
+     */
+    @Serializable
+    @SerialName("Canvas")
+    data class Canvas(
+        override val id: String,
+        val children: List<Node> = emptyList(),
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    @Serializable
+    @SerialName("Line")
+    data class Line(
+        override val id: String,
+        val x1: Int = 0,
+        val y1: Int = 0,
+        val x2: Int = 120,
+        val y2: Int = 0,
+        val color: Long = 0xFF1F2937,
+        val strokeWidth: Int = 2,
+        override val modifier: List<ModifierSpec> = emptyList(), // unused — shapes aren't layout nodes
+    ) : Node
+
+    @Serializable
+    @SerialName("RectShape")
+    data class RectShape(
+        override val id: String,
+        val x: Int = 0,
+        val y: Int = 0,
+        val width: Int = 120,
+        val height: Int = 80,
+        val color: Long = 0xFF6366F1,
+        val filled: Boolean = true,
+        val strokeWidth: Int = 2,
+        val corner: Int = 0,
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    @Serializable
+    @SerialName("CircleShape")
+    data class CircleShape(
+        override val id: String,
+        val cx: Int = 60,
+        val cy: Int = 60,
+        val radius: Int = 50,
+        val color: Long = 0xFF6366F1,
+        val filled: Boolean = true,
+        val strokeWidth: Int = 2,
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    @Serializable
+    @SerialName("EllipseShape")
+    data class EllipseShape(
+        override val id: String,
+        val x: Int = 0,
+        val y: Int = 0,
+        val width: Int = 140,
+        val height: Int = 80,
+        val color: Long = 0xFF6366F1,
+        val filled: Boolean = true,
+        val strokeWidth: Int = 2,
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    /** [filled] draws a pie wedge (useCenter); unfilled draws the arc stroke only. */
+    @Serializable
+    @SerialName("ArcShape")
+    data class ArcShape(
+        override val id: String,
+        val x: Int = 0,
+        val y: Int = 0,
+        val width: Int = 120,
+        val height: Int = 120,
+        val startAngle: Int = 0,
+        val sweepAngle: Int = 120,
+        val color: Long = 0xFF6366F1,
+        val filled: Boolean = false,
+        val strokeWidth: Int = 2,
         override val modifier: List<ModifierSpec> = emptyList(),
     ) : Node
 

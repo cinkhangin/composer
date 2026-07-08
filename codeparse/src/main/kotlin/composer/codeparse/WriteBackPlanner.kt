@@ -85,7 +85,9 @@ object WriteBackPlanner {
                 prev.functionName != names.getValue(screen.id) ||
                 referencesRenamed(screen)
             if (!changed) continue
-            val code = CodeGen.screenFunction(screen, names.getValue(screen.id), componentFns)
+            // New screens get an empty signature; existing ones keep theirs verbatim
+            // (parameters aren't modeled — bodies using them are RawCode).
+            val code = CodeGen.screenFunction(screen, names.getValue(screen.id), componentFns, params = prev?.paramList ?: "()")
             newImports += code.imports
             if (prev == null) {
                 // Append at EOF, separated by exactly one blank line.

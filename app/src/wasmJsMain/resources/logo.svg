@@ -1,0 +1,19 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Composer logo</title>
+  <desc id="desc">A minimalist C-shaped hexagonal ribbon mark in Composer's indigo brand colors — three flat segments of uniform thickness with an opening on the right.</desc>
+
+  <!-- Geometry: two concentric pointy-top hexagons centered at (512,512),
+       outer R=330, inner r=108.3 = R − 192/cos30° → a uniform 192-unit band.
+       The right edge is omitted (the C opening); seams are radial miters at
+       the top-left and bottom-left vertices. Flat fills only — keep in sync
+       with favicon.svg and ui/BrandLogo.kt. -->
+
+  <!-- Top ribbon (light indigo — hover tone) -->
+  <path d="M797.79 347L512 182L226.21 347L418.21 457.85L512 403.7L605.79 457.85Z" fill="#8A95F6"/>
+
+  <!-- Left spine (deep indigo) -->
+  <path d="M226.21 347L226.21 677L418.21 566.15L418.21 457.85Z" fill="#2B3280"/>
+
+  <!-- Bottom ribbon (vivid indigo — brand accent) -->
+  <path d="M226.21 677L512 842L797.79 677L605.79 566.15L512 620.3L418.21 566.15Z" fill="#5563E8"/>
+</svg>

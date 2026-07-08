@@ -1,15 +1,23 @@
 package composer.render
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.draw.innerShadow
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -37,6 +45,17 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.InputChip
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
@@ -104,6 +123,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import composer.model.BoxAlignment
 import composer.model.ButtonVariant
+import composer.model.ChipVariant
 import composer.model.childNodes
 import composer.model.findById
 import composer.model.CornerUnit
@@ -214,7 +234,12 @@ fun RenderNode(
             // A container: children render into the content slot (a RowScope, like
             // the real M3 Button) — put Text/Icon/anything inside.
             val content: @Composable RowScope.() -> Unit = {
-                node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) }
+                node.children.forEach { child ->
+                    var sm: Modifier = Modifier
+                    child.weightValue()?.let { sm = sm.weight(it) }
+                    child.alignVertical()?.let { sm = sm.align(it.toCompose()) }
+                    RenderNode(child, selectedId, onSelect, onBounds, sm)
+                }
             }
             when (node.variant) {
                 ButtonVariant.Filled -> Button(onClick = {}, modifier = m, content = content)
@@ -277,10 +302,154 @@ fun RenderNode(
             }
         }
         is Node.Divider -> HorizontalDivider(modifier = modifier)
-        is Node.Icon -> Icon(node.icon.toVector(), contentDescription = node.contentDescription.ifBlank { null }, modifier = modifier)
-        is Node.IconButton -> InteractiveNode(node, onSelect, onBounds, scopeModifier) { m ->
-            IconButton(onClick = {}, modifier = m) { Icon(node.icon.toVector(), contentDescription = null) }
+        // A free-form Material Symbols name wins over the curated IconKind; the
+        // preview draws from the bundled symbol set, sized like a Material icon.
+        is Node.Icon -> if (node.symbol.isNotEmpty()) {
+            SymbolIcon(node.symbol, modifier.size(24.dp), tint = LocalContentColor.current)
+        } else {
+            Icon(node.icon.toVector(), contentDescription = node.contentDescription.ifBlank { null }, modifier = modifier)
         }
+        is Node.IconButton -> InteractiveNode(node, onSelect, onBounds, scopeModifier) { m ->
+            IconButton(onClick = {}, modifier = m) {
+                if (node.symbol.isNotEmpty()) {
+                    SymbolIcon(node.symbol, Modifier.size(24.dp), tint = LocalContentColor.current)
+                } else {
+                    Icon(node.icon.toVector(), contentDescription = null)
+                }
+            }
+        }
+        // Tab/nav-item clicks double as canvas selection of that item node; each
+        // item reports bounds so the selection outline and hover work on it.
+        is Node.TabRow -> if (node.children.isEmpty()) {
+            Box(modifier = modifier)
+        } else {
+            TabRow(
+                selectedTabIndex = node.selectedIndex.coerceIn(0, node.children.lastIndex),
+                modifier = modifier,
+            ) {
+                node.children.forEachIndexed { i, child ->
+                    val tab = child as? Node.Tab ?: return@forEachIndexed
+                    Tab(
+                        selected = i == node.selectedIndex,
+                        onClick = { onSelect(tab.id, false) },
+                        text = { Text(tab.label) },
+                        modifier = tab.modifier.toModifier(scheme).onGloballyPositioned { onBounds(tab.id, it) },
+                    )
+                }
+            }
+        }
+        is Node.NavigationBar -> NavigationBar(modifier = modifier) {
+            node.children.forEachIndexed { i, child ->
+                val item = child as? Node.NavItem ?: return@forEachIndexed
+                NavigationBarItem(
+                    selected = i == node.selectedIndex,
+                    onClick = { onSelect(item.id, false) },
+                    icon = {
+                        if (item.symbol.isNotEmpty()) SymbolIcon(item.symbol, Modifier.size(24.dp), tint = LocalContentColor.current)
+                    },
+                    label = { Text(item.label) },
+                    modifier = item.modifier.toModifier(scheme).onGloballyPositioned { onBounds(item.id, it) },
+                )
+            }
+        }
+        // A stray Tab outside a TabRow (defensive) renders static, like codegen emits it.
+        is Node.Tab -> Tab(selected = false, onClick = {}, text = { Text(node.label) }, modifier = modifier)
+        is Node.NavItem -> Unit // rendered by its NavigationBar parent
+        is Node.Chip -> InteractiveNode(node, onSelect, onBounds, scopeModifier) { m ->
+            val label: @Composable () -> Unit = { Text(node.label) }
+            val leading: (@Composable () -> Unit)? = if (node.symbol.isNotEmpty()) {
+                { SymbolIcon(node.symbol, Modifier.size(18.dp), tint = LocalContentColor.current) }
+            } else null
+            when (node.variant) {
+                ChipVariant.Assist -> AssistChip(onClick = {}, label = label, leadingIcon = leading, modifier = m)
+                ChipVariant.Filter -> FilterChip(selected = node.selected, onClick = {}, label = label, leadingIcon = leading, modifier = m)
+                ChipVariant.Input -> InputChip(selected = node.selected, onClick = {}, label = label, leadingIcon = leading, modifier = m)
+                ChipVariant.Suggestion -> SuggestionChip(onClick = {}, label = label, icon = leading, modifier = m)
+            }
+        }
+        is Node.BadgedBox -> BadgedBox(
+            badge = { if (node.badge.isEmpty()) Badge() else Badge { Text(node.badge) } },
+            modifier = modifier,
+        ) {
+            node.children.forEach { child ->
+                val sm = child.alignBox()?.let { Modifier.align(it.toCompose()) } ?: Modifier
+                RenderNode(child, selectedId, onSelect, onBounds, sm)
+            }
+        }
+        // Shapes are DRAW CALLS inside one Canvas — they have no layout bounds, so
+        // they are selected via the Layers tree. Theme-ref colors resolve live here
+        // (codegen can't reference the scheme inside a draw lambda and emits black).
+        is Node.Canvas -> {
+            val shapes = node.children
+            val colors = shapes.map { s ->
+                val raw = when (s) {
+                    is Node.Line -> s.color
+                    is Node.RectShape -> s.color
+                    is Node.CircleShape -> s.color
+                    is Node.EllipseShape -> s.color
+                    is Node.ArcShape -> s.color
+                    else -> 0xFF000000
+                }
+                themeColor(raw, scheme)
+            }
+            Canvas(modifier = modifier) {
+                shapes.forEachIndexed { i, shape ->
+                    val c = colors[i]
+                    when (shape) {
+                        is Node.Line -> drawLine(
+                            c,
+                            start = Offset(shape.x1.dp.toPx(), shape.y1.dp.toPx()),
+                            end = Offset(shape.x2.dp.toPx(), shape.y2.dp.toPx()),
+                            strokeWidth = shape.strokeWidth.dp.toPx(),
+                        )
+                        is Node.RectShape -> {
+                            val style = if (shape.filled) Fill else Stroke(shape.strokeWidth.dp.toPx())
+                            if (shape.corner > 0) {
+                                drawRoundRect(
+                                    c,
+                                    topLeft = Offset(shape.x.dp.toPx(), shape.y.dp.toPx()),
+                                    size = Size(shape.width.dp.toPx(), shape.height.dp.toPx()),
+                                    cornerRadius = CornerRadius(shape.corner.dp.toPx()),
+                                    style = style,
+                                )
+                            } else {
+                                drawRect(
+                                    c,
+                                    topLeft = Offset(shape.x.dp.toPx(), shape.y.dp.toPx()),
+                                    size = Size(shape.width.dp.toPx(), shape.height.dp.toPx()),
+                                    style = style,
+                                )
+                            }
+                        }
+                        is Node.CircleShape -> drawCircle(
+                            c,
+                            radius = shape.radius.dp.toPx(),
+                            center = Offset(shape.cx.dp.toPx(), shape.cy.dp.toPx()),
+                            style = if (shape.filled) Fill else Stroke(shape.strokeWidth.dp.toPx()),
+                        )
+                        is Node.EllipseShape -> drawOval(
+                            c,
+                            topLeft = Offset(shape.x.dp.toPx(), shape.y.dp.toPx()),
+                            size = Size(shape.width.dp.toPx(), shape.height.dp.toPx()),
+                            style = if (shape.filled) Fill else Stroke(shape.strokeWidth.dp.toPx()),
+                        )
+                        is Node.ArcShape -> drawArc(
+                            c,
+                            startAngle = shape.startAngle.toFloat(),
+                            sweepAngle = shape.sweepAngle.toFloat(),
+                            useCenter = shape.filled,
+                            topLeft = Offset(shape.x.dp.toPx(), shape.y.dp.toPx()),
+                            size = Size(shape.width.dp.toPx(), shape.height.dp.toPx()),
+                            style = if (shape.filled) Fill else Stroke(shape.strokeWidth.dp.toPx()),
+                        )
+                        else -> Unit
+                    }
+                }
+            }
+        }
+        is Node.Line, is Node.RectShape, is Node.CircleShape,
+        is Node.EllipseShape, is Node.ArcShape -> Unit // drawn by the Canvas parent
+
         is Node.TextField -> InteractiveNode(node, onSelect, onBounds, scopeModifier) { m ->
             OutlinedTextField(
                 value = node.value,
@@ -310,8 +479,10 @@ fun RenderNode(
             horizontalAlignment = node.horizontalAlignment.toCompose(),
         ) {
             node.children.forEach { child ->
-                val wm = child.weightValue()?.let { Modifier.weight(it) } ?: Modifier
-                RenderNode(child, selectedId, onSelect, onBounds, wm)
+                var sm: Modifier = Modifier
+                child.weightValue()?.let { sm = sm.weight(it) }
+                child.alignHorizontal()?.let { sm = sm.align(it.toCompose()) }
+                RenderNode(child, selectedId, onSelect, onBounds, sm)
             }
         }
         is Node.Row -> Row(
@@ -320,12 +491,17 @@ fun RenderNode(
             verticalAlignment = node.verticalAlignment.toCompose(),
         ) {
             node.children.forEach { child ->
-                val wm = child.weightValue()?.let { Modifier.weight(it) } ?: Modifier
-                RenderNode(child, selectedId, onSelect, onBounds, wm)
+                var sm: Modifier = Modifier
+                child.weightValue()?.let { sm = sm.weight(it) }
+                child.alignVertical()?.let { sm = sm.align(it.toCompose()) }
+                RenderNode(child, selectedId, onSelect, onBounds, sm)
             }
         }
         is Node.Box -> Box(modifier = modifier, contentAlignment = node.contentAlignment.toCompose()) {
-            node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) }
+            node.children.forEach { child ->
+                val sm = child.alignBox()?.let { Modifier.align(it.toCompose()) } ?: Modifier
+                RenderNode(child, selectedId, onSelect, onBounds, sm)
+            }
         }
         is Node.Card -> Card(modifier = modifier) { node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) } }
         is Node.Fab -> InteractiveNode(node, onSelect, onBounds, scopeModifier) { m ->
@@ -345,7 +521,12 @@ fun RenderNode(
                 shadowElevation = 6.dp,
             ) {
                 Column(modifier = Modifier.padding(24.dp)) {
-                    node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) }
+                    node.children.forEach { child ->
+                        var sm: Modifier = Modifier
+                        child.weightValue()?.let { sm = sm.weight(it) }
+                        child.alignHorizontal()?.let { sm = sm.align(it.toCompose()) }
+                        RenderNode(child, selectedId, onSelect, onBounds, sm)
+                    }
                 }
             }
         }
@@ -365,7 +546,12 @@ fun RenderNode(
                             .clip(RoundedCornerShape(2.dp))
                             .background(Color(0x33808080)),
                     )
-                    node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) }
+                    node.children.forEach { child ->
+                        var sm: Modifier = Modifier
+                        child.weightValue()?.let { sm = sm.weight(it) }
+                        child.alignHorizontal()?.let { sm = sm.align(it.toCompose()) }
+                        RenderNode(child, selectedId, onSelect, onBounds, sm)
+                    }
                 }
             }
         }
@@ -406,6 +592,17 @@ fun RenderNode(
 
 private fun Node.weightValue(): Float? =
     modifier.firstNotNullOfOrNull { (it as? ModifierSpec.Weight)?.value }?.takeIf { it > 0f }
+
+// align() is a scope member like weight — read per scope kind at the container's
+// call site (mirrors codegen's projectAlign: mismatched fields are ignored).
+private fun Node.alignBox(): BoxAlignment? =
+    modifier.firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.box }
+
+private fun Node.alignVertical(): VAlignment? =
+    modifier.firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.vertical }
+
+private fun Node.alignHorizontal(): HAlignment? =
+    modifier.firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.horizontal }
 
 private fun IconKind.toVector() = when (this) {
     IconKind.Menu -> Icons.Default.Menu
@@ -520,7 +717,7 @@ private fun selectionModifier(node: Node, onSelect: (id: String, deep: Boolean) 
  * gesture can — so we never wrap them with [selectionModifier]; [InteractiveNode]
  * overlays a tap catcher on top instead.
  */
-private fun Node.isInteractive(): Boolean = this is Node.Button || this is Node.Fab ||
+private fun Node.isInteractive(): Boolean = this is Node.Button || this is Node.Fab || this is Node.Chip ||
     this is Node.IconButton || this is Node.Switch || this is Node.Checkbox ||
     this is Node.RadioButton || this is Node.Slider || this is Node.TextField
 
@@ -678,8 +875,11 @@ fun List<ModifierSpec>.toModifier(scheme: ColorScheme): Modifier =
             )
             is ModifierSpec.Rotate -> acc.rotate(spec.degrees)
             is ModifierSpec.Scale -> acc.scale(spec.x, spec.y)
-            ModifierSpec.FillMaxWidth -> acc.fillMaxWidth()
-            ModifierSpec.FillMaxHeight -> acc.fillMaxHeight()
-            ModifierSpec.FillMaxSize -> acc.fillMaxSize()
+            is ModifierSpec.ZIndex -> acc.zIndex(spec.value)
+            is ModifierSpec.Blur -> acc.blur(spec.radius.dp)
+            is ModifierSpec.Align -> acc // scope member — applied at the container's call site
+            is ModifierSpec.FillMaxWidth -> acc.fillMaxWidth(spec.fraction)
+            is ModifierSpec.FillMaxHeight -> acc.fillMaxHeight(spec.fraction)
+            is ModifierSpec.FillMaxSize -> acc.fillMaxSize(spec.fraction)
         }
     }

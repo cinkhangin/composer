@@ -12,7 +12,7 @@ class DesignJsonTest {
 
     private val tree: Node = Node.Column(
         id = "root",
-        modifier = listOf(FillMaxSize, Padding(16)),
+        modifier = listOf(FillMaxSize(), Padding(16)),
         children = listOf(
             Node.Text("title", "Hello", listOf(Padding(8))),
             Node.Row(
