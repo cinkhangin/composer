@@ -128,6 +128,67 @@ sealed interface Node {
         val symbol: String = "", // same contract as [Icon.symbol]
     ) : Node
 
+    /** Material3 TabRow: children are [Tab] leaves; [selectedIndex] drives the indicator and the generated initial state. */
+    @Serializable
+    @SerialName("TabRow")
+    data class TabRow(
+        override val id: String,
+        val children: List<Node> = emptyList(),
+        val selectedIndex: Int = 0,
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    /** One tab in a [TabRow] — selection/click are index-derived at emit time. */
+    @Serializable
+    @SerialName("Tab")
+    data class Tab(
+        override val id: String,
+        val label: String = "Tab",
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    /** Material3 NavigationBar: children are [NavItem] leaves. */
+    @Serializable
+    @SerialName("NavigationBar")
+    data class NavigationBar(
+        override val id: String,
+        val children: List<Node> = emptyList(),
+        val selectedIndex: Int = 0,
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    /** One NavigationBar destination: label + Material Symbols icon name. */
+    @Serializable
+    @SerialName("NavItem")
+    data class NavItem(
+        override val id: String,
+        val label: String = "Home",
+        val symbol: String = "home",
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    /** Material3 chip. [selected] applies to Filter/Input variants; [symbol] = optional leading icon. */
+    @Serializable
+    @SerialName("Chip")
+    data class Chip(
+        override val id: String,
+        val label: String = "Chip",
+        val variant: ChipVariant = ChipVariant.Assist,
+        val selected: Boolean = false,
+        val symbol: String = "",
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    /** Material3 BadgedBox: [badge] text over the content children (empty = dot badge). */
+    @Serializable
+    @SerialName("BadgedBox")
+    data class BadgedBox(
+        override val id: String,
+        val badge: String = "3",
+        val children: List<Node> = emptyList(),
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
     @Serializable
     @SerialName("TextField")
     data class TextField(

@@ -2,6 +2,7 @@ package composer.codeparse
 
 import composer.model.BoxAlignment
 import composer.model.ButtonVariant
+import composer.model.ChipVariant
 import composer.model.CornerUnit
 import composer.model.GradientDirection
 import composer.model.HAlignment
@@ -115,7 +116,7 @@ internal class TreeGen(seed: Int) {
         return all
     }
 
-    fun leaf(weightScope: Boolean, aligns: List<ModifierSpec.Align> = emptyList()): Node = when (rnd.nextInt(14)) {
+    fun leaf(weightScope: Boolean, aligns: List<ModifierSpec.Align> = emptyList()): Node = when (rnd.nextInt(15)) {
         0 -> Node.Text(
             nid(), str(), modifiers(weightScope, aligns),
             fontSize = if (rnd.nextBoolean()) rnd.nextInt(8, 40) else 0,
@@ -148,6 +149,17 @@ internal class TreeGen(seed: Int) {
         10 -> Node.RadioButton(nid(), rnd.nextBoolean(), modifiers(weightScope, aligns))
         11 -> Node.Slider(nid(), rnd.nextInt(0, 101) / 100f, modifiers(weightScope, aligns))
         12 -> Node.CircularProgress(nid(), modifiers(weightScope, aligns))
+        13 -> {
+            // selected is only visible in code for stateful variants — keep it false elsewhere.
+            val variant = ChipVariant.entries.random(rnd)
+            val stateful = variant == ChipVariant.Filter || variant == ChipVariant.Input
+            Node.Chip(
+                nid(), str(), variant,
+                selected = stateful && rnd.nextBoolean(),
+                symbol = if (rnd.nextBoolean()) SYMBOLS.random(rnd) else "",
+                modifier = modifiers(weightScope, aligns),
+            )
+        }
         else -> Node.RawCode(nid(), rawStatement())
     }
 
@@ -161,7 +173,7 @@ internal class TreeGen(seed: Int) {
 
     fun node(depth: Int, weightScope: Boolean, aligns: List<ModifierSpec.Align> = emptyList()): Node {
         if (depth <= 0 || rnd.nextInt(3) > 0) return leaf(weightScope, aligns)
-        return when (rnd.nextInt(8)) {
+        return when (rnd.nextInt(11)) {
             0 -> Node.Column(
                 nid(), children(depth, weightScope = true, aligns = hAligns),
                 verticalArrangement = VArrangement.entries.random(rnd),
@@ -180,6 +192,17 @@ internal class TreeGen(seed: Int) {
             4 -> Node.Card(nid(), children(depth, weightScope = false), modifiers(weightScope, aligns))
             5 -> Node.Button(nid(), modifier = modifiers(weightScope, aligns), variant = ButtonVariant.entries.random(rnd), children = children(depth, weightScope = true, aligns = vAligns))
             6 -> Node.Fab(nid(), children(depth, weightScope = false), modifiers(weightScope, aligns))
+            7 -> {
+                val tabs = List(rnd.nextInt(1, 4)) { Node.Tab(nid(), str(), modifiers(false)) }
+                Node.TabRow(nid(), tabs, selectedIndex = rnd.nextInt(tabs.size), modifier = modifiers(weightScope, aligns))
+            }
+            8 -> {
+                val items = List(rnd.nextInt(2, 5)) {
+                    Node.NavItem(nid(), str(), if (rnd.nextBoolean()) SYMBOLS.random(rnd) else "", modifiers(false))
+                }
+                Node.NavigationBar(nid(), items, selectedIndex = rnd.nextInt(items.size), modifier = modifiers(weightScope, aligns))
+            }
+            9 -> Node.BadgedBox(nid(), if (rnd.nextBoolean()) str() else "", children(depth, weightScope = false, aligns = boxAligns), modifiers(weightScope, aligns))
             else -> if (rnd.nextBoolean()) {
                 Node.Dialog(nid(), children(depth, weightScope = true, aligns = hAligns), modifiers(weightScope, aligns))
             } else {

@@ -142,10 +142,31 @@ private val paletteGroups: List<PaletteGroup> = listOf(
         PaletteItem("Box") { id -> Node.Box(id) },
         PaletteItem("Card") { id -> Node.Card(id) },
     )),
+    PaletteGroup("Navigation", listOf(
+        PaletteItem("TabRow") { id ->
+            Node.TabRow(id, children = listOf(Node.Tab("${id}a", "Tab 1"), Node.Tab("${id}b", "Tab 2")))
+        },
+        PaletteItem("Tab") { id -> Node.Tab(id) },
+        PaletteItem("NavigationBar") { id ->
+            Node.NavigationBar(
+                id,
+                children = listOf(
+                    Node.NavItem("${id}a", "Home", "home"),
+                    Node.NavItem("${id}b", "Search", "search"),
+                    Node.NavItem("${id}c", "Profile", "person"),
+                ),
+            )
+        },
+        PaletteItem("NavItem") { id -> Node.NavItem(id) },
+        PaletteItem("BadgedBox") { id ->
+            Node.BadgedBox(id, children = listOf(Node.Icon("${id}i", symbol = "notifications")))
+        },
+    )),
     PaletteGroup("Controls", listOf(
         PaletteItem("Switch") { id -> Node.Switch(id, checked = true) },
         PaletteItem("Checkbox") { id -> Node.Checkbox(id, checked = true) },
         PaletteItem("RadioButton") { id -> Node.RadioButton(id, selected = true) },
+        PaletteItem("Chip") { id -> Node.Chip(id) },
         PaletteItem("Slider") { id -> Node.Slider(id) },
         PaletteItem("CircularProgress") { id -> Node.CircularProgress(id) },
         PaletteItem("LinearProgress") { id -> Node.LinearProgress(id) },

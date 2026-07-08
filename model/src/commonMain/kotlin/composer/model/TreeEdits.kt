@@ -9,10 +9,12 @@ package composer.model
 fun Node.isContainer(): Boolean = when (this) {
     is Node.Column, is Node.Row, is Node.Box, is Node.Card, is Node.Scaffold, is Node.Button,
     is Node.Fab, is Node.Dialog, is Node.BottomSheet, is Node.TopAppBar,
+    is Node.TabRow, is Node.NavigationBar, is Node.BadgedBox,
     is Node.Composable, is Node.Artboard, is Node.Slot -> true
     is Node.Text, is Node.Spacer, is Node.Image, is Node.Divider,
     is Node.Switch, is Node.Checkbox, is Node.RadioButton, is Node.Slider,
     is Node.Icon, is Node.IconButton, is Node.TextField,
+    is Node.Tab, is Node.NavItem, is Node.Chip,
     is Node.CircularProgress, is Node.LinearProgress, is Node.Instance,
     is Node.RawCode -> false
 }
@@ -28,6 +30,12 @@ fun canParent(parent: Node, child: Node): Boolean = when {
     parent is Node.Artboard -> child is Node.Composable
     child is Node.Composable -> false // composables live under the artboard only
     child is Node.Artboard -> false   // the artboard is always the root
+    // Typed item containers: a TabRow holds only Tabs (and vice versa), a
+    // NavigationBar only NavItems — the generated slot APIs demand it.
+    parent is Node.TabRow -> child is Node.Tab
+    child is Node.Tab -> false
+    parent is Node.NavigationBar -> child is Node.NavItem
+    child is Node.NavItem -> false
     else -> true
 }
 

@@ -29,6 +29,8 @@ object DesignParser {
             "CircularProgressIndicator", "LinearProgressIndicator", "Card", "Scaffold", "Surface",
             "TopAppBar", "CenterAlignedTopAppBar", "MediumTopAppBar", "LargeTopAppBar",
             "ModalBottomSheet", "HorizontalDivider", "Divider", "FloatingActionButton",
+            "TabRow", "Tab", "NavigationBar", "NavigationBarItem",
+            "AssistChip", "FilterChip", "InputChip", "SuggestionChip", "BadgedBox", "Badge",
         )) put("androidx.compose.material3.$n", n)
         for (n in listOf("Column", "Row", "Box", "Spacer")) put("androidx.compose.foundation.layout.$n", n)
         put("androidx.compose.foundation.Image", "Image")

@@ -367,6 +367,47 @@ class CodeGenTest {
     }
 
     @Test
+    fun tab_row_hoists_int_state_and_emits_indexed_tabs() {
+        val code = CodeGen.generate(
+            Node.TabRow("tr", children = listOf(Node.Tab("a", "One"), Node.Tab("b", "Two")), selectedIndex = 1),
+        )
+        assertTrue("var state1 by remember { mutableStateOf(1) }" in code, code)
+        assertTrue("TabRow(selectedTabIndex = state1) {" in code, code)
+        assertTrue("Tab(selected = state1 == 0, onClick = { state1 = 0 }, text = { Text(\"One\") })" in code, code)
+        assertTrue("Tab(selected = state1 == 1, onClick = { state1 = 1 }, text = { Text(\"Two\") })" in code, code)
+        assertTrue("import androidx.compose.material3.TabRow" in code, code)
+    }
+
+    @Test
+    fun navigation_bar_emits_items_with_symbol_icons() {
+        val code = CodeGen.generate(
+            Node.NavigationBar("nb", children = listOf(Node.NavItem("i1", "Home", "home"), Node.NavItem("i2", "Feed", ""))),
+        )
+        assertTrue("NavigationBar {" in code, code)
+        assertTrue("selected = state1 == 0," in code, code)
+        assertTrue("Icon(painterResource(Res.drawable.ic_home), contentDescription = null)" in code, code)
+        assertTrue("icon = {}," in code, code) // empty symbol → empty icon slot
+        assertTrue("label = { Text(\"Feed\") }," in code, code)
+    }
+
+    @Test
+    fun chips_emit_per_variant_with_state_for_filter() {
+        val assist = CodeGen.generate(Node.Chip("c", "Tag", composer.model.ChipVariant.Assist))
+        assertTrue("AssistChip(onClick = {}, label = { Text(\"Tag\") })" in assist, assist)
+        val filter = CodeGen.generate(Node.Chip("c", "Tag", composer.model.ChipVariant.Filter, selected = true))
+        assertTrue("var state1 by remember { mutableStateOf(true) }" in filter, filter)
+        assertTrue("FilterChip(selected = state1, onClick = { state1 = !state1 }, label = { Text(\"Tag\") })" in filter, filter)
+    }
+
+    @Test
+    fun badged_box_emits_badge_slot_and_content() {
+        val code = CodeGen.generate(Node.BadgedBox("bb", "3", children = listOf(Node.Icon("i", symbol = "notifications"))))
+        assertTrue("BadgedBox(badge = { Badge { Text(\"3\") } }) {" in code, code)
+        val dot = CodeGen.generate(Node.BadgedBox("bb", "", children = emptyList()))
+        assertTrue("BadgedBox(badge = { Badge() }) {" in dot, dot)
+    }
+
+    @Test
     fun symbol_icon_emits_painter_resource_with_sourcing_comment() {
         val code = CodeGen.generate(Node.Icon("i", symbol = "shopping_cart"))
         assertTrue("Icon(painterResource(Res.drawable.ic_shopping_cart), contentDescription = null)" in code, code)

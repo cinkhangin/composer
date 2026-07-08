@@ -57,6 +57,7 @@ import composer.model.ButtonVariant
 import composer.model.DesignTheme
 import composer.model.HAlignment
 import composer.model.HArrangement
+import composer.model.ChipVariant
 import composer.model.IconKind
 import composer.model.ModifierSpec
 import composer.model.Node
@@ -341,6 +342,60 @@ fun Inspector(state: EditorState, modifier: Modifier = Modifier) {
                         )
                     }
 
+                    is Node.TabRow -> NumField("selected tab", selected.selectedIndex, Modifier.fillMaxWidth()) { v ->
+                        state.update(selected.id) { n -> (n as Node.TabRow).copy(selectedIndex = v.coerceIn(0, (n.children.size - 1).coerceAtLeast(0))) }
+                    }
+
+                    is Node.Tab -> Field(
+                        value = selected.label,
+                        onValueChange = { v -> state.update(selected.id, coalesceKey = "tab:${selected.id}") { (it as Node.Tab).copy(label = v) } },
+                        label = "Label",
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    is Node.NavigationBar -> NumField("selected item", selected.selectedIndex, Modifier.fillMaxWidth()) { v ->
+                        state.update(selected.id) { n -> (n as Node.NavigationBar).copy(selectedIndex = v.coerceIn(0, (n.children.size - 1).coerceAtLeast(0))) }
+                    }
+
+                    is Node.NavItem -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Field(
+                            value = selected.label,
+                            onValueChange = { v -> state.update(selected.id, coalesceKey = "nav:${selected.id}") { (it as Node.NavItem).copy(label = v) } },
+                            label = "Label",
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        SymbolPickerField("Icon", selected.symbol, fallbackLabel = "pick an icon") { name ->
+                            state.update(selected.id) { (it as Node.NavItem).copy(symbol = name) }
+                        }
+                    }
+
+                    is Node.Chip -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Field(
+                            value = selected.label,
+                            onValueChange = { v -> state.update(selected.id, coalesceKey = "chip:${selected.id}") { (it as Node.Chip).copy(label = v) } },
+                            label = "Label",
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        EnumDropdown("Style", selected.variant, ChipVariant.entries) { v ->
+                            state.update(selected.id) { (it as Node.Chip).copy(variant = v) }
+                        }
+                        if (selected.variant == ChipVariant.Filter || selected.variant == ChipVariant.Input) {
+                            BoolField("Selected", selected.selected) { v ->
+                                state.update(selected.id) { (it as Node.Chip).copy(selected = v) }
+                            }
+                        }
+                        SymbolPickerField("Leading icon", selected.symbol, fallbackLabel = "none") { name ->
+                            state.update(selected.id) { (it as Node.Chip).copy(symbol = name) }
+                        }
+                    }
+
+                    is Node.BadgedBox -> Field(
+                        value = selected.badge,
+                        onValueChange = { v -> state.update(selected.id, coalesceKey = "badge:${selected.id}") { (it as Node.BadgedBox).copy(badge = v) } },
+                        label = "Badge text (empty = dot)",
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
                     is Node.Spacer, is Node.Divider, is Node.Card, is Node.Fab,
                     is Node.Composable, is Node.Artboard, is Node.Slot,
                     is Node.Dialog, is Node.BottomSheet, is Node.Instance,
@@ -450,7 +505,9 @@ private fun ThemeSwatch(label: String, color: Long, selected: Boolean, onClick: 
 private fun Node.hasContentProps(): Boolean = when (this) {
     is Node.Text, is Node.Button, is Node.Image, is Node.Icon, is Node.IconButton,
     is Node.TextField, is Node.Switch, is Node.Checkbox, is Node.RadioButton,
-    is Node.Slider, is Node.Scaffold, is Node.TopAppBar, is Node.RawCode -> true
+    is Node.Slider, is Node.Scaffold, is Node.TopAppBar, is Node.RawCode,
+    is Node.TabRow, is Node.Tab, is Node.NavigationBar, is Node.NavItem,
+    is Node.Chip, is Node.BadgedBox -> true
     else -> false
 }
 

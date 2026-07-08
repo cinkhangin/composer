@@ -16,6 +16,9 @@ fun Node.childNodes(): List<Node> = when (this) {
     is Node.BottomSheet -> children
     is Node.Slot -> children
     is Node.Button -> children
+    is Node.TabRow -> children
+    is Node.NavigationBar -> children
+    is Node.BadgedBox -> children
     is Node.Composable -> children
     is Node.Artboard -> composables
     is Node.Scaffold -> listOfNotNull(topBar, bottomBar, fab) + children
@@ -23,6 +26,7 @@ fun Node.childNodes(): List<Node> = when (this) {
     is Node.Text, is Node.Spacer, is Node.Image, is Node.Divider,
     is Node.Switch, is Node.Checkbox, is Node.RadioButton, is Node.Slider,
     is Node.Icon, is Node.IconButton, is Node.TextField,
+    is Node.Tab, is Node.NavItem, is Node.Chip,
     is Node.CircularProgress, is Node.LinearProgress, is Node.Instance,
     is Node.RawCode -> emptyList()
 }
@@ -47,11 +51,15 @@ fun Node.withChildren(children: List<Node>): Node = when (this) {
     is Node.TopAppBar -> copy(actions = children)
     is Node.Slot -> copy(children = children)
     is Node.Button -> copy(children = children)
+    is Node.TabRow -> copy(children = children)
+    is Node.NavigationBar -> copy(children = children)
+    is Node.BadgedBox -> copy(children = children)
     is Node.Composable -> copy(children = children)
     is Node.Artboard -> copy(composables = children)
     is Node.Text, is Node.Spacer, is Node.Image, is Node.Divider,
     is Node.Switch, is Node.Checkbox, is Node.RadioButton, is Node.Slider,
     is Node.Icon, is Node.IconButton, is Node.TextField,
+    is Node.Tab, is Node.NavItem, is Node.Chip,
     is Node.CircularProgress, is Node.LinearProgress, is Node.Instance,
     is Node.RawCode -> this
 }
@@ -67,6 +75,9 @@ fun Node.mapChildren(transform: (Node) -> Node): Node = when (this) {
     is Node.BottomSheet -> copy(children = children.map(transform))
     is Node.Slot -> copy(children = children.map(transform))
     is Node.Button -> copy(children = children.map(transform))
+    is Node.TabRow -> copy(children = children.map(transform))
+    is Node.NavigationBar -> copy(children = children.map(transform))
+    is Node.BadgedBox -> copy(children = children.map(transform))
     is Node.Composable -> copy(children = children.map(transform))
     is Node.Artboard -> copy(composables = composables.map(transform))
     is Node.Scaffold -> copy(
@@ -83,6 +94,7 @@ fun Node.mapChildren(transform: (Node) -> Node): Node = when (this) {
     is Node.Text, is Node.Spacer, is Node.Image, is Node.Divider,
     is Node.Switch, is Node.Checkbox, is Node.RadioButton, is Node.Slider,
     is Node.Icon, is Node.IconButton, is Node.TextField,
+    is Node.Tab, is Node.NavItem, is Node.Chip,
     is Node.CircularProgress, is Node.LinearProgress, is Node.Instance,
     is Node.RawCode -> this
 }
@@ -142,6 +154,12 @@ fun Node.typeName(): String = when (this) {
     is Node.CircularProgress -> "CircularProgress"
     is Node.LinearProgress -> "LinearProgress"
     is Node.RawCode -> "RawCode"
+    is Node.TabRow -> "TabRow"
+    is Node.Tab -> "Tab"
+    is Node.NavigationBar -> "NavigationBar"
+    is Node.NavItem -> "NavItem"
+    is Node.Chip -> "Chip"
+    is Node.BadgedBox -> "BadgedBox"
 }
 
 /** Return a copy of [this] with its id replaced. */
@@ -174,6 +192,12 @@ fun Node.withId(id: String): Node = when (this) {
     is Node.CircularProgress -> copy(id = id)
     is Node.LinearProgress -> copy(id = id)
     is Node.RawCode -> copy(id = id)
+    is Node.TabRow -> copy(id = id)
+    is Node.Tab -> copy(id = id)
+    is Node.NavigationBar -> copy(id = id)
+    is Node.NavItem -> copy(id = id)
+    is Node.Chip -> copy(id = id)
+    is Node.BadgedBox -> copy(id = id)
 }
 
 /** Return a copy of [this] with its modifier chain replaced. */
@@ -206,4 +230,10 @@ fun Node.withModifier(modifier: List<ModifierSpec>): Node = when (this) {
     is Node.CircularProgress -> copy(modifier = modifier)
     is Node.LinearProgress -> copy(modifier = modifier)
     is Node.RawCode -> copy(modifier = modifier)
+    is Node.TabRow -> copy(modifier = modifier)
+    is Node.Tab -> copy(modifier = modifier)
+    is Node.NavigationBar -> copy(modifier = modifier)
+    is Node.NavItem -> copy(modifier = modifier)
+    is Node.Chip -> copy(modifier = modifier)
+    is Node.BadgedBox -> copy(modifier = modifier)
 }

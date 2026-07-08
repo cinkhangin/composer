@@ -39,7 +39,17 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
@@ -107,6 +117,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import composer.model.BoxAlignment
 import composer.model.ButtonVariant
+import composer.model.ChipVariant
 import composer.model.childNodes
 import composer.model.findById
 import composer.model.CornerUnit
@@ -299,6 +310,64 @@ fun RenderNode(
                 } else {
                     Icon(node.icon.toVector(), contentDescription = null)
                 }
+            }
+        }
+        // Tab/nav-item clicks double as canvas selection of that item node; each
+        // item reports bounds so the selection outline and hover work on it.
+        is Node.TabRow -> if (node.children.isEmpty()) {
+            Box(modifier = modifier)
+        } else {
+            TabRow(
+                selectedTabIndex = node.selectedIndex.coerceIn(0, node.children.lastIndex),
+                modifier = modifier,
+            ) {
+                node.children.forEachIndexed { i, child ->
+                    val tab = child as? Node.Tab ?: return@forEachIndexed
+                    Tab(
+                        selected = i == node.selectedIndex,
+                        onClick = { onSelect(tab.id, false) },
+                        text = { Text(tab.label) },
+                        modifier = tab.modifier.toModifier(scheme).onGloballyPositioned { onBounds(tab.id, it) },
+                    )
+                }
+            }
+        }
+        is Node.NavigationBar -> NavigationBar(modifier = modifier) {
+            node.children.forEachIndexed { i, child ->
+                val item = child as? Node.NavItem ?: return@forEachIndexed
+                NavigationBarItem(
+                    selected = i == node.selectedIndex,
+                    onClick = { onSelect(item.id, false) },
+                    icon = {
+                        if (item.symbol.isNotEmpty()) SymbolIcon(item.symbol, Modifier.size(24.dp), tint = LocalContentColor.current)
+                    },
+                    label = { Text(item.label) },
+                    modifier = item.modifier.toModifier(scheme).onGloballyPositioned { onBounds(item.id, it) },
+                )
+            }
+        }
+        // A stray Tab outside a TabRow (defensive) renders static, like codegen emits it.
+        is Node.Tab -> Tab(selected = false, onClick = {}, text = { Text(node.label) }, modifier = modifier)
+        is Node.NavItem -> Unit // rendered by its NavigationBar parent
+        is Node.Chip -> InteractiveNode(node, onSelect, onBounds, scopeModifier) { m ->
+            val label: @Composable () -> Unit = { Text(node.label) }
+            val leading: (@Composable () -> Unit)? = if (node.symbol.isNotEmpty()) {
+                { SymbolIcon(node.symbol, Modifier.size(18.dp), tint = LocalContentColor.current) }
+            } else null
+            when (node.variant) {
+                ChipVariant.Assist -> AssistChip(onClick = {}, label = label, leadingIcon = leading, modifier = m)
+                ChipVariant.Filter -> FilterChip(selected = node.selected, onClick = {}, label = label, leadingIcon = leading, modifier = m)
+                ChipVariant.Input -> InputChip(selected = node.selected, onClick = {}, label = label, leadingIcon = leading, modifier = m)
+                ChipVariant.Suggestion -> SuggestionChip(onClick = {}, label = label, icon = leading, modifier = m)
+            }
+        }
+        is Node.BadgedBox -> BadgedBox(
+            badge = { if (node.badge.isEmpty()) Badge() else Badge { Text(node.badge) } },
+            modifier = modifier,
+        ) {
+            node.children.forEach { child ->
+                val sm = child.alignBox()?.let { Modifier.align(it.toCompose()) } ?: Modifier
+                RenderNode(child, selectedId, onSelect, onBounds, sm)
             }
         }
         is Node.TextField -> InteractiveNode(node, onSelect, onBounds, scopeModifier) { m ->
@@ -568,7 +637,7 @@ private fun selectionModifier(node: Node, onSelect: (id: String, deep: Boolean) 
  * gesture can — so we never wrap them with [selectionModifier]; [InteractiveNode]
  * overlays a tap catcher on top instead.
  */
-private fun Node.isInteractive(): Boolean = this is Node.Button || this is Node.Fab ||
+private fun Node.isInteractive(): Boolean = this is Node.Button || this is Node.Fab || this is Node.Chip ||
     this is Node.IconButton || this is Node.Switch || this is Node.Checkbox ||
     this is Node.RadioButton || this is Node.Slider || this is Node.TextField
 

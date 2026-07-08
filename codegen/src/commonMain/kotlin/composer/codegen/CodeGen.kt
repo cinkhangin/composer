@@ -2,6 +2,7 @@ package composer.codegen
 
 import composer.model.BoxAlignment
 import composer.model.ButtonVariant
+import composer.model.ChipVariant
 import composer.model.CornerUnit
 import composer.model.DesignTheme
 import composer.model.GradientDirection
@@ -420,6 +421,138 @@ object CodeGen {
                 out.appendLine("$pad}")
             }
 
+            is Node.TabRow -> {
+                imports += "androidx.compose.material3.TabRow"
+                imports += "androidx.compose.material3.Tab"
+                imports += "androidx.compose.material3.Text"
+                stateImports(imports)
+                val state = "state${++seq[0]}"
+                val mod = modifierExpr(mods, imports, scopeModifier, indent)
+                out.appendLine("${pad}var $state by remember { mutableStateOf(${node.selectedIndex}) }")
+                appendCall(out, indent, "TabRow", listOfNotNull("selectedTabIndex = $state", mod?.let { "modifier = $it" }), open = true)
+                node.children.forEachIndexed { i, child ->
+                    if (child is Node.Tab) {
+                        // Tab chains never carry scope members (weight/align) — no scope here.
+                        val tmod = modifierExpr(child.modifier.filterNot { it is ModifierSpec.Weight || it is ModifierSpec.Align }, imports, null, indent + 1)
+                        appendCall(
+                            out, indent + 1, "Tab",
+                            listOfNotNull(
+                                "selected = $state == $i",
+                                "onClick = { $state = $i }",
+                                "text = { Text(\"${esc(child.label)}\") }",
+                                tmod?.let { "modifier = $it" },
+                            ),
+                        )
+                    } else {
+                        emit(child, indent + 1, out, imports, seq)
+                    }
+                }
+                out.appendLine("$pad}")
+            }
+
+            // Standalone Tab (outside a TabRow — tolerated defensively): a static tab.
+            is Node.Tab -> {
+                imports += "androidx.compose.material3.Tab"
+                imports += "androidx.compose.material3.Text"
+                val mod = modifierExpr(mods, imports, scopeModifier, indent)
+                appendCall(out, indent, "Tab", listOfNotNull("selected = false", "onClick = {}", "text = { Text(\"${esc(node.label)}\") }", mod?.let { "modifier = $it" }))
+            }
+
+            is Node.NavigationBar -> {
+                imports += "androidx.compose.material3.NavigationBar"
+                imports += "androidx.compose.material3.NavigationBarItem"
+                imports += "androidx.compose.material3.Icon"
+                imports += "androidx.compose.material3.Text"
+                stateImports(imports)
+                val state = "state${++seq[0]}"
+                val mod = modifierExpr(mods, imports, scopeModifier, indent)
+                out.appendLine("${pad}var $state by remember { mutableStateOf(${node.selectedIndex}) }")
+                if (mod != null) {
+                    appendCall(out, indent, "NavigationBar", listOf("modifier = $mod"), open = true)
+                } else {
+                    out.appendLine("$pad" + "NavigationBar {")
+                }
+                node.children.forEachIndexed { i, child ->
+                    if (child is Node.NavItem) {
+                        val symbol = safeSymbol(child.symbol)
+                        if (symbol != null) imports += "org.jetbrains.compose.resources.painterResource"
+                        val imod = modifierExpr(child.modifier.filterNot { it is ModifierSpec.Weight || it is ModifierSpec.Align }, imports, null, indent + 1)
+                        out.appendLine("$pad    NavigationBarItem(")
+                        out.appendLine("$pad        selected = $state == $i,")
+                        out.appendLine("$pad        onClick = { $state = $i },")
+                        if (symbol != null) {
+                            out.appendLine("$pad        icon = {")
+                            out.appendLine("$pad            ${symbolComment(symbol)}")
+                            out.appendLine("$pad            Icon(painterResource(Res.drawable.ic_$symbol), contentDescription = null)")
+                            out.appendLine("$pad        },")
+                        } else {
+                            out.appendLine("$pad        icon = {},")
+                        }
+                        out.appendLine("$pad        label = { Text(\"${esc(child.label)}\") },")
+                        imod?.let { out.appendLine("$pad        modifier = $it,") }
+                        out.appendLine("$pad    )")
+                    } else {
+                        emit(child, indent + 1, out, imports, seq)
+                    }
+                }
+                out.appendLine("$pad}")
+            }
+
+            // A NavigationBarItem is a RowScope member of NavigationBar — it cannot
+            // compile anywhere else, so a stray one degrades to a comment.
+            is Node.NavItem -> {
+                out.appendLine("$pad// NavItem \"${node.label.replace(Regex("[\\r\\n]"), " ")}\" must live inside a NavigationBar")
+            }
+
+            is Node.Chip -> {
+                val name = chipComposable(node.variant)
+                imports += "androidx.compose.material3.$name"
+                imports += "androidx.compose.material3.Text"
+                val stateful = node.variant == ChipVariant.Filter || node.variant == ChipVariant.Input
+                val state = if (stateful) "state${++seq[0]}" else null
+                if (state != null) {
+                    stateImports(imports)
+                    out.appendLine("${pad}var $state by remember { mutableStateOf(${node.selected}) }")
+                }
+                val mod = modifierExpr(mods, imports, scopeModifier, indent)
+                val symbol = safeSymbol(node.symbol)
+                val iconParam = if (node.variant == ChipVariant.Suggestion) "icon" else "leadingIcon"
+                val head = listOfNotNull(
+                    state?.let { "selected = $it" },
+                    if (state != null) "onClick = { $state = !$state }" else "onClick = {}",
+                    "label = { Text(\"${esc(node.label)}\") }",
+                )
+                if (symbol == null) {
+                    appendCall(out, indent, name, head + listOfNotNull(mod?.let { "modifier = $it" }))
+                } else {
+                    imports += "androidx.compose.material3.Icon"
+                    imports += "org.jetbrains.compose.resources.painterResource"
+                    out.appendLine("$pad$name(")
+                    head.forEach { out.appendLine("$pad    $it,") }
+                    out.appendLine("$pad    $iconParam = {")
+                    out.appendLine("$pad        ${symbolComment(symbol)}")
+                    out.appendLine("$pad        Icon(painterResource(Res.drawable.ic_$symbol), contentDescription = null)")
+                    out.appendLine("$pad    },")
+                    mod?.let { out.appendLine("$pad    modifier = $it,") }
+                    out.appendLine("$pad)")
+                }
+            }
+
+            is Node.BadgedBox -> {
+                imports += "androidx.compose.material3.BadgedBox"
+                imports += "androidx.compose.material3.Badge"
+                val mod = modifierExpr(mods, imports, scopeModifier, indent)
+                val badge = if (node.badge.isEmpty()) {
+                    "badge = { Badge() }"
+                } else {
+                    imports += "androidx.compose.material3.Text"
+                    "badge = { Badge { Text(\"${esc(node.badge)}\") } }"
+                }
+                appendCall(out, indent, "BadgedBox", listOfNotNull(badge, mod?.let { "modifier = $it" }), open = true)
+                emitSiblings(node.children, indent + 1, out, imports, seq, ChildScope.BOX)
+                out.appendLine("$pad}")
+            }
+
             is Node.TextField -> {
                 imports += "androidx.compose.material3.OutlinedTextField"
                 imports += "androidx.compose.material3.Text"
@@ -697,6 +830,13 @@ object CodeGen {
     /** The sourcing note emitted above a symbol icon — a fixed, parseable format. */
     fun symbolComment(symbol: String): String =
         "// Icon \"$symbol\" — Material Symbols: download ic_$symbol.xml from https://fonts.google.com/icons into your resources."
+
+    private fun chipComposable(v: ChipVariant): String = when (v) {
+        ChipVariant.Assist -> "AssistChip"
+        ChipVariant.Filter -> "FilterChip"
+        ChipVariant.Input -> "InputChip"
+        ChipVariant.Suggestion -> "SuggestionChip"
+    }
 
     private fun buttonComposable(v: ButtonVariant): String = when (v) {
         ButtonVariant.Filled -> "Button"

@@ -9,3 +9,7 @@ enum class ButtonVariant { Filled, Elevated, FilledTonal, Outlined, Text }
 /** Material3 top-app-bar styles → `TopAppBar` / `CenterAlignedTopAppBar` / `MediumTopAppBar` / `LargeTopAppBar`. */
 @Serializable
 enum class TopAppBarVariant { Small, CenterAligned, Medium, Large }
+
+/** Material3 chip flavors — maps to AssistChip/FilterChip/InputChip/SuggestionChip. */
+@Serializable
+enum class ChipVariant { Assist, Filter, Input, Suggestion }
