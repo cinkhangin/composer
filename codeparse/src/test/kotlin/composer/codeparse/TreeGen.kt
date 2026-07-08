@@ -46,7 +46,11 @@ internal class TreeGen(seed: Int) {
     private fun corner(): Pair<Int, CornerUnit> =
         if (rnd.nextBoolean()) rnd.nextInt(0, 33) to CornerUnit.Dp else rnd.nextInt(0, 51) to CornerUnit.Percent
 
-    fun modifiers(weightScope: Boolean): List<ModifierSpec> {
+    private val vAligns = VAlignment.entries.map { ModifierSpec.Align(vertical = it) }
+    private val hAligns = HAlignment.entries.map { ModifierSpec.Align(horizontal = it) }
+    private val boxAligns = BoxAlignment.entries.map { ModifierSpec.Align(box = it) }
+
+    fun modifiers(weightScope: Boolean, aligns: List<ModifierSpec.Align> = emptyList()): List<ModifierSpec> {
         val all = buildList<ModifierSpec> {
             if (rnd.nextBoolean()) add(
                 when (rnd.nextInt(3)) {
@@ -96,14 +100,22 @@ internal class TreeGen(seed: Int) {
                 val x = rnd.nextInt(1, 31) / 10f
                 add(if (rnd.nextBoolean()) ModifierSpec.Scale(x, x) else ModifierSpec.Scale(x, rnd.nextInt(1, 31) / 10f))
             }
-            if (rnd.nextInt(4) == 0) add(listOf(ModifierSpec.FillMaxWidth, ModifierSpec.FillMaxHeight, ModifierSpec.FillMaxSize).random(rnd))
+            if (rnd.nextInt(6) == 0) add(ModifierSpec.ZIndex(rnd.nextInt(0, 9) / 2f))
+            if (rnd.nextInt(7) == 0) add(ModifierSpec.Blur(rnd.nextInt(1, 17)))
+            if (aligns.isNotEmpty() && rnd.nextInt(4) == 0) add(aligns.random(rnd))
+            if (rnd.nextInt(4) == 0) add(
+                listOf(
+                    ModifierSpec.FillMaxWidth(), ModifierSpec.FillMaxHeight(), ModifierSpec.FillMaxSize(),
+                    ModifierSpec.FillMaxWidth(0.5f), ModifierSpec.FillMaxHeight(0.75f), ModifierSpec.FillMaxSize(0.25f),
+                ).random(rnd),
+            )
         }
         return all
     }
 
-    fun leaf(weightScope: Boolean): Node = when (rnd.nextInt(14)) {
+    fun leaf(weightScope: Boolean, aligns: List<ModifierSpec.Align> = emptyList()): Node = when (rnd.nextInt(14)) {
         0 -> Node.Text(
-            nid(), str(), modifiers(weightScope),
+            nid(), str(), modifiers(weightScope, aligns),
             fontSize = if (rnd.nextBoolean()) rnd.nextInt(8, 40) else 0,
             fontWeight = TextWeight.entries.random(rnd),
             fontFamily = TextFontFamily.entries.random(rnd),
@@ -112,18 +124,18 @@ internal class TreeGen(seed: Int) {
             customFont = if (rnd.nextInt(6) == 0) "Comic Custom" else "",
             textAlign = TextAlignment.entries.random(rnd),
         )
-        1 -> Node.Spacer(nid(), modifiers(weightScope))
-        2 -> Node.Image(nid(), contentDescription = str(), modifier = modifiers(weightScope), url = "https://example.com/a.png?q=\"x\"&b=\$c")
-        3 -> Node.Image(nid(), contentDescription = str(), placeholderColor = rnd.nextLong(0, 0x1_0000_0000), modifier = modifiers(weightScope))
-        4 -> Node.Divider(nid(), modifiers(weightScope))
-        5 -> Node.Icon(nid(), IconKind.entries.random(rnd), str(), modifiers(weightScope))
-        6 -> Node.IconButton(nid(), IconKind.entries.random(rnd), modifiers(weightScope))
-        7 -> Node.TextField(nid(), value = str(), placeholder = str(), modifier = modifiers(weightScope))
-        8 -> Node.Switch(nid(), rnd.nextBoolean(), modifiers(weightScope))
-        9 -> Node.Checkbox(nid(), rnd.nextBoolean(), modifiers(weightScope))
-        10 -> Node.RadioButton(nid(), rnd.nextBoolean(), modifiers(weightScope))
-        11 -> Node.Slider(nid(), rnd.nextInt(0, 101) / 100f, modifiers(weightScope))
-        12 -> Node.CircularProgress(nid(), modifiers(weightScope))
+        1 -> Node.Spacer(nid(), modifiers(weightScope, aligns))
+        2 -> Node.Image(nid(), contentDescription = str(), modifier = modifiers(weightScope, aligns), url = "https://example.com/a.png?q=\"x\"&b=\$c")
+        3 -> Node.Image(nid(), contentDescription = str(), placeholderColor = rnd.nextLong(0, 0x1_0000_0000), modifier = modifiers(weightScope, aligns))
+        4 -> Node.Divider(nid(), modifiers(weightScope, aligns))
+        5 -> Node.Icon(nid(), IconKind.entries.random(rnd), str(), modifiers(weightScope, aligns))
+        6 -> Node.IconButton(nid(), IconKind.entries.random(rnd), modifiers(weightScope, aligns))
+        7 -> Node.TextField(nid(), value = str(), placeholder = str(), modifier = modifiers(weightScope, aligns))
+        8 -> Node.Switch(nid(), rnd.nextBoolean(), modifiers(weightScope, aligns))
+        9 -> Node.Checkbox(nid(), rnd.nextBoolean(), modifiers(weightScope, aligns))
+        10 -> Node.RadioButton(nid(), rnd.nextBoolean(), modifiers(weightScope, aligns))
+        11 -> Node.Slider(nid(), rnd.nextInt(0, 101) / 100f, modifiers(weightScope, aligns))
+        12 -> Node.CircularProgress(nid(), modifiers(weightScope, aligns))
         else -> Node.RawCode(nid(), rawStatement())
     }
 
@@ -135,37 +147,37 @@ internal class TreeGen(seed: Int) {
         "LaunchedEffect(Unit) {\n    viewModel.refresh()\n}",
     ).random(rnd)
 
-    fun node(depth: Int, weightScope: Boolean): Node {
-        if (depth <= 0 || rnd.nextInt(3) > 0) return leaf(weightScope)
+    fun node(depth: Int, weightScope: Boolean, aligns: List<ModifierSpec.Align> = emptyList()): Node {
+        if (depth <= 0 || rnd.nextInt(3) > 0) return leaf(weightScope, aligns)
         return when (rnd.nextInt(8)) {
             0 -> Node.Column(
-                nid(), children(depth, weightScope = true),
+                nid(), children(depth, weightScope = true, aligns = hAligns),
                 verticalArrangement = VArrangement.entries.random(rnd),
                 horizontalAlignment = HAlignment.entries.random(rnd),
-                modifier = modifiers(weightScope),
+                modifier = modifiers(weightScope, aligns),
                 spacing = 0,
             )
-            1 -> Node.Column(nid(), children(depth, weightScope = true), modifier = modifiers(weightScope), spacing = rnd.nextInt(1, 25))
+            1 -> Node.Column(nid(), children(depth, weightScope = true, aligns = hAligns), modifier = modifiers(weightScope, aligns), spacing = rnd.nextInt(1, 25))
             2 -> Node.Row(
-                nid(), children(depth, weightScope = true),
+                nid(), children(depth, weightScope = true, aligns = vAligns),
                 horizontalArrangement = HArrangement.entries.random(rnd),
                 verticalAlignment = VAlignment.entries.random(rnd),
-                modifier = modifiers(weightScope),
+                modifier = modifiers(weightScope, aligns),
             )
-            3 -> Node.Box(nid(), children(depth, weightScope = false), BoxAlignment.entries.random(rnd), modifiers(weightScope))
-            4 -> Node.Card(nid(), children(depth, weightScope = false), modifiers(weightScope))
-            5 -> Node.Button(nid(), modifier = modifiers(weightScope), variant = ButtonVariant.entries.random(rnd), children = children(depth, weightScope = true))
-            6 -> Node.Fab(nid(), children(depth, weightScope = false), modifiers(weightScope))
+            3 -> Node.Box(nid(), children(depth, weightScope = false, aligns = boxAligns), BoxAlignment.entries.random(rnd), modifiers(weightScope, aligns))
+            4 -> Node.Card(nid(), children(depth, weightScope = false), modifiers(weightScope, aligns))
+            5 -> Node.Button(nid(), modifier = modifiers(weightScope, aligns), variant = ButtonVariant.entries.random(rnd), children = children(depth, weightScope = true, aligns = vAligns))
+            6 -> Node.Fab(nid(), children(depth, weightScope = false), modifiers(weightScope, aligns))
             else -> if (rnd.nextBoolean()) {
-                Node.Dialog(nid(), children(depth, weightScope = true), modifiers(weightScope))
+                Node.Dialog(nid(), children(depth, weightScope = true, aligns = hAligns), modifiers(weightScope, aligns))
             } else {
-                Node.BottomSheet(nid(), children(depth, weightScope = true), modifiers(weightScope))
+                Node.BottomSheet(nid(), children(depth, weightScope = true, aligns = hAligns), modifiers(weightScope, aligns))
             }
         }
     }
 
-    private fun children(depth: Int, weightScope: Boolean): List<Node> =
-        List(rnd.nextInt(1, 4)) { node(depth - 1, weightScope) }
+    private fun children(depth: Int, weightScope: Boolean, aligns: List<ModifierSpec.Align> = emptyList()): List<Node> =
+        List(rnd.nextInt(1, 4)) { node(depth - 1, weightScope, aligns) }
 
     fun scaffold(depth: Int): Node.Scaffold {
         val id = nid()
@@ -188,7 +200,7 @@ internal class TreeGen(seed: Int) {
             ),
             bottomBar = Node.Slot("$id-bottomBar", "bottomBar", if (rnd.nextInt(3) == 0) listOf(leaf(false)) else emptyList()),
             fab = Node.Slot("$id-fab", "fab", if (rnd.nextInt(3) == 0) listOf(Node.Fab(nid(), listOf(Node.Icon(nid(), IconKind.Add)))) else emptyList()),
-            modifier = if (rnd.nextBoolean()) listOf(ModifierSpec.FillMaxSize) else emptyList(),
+            modifier = if (rnd.nextBoolean()) listOf(ModifierSpec.FillMaxSize()) else emptyList(),
         )
     }
 

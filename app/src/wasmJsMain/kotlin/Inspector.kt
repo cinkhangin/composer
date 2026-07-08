@@ -670,7 +670,7 @@ private fun DeviceFontPicker(current: String, onPick: (String) -> Unit) {
 }
 
 @Composable
-private fun <T> EnumDropdown(label: String, value: T, options: List<T>, modifier: Modifier = Modifier, itemLabel: (T) -> String = { Vocab.label(it) }, onChange: (T) -> Unit) {
+fun <T> EnumDropdown(label: String, value: T, options: List<T>, modifier: Modifier = Modifier, itemLabel: (T) -> String = { Vocab.label(it) }, onChange: (T) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()

@@ -219,22 +219,40 @@ object CodeGen {
     }
 
     /**
-     * @param inWeightScope whether the node's parent is a Row/Column, so a
-     * `weight` modifier on this node is valid. Weight is dropped otherwise.
+     * The Compose scope the node's PARENT puts its children in — gates the
+     * scope-member modifiers: `weight` needs a Row/Column scope, `align` needs
+     * the matching scope kind (Box = 2D, Row = vertical, Column = horizontal).
      */
+    private enum class ChildScope { NONE, BOX, ROW, COLUMN }
+
+    private val ChildScope.isLinear get() = this == ChildScope.ROW || this == ChildScope.COLUMN
+
+    /** Project an Align onto [scope]: keep only the matching field, or drop it. */
+    private fun projectAlign(spec: ModifierSpec.Align, scope: ChildScope): ModifierSpec.Align? = when (scope) {
+        ChildScope.BOX -> spec.box?.let { ModifierSpec.Align(box = it) }
+        ChildScope.ROW -> spec.vertical?.let { ModifierSpec.Align(vertical = it) }
+        ChildScope.COLUMN -> spec.horizontal?.let { ModifierSpec.Align(horizontal = it) }
+        ChildScope.NONE -> null
+    }
+
     /** Emit sibling components with ONE blank line between them (readability). */
-    private fun emitSiblings(children: List<Node>, indent: Int, out: StringBuilder, imports: MutableSet<String>, seq: IntArray, inWeightScope: Boolean = false, scopeModifier: String? = null) {
+    private fun emitSiblings(children: List<Node>, indent: Int, out: StringBuilder, imports: MutableSet<String>, seq: IntArray, scope: ChildScope = ChildScope.NONE, scopeModifier: String? = null) {
         children.forEachIndexed { i, child ->
             if (i > 0) out.appendLine()
-            emit(child, indent, out, imports, seq, inWeightScope, scopeModifier)
+            emit(child, indent, out, imports, seq, scope, scopeModifier)
         }
     }
 
-    private fun emit(node: Node, indent: Int, out: StringBuilder, imports: MutableSet<String>, seq: IntArray, inWeightScope: Boolean = false, scopeModifier: String? = null) {
+    private fun emit(node: Node, indent: Int, out: StringBuilder, imports: MutableSet<String>, seq: IntArray, scope: ChildScope = ChildScope.NONE, scopeModifier: String? = null) {
         val pad = "    ".repeat(indent)
-        // weight is RowScope/ColumnScope-only, and weight(<=0) throws — strip both cases.
-        val mods = node.modifier.filterNot {
-            it is ModifierSpec.Weight && (!inWeightScope || it.value <= 0f)
+        // Scope members are stripped/projected per the parent scope: weight only in
+        // Row/Column (and weight(<=0) throws), align only where its kind matches.
+        val mods = node.modifier.mapNotNull { spec ->
+            when {
+                spec is ModifierSpec.Weight && (!scope.isLinear || spec.value <= 0f) -> null
+                spec is ModifierSpec.Align -> projectAlign(spec, scope)
+                else -> spec
+            }
         }
         when (node) {
             is Node.RawCode -> {
@@ -312,7 +330,7 @@ object CodeGen {
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
                 val args = listOfNotNull("onClick = {}", mod?.let { "modifier = $it" })
                 appendCall(out, indent, name, args, open = true)
-                emitSiblings(node.children, indent + 1, out, imports, seq, inWeightScope = true)
+                emitSiblings(node.children, indent + 1, out, imports, seq, ChildScope.ROW)
                 out.appendLine("$pad}")
             }
 
@@ -455,7 +473,7 @@ object CodeGen {
 
             is Node.Card -> emitContainer(
                 "Card", "androidx.compose.material3.Card",
-                mods, node.children, indent, out, imports, seq = seq, childWeightScope = false,
+                mods, node.children, indent, out, imports, seq = seq, childScope = ChildScope.NONE,
                 scopeModifier = scopeModifier,
             )
 
@@ -464,7 +482,7 @@ object CodeGen {
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
                 val args = listOfNotNull("onClick = {}", mod?.let { "modifier = $it" })
                 appendCall(out, indent, "FloatingActionButton", args, open = true)
-                emitSiblings(node.children, indent + 1, out, imports, seq, inWeightScope = false)
+                emitSiblings(node.children, indent + 1, out, imports, seq)
                 out.appendLine("$pad}")
             }
 
@@ -481,7 +499,7 @@ object CodeGen {
                 val surfaceArgs = listOfNotNull(mod?.let { "modifier = $it" }, "shape = RoundedCornerShape(16.dp)")
                 appendCall(out, indent + 1, "Surface", surfaceArgs, open = true)
                 out.appendLine("$pad        Column(modifier = Modifier.padding(24.dp)) {")
-                emitSiblings(node.children, indent + 3, out, imports, seq, inWeightScope = true)
+                emitSiblings(node.children, indent + 3, out, imports, seq, ChildScope.COLUMN)
                 out.appendLine("$pad        }")
                 out.appendLine("$pad    }")
                 out.appendLine("$pad}")
@@ -497,7 +515,7 @@ object CodeGen {
                 val args = listOfNotNull("onDismissRequest = {}", mod?.let { "modifier = $it" })
                 appendCall(out, indent, "ModalBottomSheet", args, open = true)
                 out.appendLine("$pad    Column(modifier = Modifier.padding(16.dp)) {")
-                emitSiblings(node.children, indent + 2, out, imports, seq, inWeightScope = true)
+                emitSiblings(node.children, indent + 2, out, imports, seq, ChildScope.COLUMN)
                 out.appendLine("$pad    }")
                 out.appendLine("$pad}")
             }
@@ -527,7 +545,7 @@ object CodeGen {
                     fun slot(name: String, kids: List<Node>) {
                         if (kids.isEmpty()) return
                         out.appendLine("$pad    $name = {")
-                        emitSiblings(kids, indent + 2, out, imports, seq, inWeightScope = false)
+                        emitSiblings(kids, indent + 2, out, imports, seq)
                         out.appendLine("$pad    },")
                     }
                     slot("topBar", topKids)
@@ -537,7 +555,7 @@ object CodeGen {
                 } else {
                     out.appendLine("$pad" + "Scaffold$lambdaOpen")
                 }
-                emitSiblings(node.children, indent + 1, out, imports, seq, inWeightScope = false, scopeModifier = contentScope)
+                emitSiblings(node.children, indent + 1, out, imports, seq, scopeModifier = contentScope)
                 out.appendLine("$pad}")
             }
 
@@ -557,7 +575,7 @@ object CodeGen {
                 }
                 emitContainer(
                     "Column", "androidx.compose.foundation.layout.Column",
-                    mods, node.children, indent, out, imports, seq = seq, childWeightScope = true, extraArgs = extra,
+                    mods, node.children, indent, out, imports, seq = seq, childScope = ChildScope.COLUMN, extraArgs = extra,
                     scopeModifier = scopeModifier,
                 )
             }
@@ -578,7 +596,7 @@ object CodeGen {
                 }
                 emitContainer(
                     "Row", "androidx.compose.foundation.layout.Row",
-                    mods, node.children, indent, out, imports, seq = seq, childWeightScope = true, extraArgs = extra,
+                    mods, node.children, indent, out, imports, seq = seq, childScope = ChildScope.ROW, extraArgs = extra,
                     scopeModifier = scopeModifier,
                 )
             }
@@ -591,7 +609,7 @@ object CodeGen {
                 }
                 emitContainer(
                     "Box", "androidx.compose.foundation.layout.Box",
-                    mods, node.children, indent, out, imports, seq = seq, childWeightScope = false, extraArgs = extra,
+                    mods, node.children, indent, out, imports, seq = seq, childScope = ChildScope.BOX, extraArgs = extra,
                     scopeModifier = scopeModifier,
                 )
             }
@@ -602,16 +620,16 @@ object CodeGen {
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
                 out.appendLine("$pad" + "$name(")
                 out.appendLine("$pad    title = {")
-                node.title?.let { emit(it, indent + 2, out, imports, seq = seq, inWeightScope = false) }
+                node.title?.let { emit(it, indent + 2, out, imports, seq = seq) }
                 out.appendLine("$pad    },")
                 node.navigationIcon?.let {
                     out.appendLine("$pad    navigationIcon = {")
-                    emit(it, indent + 2, out, imports, seq = seq, inWeightScope = false)
+                    emit(it, indent + 2, out, imports, seq = seq)
                     out.appendLine("$pad    },")
                 }
                 if (node.actions.isNotEmpty()) {
                     out.appendLine("$pad    actions = {")
-                    emitSiblings(node.actions, indent + 2, out, imports, seq, inWeightScope = false)
+                    emitSiblings(node.actions, indent + 2, out, imports, seq)
                     out.appendLine("$pad    },")
                 }
                 mod?.let { out.appendLine("$pad    modifier = $it,") }
@@ -619,12 +637,12 @@ object CodeGen {
             }
 
             // A Composable is the function scope — emit its children directly, no wrapper.
-            is Node.Composable -> emitSiblings(node.children, indent, out, imports, seq, inWeightScope = false)
+            is Node.Composable -> emitSiblings(node.children, indent, out, imports, seq)
             // A Slot is a slot-argument scope — normally emitted by its parent
             // (e.g. the Scaffold branch); defensively emit children directly.
-            is Node.Slot -> emitSiblings(node.children, indent, out, imports, seq, inWeightScope = false)
+            is Node.Slot -> emitSiblings(node.children, indent, out, imports, seq)
             // The artboard is handled by [generate]; defensively emit its screens' bodies.
-            is Node.Artboard -> for (screen in node.composables) emit(screen, indent, out, imports, seq = seq, inWeightScope = false)
+            is Node.Artboard -> for (screen in node.composables) emit(screen, indent, out, imports, seq = seq)
         }
     }
 
@@ -637,7 +655,7 @@ object CodeGen {
         out: StringBuilder,
         imports: MutableSet<String>,
         seq: IntArray,
-        childWeightScope: Boolean,
+        childScope: ChildScope,
         extraArgs: List<String> = emptyList(),
         scopeModifier: String? = null,
     ) {
@@ -646,7 +664,7 @@ object CodeGen {
         val mod = modifierExpr(modifier, imports, scopeModifier, indent)
         val args = listOfNotNull(mod?.let { "modifier = $it" }) + extraArgs
         if (args.isEmpty()) out.appendLine("$pad$name {") else appendCall(out, indent, name, args, open = true)
-        emitSiblings(children, indent + 1, out, imports, seq, inWeightScope = childWeightScope)
+        emitSiblings(children, indent + 1, out, imports, seq, childScope)
         out.appendLine("$pad}")
     }
 
@@ -815,19 +833,41 @@ object CodeGen {
                     if (spec.x == spec.y) "scale(${spec.x}f)" else "scale(${spec.x}f, ${spec.y}f)"
                 }
 
-                ModifierSpec.FillMaxWidth -> {
+                // align() is a Box/Row/Column scope member (no import, like weight);
+                // emit() has already projected the spec onto the parent scope.
+                is ModifierSpec.Align -> {
+                    imports += "androidx.compose.ui.Alignment"
+                    val alignment = spec.box?.let { "Alignment.${it.name}" }
+                        ?: spec.vertical?.let { vAlignmentCode(it) }
+                        ?: spec.horizontal?.let { hAlignmentCode(it) }
+                        ?: "Alignment.Center" // unreachable post-projection
+                    "align($alignment)"
+                }
+
+                is ModifierSpec.ZIndex -> {
+                    imports += "androidx.compose.ui.zIndex"
+                    "zIndex(${spec.value}f)"
+                }
+
+                is ModifierSpec.Blur -> {
+                    imports += "androidx.compose.ui.draw.blur"
+                    imports += "androidx.compose.ui.unit.dp"
+                    "blur(${spec.radius}.dp)"
+                }
+
+                is ModifierSpec.FillMaxWidth -> {
                     imports += "androidx.compose.foundation.layout.fillMaxWidth"
-                    "fillMaxWidth()"
+                    if (spec.fraction == 1f) "fillMaxWidth()" else "fillMaxWidth(${spec.fraction}f)"
                 }
 
-                ModifierSpec.FillMaxHeight -> {
+                is ModifierSpec.FillMaxHeight -> {
                     imports += "androidx.compose.foundation.layout.fillMaxHeight"
-                    "fillMaxHeight()"
+                    if (spec.fraction == 1f) "fillMaxHeight()" else "fillMaxHeight(${spec.fraction}f)"
                 }
 
-                ModifierSpec.FillMaxSize -> {
+                is ModifierSpec.FillMaxSize -> {
                     imports += "androidx.compose.foundation.layout.fillMaxSize"
-                    "fillMaxSize()"
+                    if (spec.fraction == 1f) "fillMaxSize()" else "fillMaxSize(${spec.fraction}f)"
                 }
             }
         }

@@ -245,8 +245,8 @@ class CodeGenTest {
 
     @Test
     fun modifier_order_is_preserved() {
-        val a = CodeGen.generate(Node.Box("x", modifier = listOf(FillMaxWidth, Padding(4))))
-        val b = CodeGen.generate(Node.Box("x", modifier = listOf(Padding(4), FillMaxWidth)))
+        val a = CodeGen.generate(Node.Box("x", modifier = listOf(FillMaxWidth(), Padding(4))))
+        val b = CodeGen.generate(Node.Box("x", modifier = listOf(Padding(4), FillMaxWidth())))
         // 2+ modifiers wrap one-per-line; assert relative order is preserved.
         assertTrue(a.indexOf(".fillMaxWidth()") < a.indexOf(".padding(4.dp)"), a)
         assertTrue(b.indexOf(".padding(4.dp)") < b.indexOf(".fillMaxWidth()"), b)
@@ -364,6 +364,51 @@ class CodeGenTest {
         assertTrue(first >= 0 && second > first, code)
         assertTrue("radius = 4.dp" in code, code)
         assertTrue("radius = 16.dp" in code, code)
+    }
+
+    @Test
+    fun fill_modifiers_emit_fraction_only_when_not_full() {
+        val full = CodeGen.generate(Node.Box("x", modifier = listOf(FillMaxWidth())))
+        assertTrue("Modifier.fillMaxWidth()" in full, full)
+        val half = CodeGen.generate(Node.Box("x", modifier = listOf(FillMaxWidth(0.5f))))
+        assertTrue("Modifier.fillMaxWidth(0.5f)" in half, half)
+        val size = CodeGen.generate(Node.Box("x", modifier = listOf(FillMaxSize(0.25f))))
+        assertTrue("Modifier.fillMaxSize(0.25f)" in size, size)
+    }
+
+    @Test
+    fun zindex_and_blur_emit() {
+        val z = CodeGen.generate(Node.Box("x", modifier = listOf(ModifierSpec.ZIndex(2f))))
+        assertTrue("Modifier.zIndex(2.0f)" in z, z)
+        assertTrue("import androidx.compose.ui.zIndex" in z, z)
+        val b = CodeGen.generate(Node.Box("x", modifier = listOf(ModifierSpec.Blur(8))))
+        assertTrue("Modifier.blur(8.dp)" in b, b)
+        assertTrue("import androidx.compose.ui.draw.blur" in b, b)
+    }
+
+    @Test
+    fun align_emits_per_scope() {
+        val inRow = CodeGen.generate(
+            Node.Row("r", children = listOf(Node.Text("t", "Hi", listOf(ModifierSpec.Align(vertical = composer.model.VAlignment.Center))))),
+        )
+        assertTrue("Modifier.align(Alignment.CenterVertically)" in inRow, inRow)
+        val inColumn = CodeGen.generate(
+            Node.Column("c", children = listOf(Node.Text("t", "Hi", listOf(ModifierSpec.Align(horizontal = composer.model.HAlignment.End))))),
+        )
+        assertTrue("Modifier.align(Alignment.End)" in inColumn, inColumn)
+        val inBox = CodeGen.generate(
+            Node.Box("b", children = listOf(Node.Text("t", "Hi", listOf(ModifierSpec.Align(box = composer.model.BoxAlignment.BottomEnd))))),
+        )
+        assertTrue("Modifier.align(Alignment.BottomEnd)" in inBox, inBox)
+    }
+
+    @Test
+    fun align_dropped_when_scope_mismatches() {
+        // A vertical (RowScope) align inside a Box doesn't compile — must be stripped.
+        val code = CodeGen.generate(
+            Node.Box("b", children = listOf(Node.Text("t", "Hi", listOf(ModifierSpec.Align(vertical = composer.model.VAlignment.Center))))),
+        )
+        assertTrue("align(" !in code, code)
     }
 
     @Test
@@ -1020,7 +1065,7 @@ class CodeGenTest {
     /** Mirrors app's SampleTree.kt — kept here so codegen tests are self-contained. */
     private fun sampleTree(): Node = Node.Column(
         id = "root",
-        modifier = listOf(FillMaxSize, Padding(16)),
+        modifier = listOf(FillMaxSize(), Padding(16)),
         children = listOf(
             Node.Text("title", "Welcome to Composer", listOf(Padding(8))),
             Node.Row(
@@ -1034,7 +1079,7 @@ class CodeGenTest {
             ),
             Node.Box(
                 "panel",
-                modifier = listOf(FillMaxWidth, Padding(8), Background(0xFFE0E0E0)),
+                modifier = listOf(FillMaxWidth(), Padding(8), Background(0xFFE0E0E0)),
                 children = listOf(Node.Text("panelLabel", "A boxed label", listOf(Padding(16)))),
             ),
         ),

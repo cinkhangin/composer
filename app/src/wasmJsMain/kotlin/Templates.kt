@@ -47,7 +47,7 @@ private fun loginTemplate(): Node = Node.Artboard(
             children = listOf(
                 Node.Column(
                     id = "lg-col",
-                    modifier = listOf(FillMaxSize, Background(background), Padding(24)),
+                    modifier = listOf(FillMaxSize(), Background(background), Padding(24)),
                     verticalArrangement = VArrangement.Center,
                     horizontalAlignment = HAlignment.Center,
                     spacing = 12,
@@ -55,11 +55,11 @@ private fun loginTemplate(): Node = Node.Artboard(
                         Node.Text("lg-title", "Welcome back", fontSize = 28, fontWeight = TextWeight.Bold),
                         Node.Text("lg-sub", "Sign in to continue", color = 0xFF8A90A0),
                         Node.Spacer("lg-gap1", modifier = listOf(Height(12))),
-                        Node.TextField("lg-email", placeholder = "Email", modifier = listOf(FillMaxWidth)),
-                        Node.TextField("lg-pass", placeholder = "Password", modifier = listOf(FillMaxWidth)),
+                        Node.TextField("lg-email", placeholder = "Email", modifier = listOf(FillMaxWidth())),
+                        Node.TextField("lg-pass", placeholder = "Password", modifier = listOf(FillMaxWidth())),
                         Node.Spacer("lg-gap2", modifier = listOf(Height(8))),
                         Node.Button(
-                            "lg-signin", modifier = listOf(FillMaxWidth),
+                            "lg-signin", modifier = listOf(FillMaxWidth()),
                             children = listOf(Node.Text("lg-signin-t", "Sign in")),
                         ),
                         Node.Button(
@@ -83,7 +83,7 @@ private fun onboardingTemplate(): Node = Node.Artboard(
                 Node.Column(
                     id = "ob-col",
                     modifier = listOf(
-                        FillMaxSize,
+                        FillMaxSize(),
                         Background(0xFF5563E8, colors = listOf(0xFF5563E8, 0xFF9C27B0), direction = GradientDirection.Vertical),
                         Padding(28),
                     ),
@@ -114,7 +114,7 @@ private fun onboardingTemplate(): Node = Node.Artboard(
                         ),
                         Node.Spacer("ob-gap2", modifier = listOf(Height(8))),
                         Node.Button(
-                            "ob-cta", variant = ButtonVariant.Elevated, modifier = listOf(FillMaxWidth),
+                            "ob-cta", variant = ButtonVariant.Elevated, modifier = listOf(FillMaxWidth()),
                             children = listOf(Node.Text("ob-cta-t", "Get started")),
                         ),
                     ),
@@ -142,7 +142,7 @@ private fun profileTemplate(): Node = Node.Artboard(
                     children = listOf(
                         Node.Column(
                             id = "pf-col",
-                            modifier = listOf(FillMaxSize, Padding(20)),
+                            modifier = listOf(FillMaxSize(), Padding(20)),
                             horizontalAlignment = HAlignment.Center,
                             spacing = 12,
                             children = listOf(
@@ -163,18 +163,18 @@ private fun profileTemplate(): Node = Node.Artboard(
                                     ),
                                 ),
                                 Node.Row(
-                                    "pf-actions", spacing = 10, modifier = listOf(FillMaxWidth),
+                                    "pf-actions", spacing = 10, modifier = listOf(FillMaxWidth()),
                                     children = listOf(
                                         Node.Button("pf-follow", modifier = listOf(Weight(1f)), children = listOf(Node.Text("pf-follow-t", "Follow"))),
                                         Node.Button("pf-msg", variant = ButtonVariant.Outlined, modifier = listOf(Weight(1f)), children = listOf(Node.Text("pf-msg-t", "Message"))),
                                     ),
                                 ),
                                 Node.Divider("pf-div"),
-                                Node.Text("pf-about-h", "About", fontSize = 15, fontWeight = TextWeight.Bold, modifier = listOf(FillMaxWidth)),
+                                Node.Text("pf-about-h", "About", fontSize = 15, fontWeight = TextWeight.Bold, modifier = listOf(FillMaxWidth())),
                                 Node.Text(
                                     "pf-about",
                                     "Designing delightful interfaces and turning them into real Compose code.",
-                                    color = 0xFF8A90A0, modifier = listOf(FillMaxWidth),
+                                    color = 0xFF8A90A0, modifier = listOf(FillMaxWidth()),
                                 ),
                             ),
                         ),
@@ -202,13 +202,13 @@ private fun dashboardTemplate(): Node = Node.Artboard(
             children = listOf(
                 Node.Column(
                     id = "db-col",
-                    modifier = listOf(FillMaxSize, Background(background), Padding(20)),
+                    modifier = listOf(FillMaxSize(), Background(background), Padding(20)),
                     spacing = 14,
                     children = listOf(
                         Node.Text("db-hello", "Good morning", fontSize = 24, fontWeight = TextWeight.Bold),
                         Node.Text("db-sub", "Here's what's happening today", color = 0xFF8A90A0),
                         Node.Row(
-                            "db-cards", spacing = 12, modifier = listOf(FillMaxWidth),
+                            "db-cards", spacing = 12, modifier = listOf(FillMaxWidth()),
                             children = listOf(
                                 statCard("db-c1", "Revenue", "$12.4k", 0xFF5563E8),
                                 statCard("db-c2", "Sessions", "8,921", 0xFF9C27B0),
@@ -216,10 +216,10 @@ private fun dashboardTemplate(): Node = Node.Artboard(
                         ),
                         Node.Card(
                             "db-settings",
-                            modifier = listOf(FillMaxWidth, DropShadow(radius = 12, color = 0x22000000, offsetY = 4, corner = 12)),
+                            modifier = listOf(FillMaxWidth(), DropShadow(radius = 12, color = 0x22000000, offsetY = 4, corner = 12)),
                             children = listOf(
                                 Node.Column(
-                                    "db-set-col", modifier = listOf(Padding(16), FillMaxWidth), spacing = 10,
+                                    "db-set-col", modifier = listOf(Padding(16), FillMaxWidth()), spacing = 10,
                                     children = listOf(
                                         Node.Text("db-set-h", "Quick settings", fontSize = 15, fontWeight = TextWeight.Bold),
                                         settingRow("db-r1", "Notifications", true),
@@ -229,7 +229,7 @@ private fun dashboardTemplate(): Node = Node.Artboard(
                                 ),
                             ),
                         ),
-                        Node.LinearProgress("db-progress", modifier = listOf(FillMaxWidth)),
+                        Node.LinearProgress("db-progress", modifier = listOf(FillMaxWidth())),
                         Node.Text("db-progress-t", "Monthly goal: 68%", fontSize = 12, color = 0xFF8A90A0),
                     ),
                 ),
@@ -257,7 +257,7 @@ private fun statCard(id: String, label: String, value: String, tint: Long): Node
 )
 
 private fun settingRow(id: String, label: String, on: Boolean): Node = Node.Row(
-    id = id, modifier = listOf(FillMaxWidth), spacing = 8,
+    id = id, modifier = listOf(FillMaxWidth()), spacing = 8,
     verticalAlignment = composer.model.VAlignment.Center,
     children = listOf(
         Node.Text("$id-t", label, modifier = listOf(Weight(1f))),

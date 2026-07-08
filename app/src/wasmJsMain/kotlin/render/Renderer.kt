@@ -6,8 +6,10 @@ import androidx.compose.foundation.border
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.draw.innerShadow
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -214,7 +216,12 @@ fun RenderNode(
             // A container: children render into the content slot (a RowScope, like
             // the real M3 Button) — put Text/Icon/anything inside.
             val content: @Composable RowScope.() -> Unit = {
-                node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) }
+                node.children.forEach { child ->
+                    var sm: Modifier = Modifier
+                    child.weightValue()?.let { sm = sm.weight(it) }
+                    child.alignVertical()?.let { sm = sm.align(it.toCompose()) }
+                    RenderNode(child, selectedId, onSelect, onBounds, sm)
+                }
             }
             when (node.variant) {
                 ButtonVariant.Filled -> Button(onClick = {}, modifier = m, content = content)
@@ -310,8 +317,10 @@ fun RenderNode(
             horizontalAlignment = node.horizontalAlignment.toCompose(),
         ) {
             node.children.forEach { child ->
-                val wm = child.weightValue()?.let { Modifier.weight(it) } ?: Modifier
-                RenderNode(child, selectedId, onSelect, onBounds, wm)
+                var sm: Modifier = Modifier
+                child.weightValue()?.let { sm = sm.weight(it) }
+                child.alignHorizontal()?.let { sm = sm.align(it.toCompose()) }
+                RenderNode(child, selectedId, onSelect, onBounds, sm)
             }
         }
         is Node.Row -> Row(
@@ -320,12 +329,17 @@ fun RenderNode(
             verticalAlignment = node.verticalAlignment.toCompose(),
         ) {
             node.children.forEach { child ->
-                val wm = child.weightValue()?.let { Modifier.weight(it) } ?: Modifier
-                RenderNode(child, selectedId, onSelect, onBounds, wm)
+                var sm: Modifier = Modifier
+                child.weightValue()?.let { sm = sm.weight(it) }
+                child.alignVertical()?.let { sm = sm.align(it.toCompose()) }
+                RenderNode(child, selectedId, onSelect, onBounds, sm)
             }
         }
         is Node.Box -> Box(modifier = modifier, contentAlignment = node.contentAlignment.toCompose()) {
-            node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) }
+            node.children.forEach { child ->
+                val sm = child.alignBox()?.let { Modifier.align(it.toCompose()) } ?: Modifier
+                RenderNode(child, selectedId, onSelect, onBounds, sm)
+            }
         }
         is Node.Card -> Card(modifier = modifier) { node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) } }
         is Node.Fab -> InteractiveNode(node, onSelect, onBounds, scopeModifier) { m ->
@@ -345,7 +359,12 @@ fun RenderNode(
                 shadowElevation = 6.dp,
             ) {
                 Column(modifier = Modifier.padding(24.dp)) {
-                    node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) }
+                    node.children.forEach { child ->
+                        var sm: Modifier = Modifier
+                        child.weightValue()?.let { sm = sm.weight(it) }
+                        child.alignHorizontal()?.let { sm = sm.align(it.toCompose()) }
+                        RenderNode(child, selectedId, onSelect, onBounds, sm)
+                    }
                 }
             }
         }
@@ -365,7 +384,12 @@ fun RenderNode(
                             .clip(RoundedCornerShape(2.dp))
                             .background(Color(0x33808080)),
                     )
-                    node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) }
+                    node.children.forEach { child ->
+                        var sm: Modifier = Modifier
+                        child.weightValue()?.let { sm = sm.weight(it) }
+                        child.alignHorizontal()?.let { sm = sm.align(it.toCompose()) }
+                        RenderNode(child, selectedId, onSelect, onBounds, sm)
+                    }
                 }
             }
         }
@@ -406,6 +430,17 @@ fun RenderNode(
 
 private fun Node.weightValue(): Float? =
     modifier.firstNotNullOfOrNull { (it as? ModifierSpec.Weight)?.value }?.takeIf { it > 0f }
+
+// align() is a scope member like weight — read per scope kind at the container's
+// call site (mirrors codegen's projectAlign: mismatched fields are ignored).
+private fun Node.alignBox(): BoxAlignment? =
+    modifier.firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.box }
+
+private fun Node.alignVertical(): VAlignment? =
+    modifier.firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.vertical }
+
+private fun Node.alignHorizontal(): HAlignment? =
+    modifier.firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.horizontal }
 
 private fun IconKind.toVector() = when (this) {
     IconKind.Menu -> Icons.Default.Menu
@@ -678,8 +713,11 @@ fun List<ModifierSpec>.toModifier(scheme: ColorScheme): Modifier =
             )
             is ModifierSpec.Rotate -> acc.rotate(spec.degrees)
             is ModifierSpec.Scale -> acc.scale(spec.x, spec.y)
-            ModifierSpec.FillMaxWidth -> acc.fillMaxWidth()
-            ModifierSpec.FillMaxHeight -> acc.fillMaxHeight()
-            ModifierSpec.FillMaxSize -> acc.fillMaxSize()
+            is ModifierSpec.ZIndex -> acc.zIndex(spec.value)
+            is ModifierSpec.Blur -> acc.blur(spec.radius.dp)
+            is ModifierSpec.Align -> acc // scope member — applied at the container's call site
+            is ModifierSpec.FillMaxWidth -> acc.fillMaxWidth(spec.fraction)
+            is ModifierSpec.FillMaxHeight -> acc.fillMaxHeight(spec.fraction)
+            is ModifierSpec.FillMaxSize -> acc.fillMaxSize(spec.fraction)
         }
     }

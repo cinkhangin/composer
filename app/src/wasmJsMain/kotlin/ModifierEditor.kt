@@ -79,9 +79,17 @@ fun ModifierEditor(state: EditorState, selected: Node) {
     var insertAt by remember(selected.id) { mutableStateOf<Int?>(null) }
     val dnd = remember(selected.id) { ModifierDndState() }
 
-    // weight() only compiles inside a Row/Column, so only offer it there.
+    // weight()/align() only compile inside the right scope, so only offer them there.
+    // The scope kinds mirror codegen: Button children are RowScope, Dialog/BottomSheet
+    // children live in the emitted wrapper Column.
     val parent = state.root.parentOf(selected.id)
     val canWeight = parent is Node.Row || parent is Node.Column
+    val alignSeed: ModifierSpec.Align? = when (parent) {
+        is Node.Box -> ModifierSpec.Align(box = composer.model.BoxAlignment.Center)
+        is Node.Row, is Node.Button -> ModifierSpec.Align(vertical = composer.model.VAlignment.Center)
+        is Node.Column, is Node.Dialog, is Node.BottomSheet -> ModifierSpec.Align(horizontal = composer.model.HAlignment.Center)
+        else -> null
+    }
 
     fun apply(next: List<ModifierSpec>, coalesceKey: String? = null) =
         state.update(selected.id, coalesceKey) { it.withModifier(next) }
@@ -92,7 +100,7 @@ fun ModifierEditor(state: EditorState, selected: Node) {
         }
 
         for (i in mods.indices) {
-            InsertGap(i, insertAt, dnd, mods, canWeight, onToggle = { insertAt = if (insertAt == i) null else i }) { spec ->
+            InsertGap(i, insertAt, dnd, mods, canWeight, alignSeed, onToggle = { insertAt = if (insertAt == i) null else i }) { spec ->
                 apply(mods.insertedAt(i, spec)); insertAt = null
             }
             ModifierCard(
@@ -104,7 +112,7 @@ fun ModifierEditor(state: EditorState, selected: Node) {
                 onReorder = { from, to -> apply(mods.movedTo(from, to)) },
             )
         }
-        InsertGap(mods.size, insertAt, dnd, mods, canWeight, onToggle = { insertAt = if (insertAt == mods.size) null else mods.size }) { spec ->
+        InsertGap(mods.size, insertAt, dnd, mods, canWeight, alignSeed, onToggle = { insertAt = if (insertAt == mods.size) null else mods.size }) { spec ->
             apply(mods.insertedAt(mods.size, spec)); insertAt = null
         }
     }
@@ -176,6 +184,7 @@ private fun InsertGap(
     dnd: ModifierDndState,
     existing: List<ModifierSpec>,
     canWeight: Boolean,
+    alignSeed: ModifierSpec.Align?,
     onToggle: () -> Unit,
     onPick: (ModifierSpec) -> Unit,
 ) {
@@ -211,7 +220,7 @@ private fun InsertGap(
             }
         }
         if (active) {
-            AddChipsRow(existing, canWeight, onPick)
+            AddChipsRow(existing, canWeight, alignSeed, onPick)
             Spacer(Modifier.height(2.dp))
         }
     }
@@ -219,7 +228,7 @@ private fun InsertGap(
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-private fun AddChipsRow(existing: List<ModifierSpec>, canWeight: Boolean, onAdd: (ModifierSpec) -> Unit) {
+private fun AddChipsRow(existing: List<ModifierSpec>, canWeight: Boolean, alignSeed: ModifierSpec.Align?, onAdd: (ModifierSpec) -> Unit) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -240,9 +249,12 @@ private fun AddChipsRow(existing: List<ModifierSpec>, canWeight: Boolean, onAdd:
         AddChip("innerShadow") { onAdd(ModifierSpec.InnerShadow()) }
         AddChip("rotate") { onAdd(ModifierSpec.Rotate(45f)) }
         AddChip("scale") { onAdd(ModifierSpec.Scale(1.5f, 1.5f)) }
-        if (FillMaxWidth !in existing) AddChip("fillW") { onAdd(FillMaxWidth) }
-        if (FillMaxHeight !in existing) AddChip("fillH") { onAdd(FillMaxHeight) }
-        if (FillMaxSize !in existing) AddChip("fillSize") { onAdd(FillMaxSize) }
+        AddChip("zIndex") { onAdd(ModifierSpec.ZIndex(1f)) }
+        AddChip("blur") { onAdd(ModifierSpec.Blur(8)) }
+        if (alignSeed != null) AddChip("align") { onAdd(alignSeed) }
+        AddChip("fillW") { onAdd(FillMaxWidth()) }
+        AddChip("fillH") { onAdd(FillMaxHeight()) }
+        AddChip("fillSize") { onAdd(FillMaxSize()) }
     }
 }
 
@@ -483,6 +495,16 @@ private fun ModifierParams(spec: ModifierSpec, onChange: (ModifierSpec) -> Unit)
             CornerField(spec.corner, spec.cornerUnit) { c, u -> onChange(spec.copy(corner = c, cornerUnit = u)) }
         }
 
+        is ModifierSpec.Align -> when {
+            spec.box != null -> EnumDropdown("align", spec.box!!, composer.model.BoxAlignment.entries, itemLabel = { it.name }) { onChange(ModifierSpec.Align(box = it)) }
+            spec.vertical != null -> EnumDropdown("align (vertical)", spec.vertical!!, composer.model.VAlignment.entries, itemLabel = { it.name }) { onChange(ModifierSpec.Align(vertical = it)) }
+            else -> EnumDropdown("align (horizontal)", spec.horizontal ?: composer.model.HAlignment.Center, composer.model.HAlignment.entries, itemLabel = { it.name }) { onChange(ModifierSpec.Align(horizontal = it)) }
+        }
+
+        is ModifierSpec.ZIndex -> FloatField("z-index", spec.value, Modifier.fillMaxWidth()) { onChange(ModifierSpec.ZIndex(it)) }
+
+        is ModifierSpec.Blur -> IntField("radius (dp)", spec.radius, Modifier.fillMaxWidth()) { onChange(ModifierSpec.Blur(it)) }
+
         is ModifierSpec.Rotate -> FloatField("degrees", spec.degrees, Modifier.fillMaxWidth()) { onChange(ModifierSpec.Rotate(it)) }
 
         is ModifierSpec.Scale -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -490,7 +512,9 @@ private fun ModifierParams(spec: ModifierSpec, onChange: (ModifierSpec) -> Unit)
             FloatField("y", spec.y, Modifier.weight(1f)) { onChange(spec.copy(y = it)) }
         }
 
-        FillMaxWidth, FillMaxHeight, FillMaxSize -> Unit
+        is FillMaxWidth -> FloatField("fraction (0–1)", spec.fraction, Modifier.fillMaxWidth()) { onChange(FillMaxWidth(it.coerceIn(0f, 1f))) }
+        is FillMaxHeight -> FloatField("fraction (0–1)", spec.fraction, Modifier.fillMaxWidth()) { onChange(FillMaxHeight(it.coerceIn(0f, 1f))) }
+        is FillMaxSize -> FloatField("fraction (0–1)", spec.fraction, Modifier.fillMaxWidth()) { onChange(FillMaxSize(it.coerceIn(0f, 1f))) }
     }
 }
 
@@ -592,9 +616,12 @@ private fun specName(spec: ModifierSpec): String = when (spec) {
     is ModifierSpec.InnerShadow -> "innerShadow"
     is ModifierSpec.Rotate -> "rotate"
     is ModifierSpec.Scale -> "scale"
-    FillMaxWidth -> "fillMaxWidth"
-    FillMaxHeight -> "fillMaxHeight"
-    FillMaxSize -> "fillMaxSize"
+    is ModifierSpec.Align -> "align"
+    is ModifierSpec.ZIndex -> "zIndex"
+    is ModifierSpec.Blur -> "blur"
+    is FillMaxWidth -> "fillMaxWidth"
+    is FillMaxHeight -> "fillMaxHeight"
+    is FillMaxSize -> "fillMaxSize"
 }
 
 private fun List<ModifierSpec>.insertedAt(i: Int, spec: ModifierSpec): List<ModifierSpec> =
