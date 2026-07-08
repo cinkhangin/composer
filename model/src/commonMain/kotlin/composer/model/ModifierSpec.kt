@@ -155,6 +155,19 @@ sealed interface ModifierSpec {
         val cornerUnit: CornerUnit = CornerUnit.Dp,
     ) : ModifierSpec
 
+    /** `Modifier.rotate(degrees)` — rotates the drawn content around its center (positive = clockwise). */
+    @Serializable
+    @SerialName("rotate")
+    data class Rotate(val degrees: Float) : ModifierSpec
+
+    /**
+     * `Modifier.scale(x, y)` — scales the drawn content around its center. Layout size
+     * is unchanged (like Compose). Uniform when [x] == [y] (codegen emits the one-arg form).
+     */
+    @Serializable
+    @SerialName("scale")
+    data class Scale(val x: Float, val y: Float) : ModifierSpec
+
     @Serializable
     @SerialName("fillMaxWidth")
     data object FillMaxWidth : ModifierSpec

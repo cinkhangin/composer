@@ -6,6 +6,8 @@ import androidx.compose.foundation.border
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.draw.innerShadow
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -674,6 +676,8 @@ fun List<ModifierSpec>.toModifier(scheme: ColorScheme): Modifier =
                     offset = DpOffset(spec.offsetX.dp, spec.offsetY.dp),
                 ),
             )
+            is ModifierSpec.Rotate -> acc.rotate(spec.degrees)
+            is ModifierSpec.Scale -> acc.scale(spec.x, spec.y)
             ModifierSpec.FillMaxWidth -> acc.fillMaxWidth()
             ModifierSpec.FillMaxHeight -> acc.fillMaxHeight()
             ModifierSpec.FillMaxSize -> acc.fillMaxSize()

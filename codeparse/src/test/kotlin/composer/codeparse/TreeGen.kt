@@ -86,6 +86,16 @@ internal class TreeGen(seed: Int) {
                 val (c, u) = corner()
                 add(ModifierSpec.InnerShadow(rnd.nextInt(1, 20), color(), rnd.nextInt(-9, 10), rnd.nextInt(-9, 10), rnd.nextInt(0, 5), c, u))
             }
+            // duplicate modifier in one chain (e.g. stacked shadows) — must round-trip
+            if (rnd.nextInt(8) == 0) {
+                val (c, u) = corner()
+                add(ModifierSpec.DropShadow(rnd.nextInt(1, 20), color(), rnd.nextInt(-9, 10), rnd.nextInt(-9, 10), rnd.nextInt(0, 5), c, u))
+            }
+            if (rnd.nextInt(6) == 0) add(ModifierSpec.Rotate(rnd.nextInt(-720, 721) / 2f))
+            if (rnd.nextInt(6) == 0) {
+                val x = rnd.nextInt(1, 31) / 10f
+                add(if (rnd.nextBoolean()) ModifierSpec.Scale(x, x) else ModifierSpec.Scale(x, rnd.nextInt(1, 31) / 10f))
+            }
             if (rnd.nextInt(4) == 0) add(listOf(ModifierSpec.FillMaxWidth, ModifierSpec.FillMaxHeight, ModifierSpec.FillMaxSize).random(rnd))
         }
         return all
