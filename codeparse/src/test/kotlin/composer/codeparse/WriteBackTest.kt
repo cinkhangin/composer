@@ -28,6 +28,34 @@ class WriteBackTest {
     private fun parse(text: String): ParsedDesign = DesignParser.parse(PsiTestEnv.ktFile(text))!!
 
     @Test
+    fun editing_a_parameterized_screen_preserves_its_signature() {
+        val text = buildString {
+            appendLine("import androidx.compose.material3.Text")
+            appendLine("import androidx.compose.runtime.Composable")
+            appendLine()
+            appendLine("@Composable")
+            appendLine("fun Helper(label: String, count: Int = 0) {")
+            appendLine("    Text(label)")
+            appendLine("    Text(\"static\")")
+            appendLine("}")
+        }
+        val prev = parse(text)
+        // Designer edits the parseable Text; the param-using statement is RawCode.
+        val screen = prev.artboard.composables.single() as Node.Composable
+        val staticText = screen.children.last()
+        val edited = prev.artboard.replaceById(staticText.id) {
+            (it as Node.Text).copy(text = "edited")
+        } as Node.Artboard
+        val out = WriteBackPlanner.apply(text, WriteBackPlanner.plan(text, prev, edited))
+        assertTrue("fun Helper(label: String, count: Int = 0) {" in out, out)
+        assertTrue("Text(\"edited\")" in out, out)
+        assertTrue("Text(label)" in out, out) // RawCode statement preserved verbatim
+        // Re-parse: signature still recorded, tree matches the edit.
+        val reparsed = parse(out)
+        assertEquals("(label: String, count: Int = 0)", reparsed.functions.single().paramList)
+    }
+
+    @Test
     fun unchanged_design_produces_zero_edits() {
         val text = CodeGen.generate(twoScreens())
         val prev = parse(text)

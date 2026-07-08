@@ -133,7 +133,7 @@ object CodeGen {
      * for this screen inside a full file, including a per-function
      * `@OptIn(ExperimentalMaterial3Api::class)` when its own body needs it.
      */
-    fun screenFunction(screen: Node.Composable, name: String, componentFns: Map<String, String> = emptyMap()): ScreenCode {
+    fun screenFunction(screen: Node.Composable, name: String, componentFns: Map<String, String> = emptyMap(), params: String = "()"): ScreenCode {
         val imports = mutableSetOf("androidx.compose.runtime.Composable")
         this.componentFns = componentFns
         val body = StringBuilder()
@@ -144,7 +144,7 @@ object CodeGen {
         val text = buildString {
             if (needsOptIn) appendLine("@OptIn(ExperimentalMaterial3Api::class)")
             appendLine("@Composable")
-            appendLine("fun $name() {")
+            appendLine("fun $name$params {")
             append(body)
             append("}")
         }

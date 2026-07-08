@@ -79,6 +79,7 @@ object DesignParser {
                 functionName = name,
                 fnRange = fn.textRange.startOffset until fn.textRange.endOffset,
                 treeHash = ParsedFunction.hashOf(screen),
+                paramList = fn.valueParameterList?.text ?: "()",
             )
         }
         if (screens.isEmpty()) return null
@@ -99,10 +100,11 @@ object DesignParser {
         )
     }
 
+    // Value parameters ARE allowed (the signature is preserved verbatim on
+    // write-back); statements that reference them simply become RawCode.
     private fun isScreenFunction(fn: KtNamedFunction): Boolean =
         fn.name != null &&
             fn.annotationEntries.any { it.shortName?.asString() == "Composable" } &&
-            fn.valueParameters.isEmpty() &&
             fn.receiverTypeReference == null &&
             fn.typeParameters.isEmpty() &&
             fn.typeReference == null &&
