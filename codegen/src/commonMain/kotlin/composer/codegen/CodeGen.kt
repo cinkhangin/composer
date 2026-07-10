@@ -300,7 +300,7 @@ object CodeGen {
      * wrapper defaulting to the ACTIVE theme — switch themes by passing another
      * scheme (e.g. `AppTheme(DarkColors) { … }`).
      */
-    private fun themeBlock(
+    internal fun themeBlock(
         themes: List<NamedTheme>,
         schemeVals: List<String>,
         activeTheme: Int,

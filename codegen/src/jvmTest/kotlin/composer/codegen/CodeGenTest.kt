@@ -990,7 +990,7 @@ class CodeGenTest {
      * survivor is an escaping bug. Line/block comments are skipped. This is a
      * lexical guard (the class of bug unescaped input causes), not a full type-check.
      */
-    private fun assertLexicallyValid(code: String) {
+    internal fun assertLexicallyValid(code: String) {
         val opens = setOf('(', '{', '[')
         val close = mapOf(')' to '(', '}' to '{', ']' to '[')
         val stack = ArrayDeque<Char>()
