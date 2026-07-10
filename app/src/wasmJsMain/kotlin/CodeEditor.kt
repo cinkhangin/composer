@@ -1,6 +1,9 @@
 package composer
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,8 +28,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
@@ -199,6 +204,30 @@ fun CodePanel(state: EditorState, sync: CodeSyncState, modifier: Modifier = Modi
             BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
                 val minW = maxWidth
                 val minH = maxHeight
+                // The focus system's automatic bring-into-view targets the WHOLE
+                // field (which is content-sized, taller than the viewport), so any
+                // click or keystroke deep in a long file yanked the scroll back to
+                // the field's top edge. Disable it and follow the caret manually.
+                val density = LocalDensity.current
+                LaunchedEffect(sync, vScroll) {
+                    snapshotFlow { sync.field.selection to sync.field.text.length }
+                        .collect {
+                            val f = sync.field
+                            val line = f.text.take(f.selection.end.coerceIn(0, f.text.length)).count { c -> c == '\n' }
+                            val lineHeightPx = with(density) { 19.sp.toPx() }
+                            val padPx = with(density) { 16.dp.toPx() }
+                            val top = padPx + line * lineHeightPx
+                            val bottom = top + lineHeightPx + padPx
+                            val viewport = vScroll.viewportSize
+                            if (viewport <= 0) return@collect
+                            when {
+                                bottom > vScroll.value + viewport -> vScroll.scrollTo((bottom - viewport).toInt())
+                                top < vScroll.value -> vScroll.scrollTo(top.toInt().coerceAtLeast(0))
+                            }
+                        }
+                }
+                @OptIn(ExperimentalFoundationApi::class)
+                CompositionLocalProvider(LocalBringIntoViewSpec provides NoBringIntoView) {
                 Box(Modifier.fillMaxSize().verticalScroll(vScroll).horizontalScroll(hScroll)) {
                     BasicTextField(
                         value = sync.field,
@@ -225,9 +254,16 @@ fun CodePanel(state: EditorState, sync: CodeSyncState, modifier: Modifier = Modi
                             },
                     )
                 }
+                }
             }
         }
     }
+}
+
+/** Disables focus-driven auto-scrolling; the caret follower owns the viewport. */
+@OptIn(ExperimentalFoundationApi::class)
+private object NoBringIntoView : BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = 0f
 }
 
 /** Parse the buffer and apply it to the design; keeps the last good tree on failure. */
@@ -240,7 +276,13 @@ private fun parseAndApply(state: EditorState, sync: CodeSyncState, text: String)
             else "No screens found — the design was kept. A screen is a top-level @Composable fun with a { } body."
         return
     }
-    state.applyCodeEdit(mergeParsed(state.artboard, parsed))
+    val merged = mergeParsed(state.artboard, parsed)
+    // Parsed ids always differ from the designer's, so tree equality can't catch
+    // a formatting-only edit — canonical generation can: equal output means the
+    // same design, and skipping the apply avoids an id-churn commit + auto-save.
+    if (CodeGen.generate(merged) != CodeGen.generate(state.root)) {
+        state.applyCodeEdit(merged)
+    }
     // Record canonical AS APPLIED (post migrate/dedupe), so the root-change echo
     // compares equal and leaves the user's typed formatting alone.
     sync.lastSynced = CodeGen.generate(state.root)
