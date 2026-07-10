@@ -55,33 +55,15 @@ object CodeGen {
      */
     fun generate(root: Node): String {
         val artboard = root.migrateToArtboard()
-        // Emit the theme block when there are several themes or the single one is
-        // customized — an untouched default stays invisible, as before.
+        val (themed, schemeVals, screenNames) = namePlan(artboard)
         val themes = artboard.themes
-        val themed = themes.size > 1 || themes.any { it.theme.isCustomized() }
         val imports = mutableSetOf("androidx.compose.runtime.Composable")
-
-        val used = mutableSetOf<String>()
-        val schemeVals = if (themed) {
-            used += "AppTheme" // reserve — a screen named "App Theme" must not collide
-            themes.mapIndexed { i, named ->
-                val base = (sanitizeIdentifier(named.name) ?: "Theme${i + 1}") + "Colors"
-                var candidate = base
-                var n = 2
-                while (!used.add(candidate)) {
-                    candidate = "$base$n"
-                    n++
-                }
-                candidate
-            }
-        } else emptyList()
 
         // Reusable components ARE composables: every Node.Composable generates a
         // function, and a registered one can be instantiated from other composables
         // (instances emit calls to its function). Names must exist BEFORE bodies —
         // an instance in composable A may call composable B.
         val screens = artboard.composables.filterIsInstance<Node.Composable>()
-        val screenNames = screens.mapIndexed { i, screen -> functionName(artboard.layerNames[screen.id], i, used) }
         val compIds = artboard.validComponentIds().toSet()
         componentFns = screens.indices
             .filter { screens[it].id in compIds }
@@ -153,6 +135,43 @@ object CodeGen {
 
     /** [sanitizeIdentifier] for callers outside codegen (write-back naming). */
     fun sanitizeName(raw: String): String? = sanitizeIdentifier(raw)
+
+    /**
+     * The function names [generate] would emit, parallel to the artboard's
+     * screens — including the dedupe suffixes and the `AppTheme`/scheme-val
+     * reservations of a themed design. Lets callers (the web code editor's
+     * merge step) match screens in emitted code back to model screens exactly.
+     */
+    fun screenFunctionNames(root: Node): List<String> = namePlan(root.migrateToArtboard()).third
+
+    /**
+     * Names shared by one generated file: whether a theme block is emitted, the
+     * scheme val names, and the per-screen function names — all drawn from one
+     * dedupe set so nothing in the file can collide.
+     */
+    private fun namePlan(artboard: Node.Artboard): Triple<Boolean, List<String>, List<String>> {
+        // Emit the theme block when there are several themes or the single one is
+        // customized — an untouched default stays invisible, as before.
+        val themes = artboard.themes
+        val themed = themes.size > 1 || themes.any { it.theme.isCustomized() }
+        val used = mutableSetOf<String>()
+        val schemeVals = if (themed) {
+            used += "AppTheme" // reserve — a screen named "App Theme" must not collide
+            themes.mapIndexed { i, named ->
+                val base = (sanitizeIdentifier(named.name) ?: "Theme${i + 1}") + "Colors"
+                var candidate = base
+                var n = 2
+                while (!used.add(candidate)) {
+                    candidate = "$base$n"
+                    n++
+                }
+                candidate
+            }
+        } else emptyList()
+        val screens = artboard.composables.filterIsInstance<Node.Composable>()
+        val screenNames = screens.mapIndexed { i, screen -> functionName(artboard.layerNames[screen.id], i, used) }
+        return Triple(themed, schemeVals, screenNames)
+    }
 
     /**
      * A generated function name for one screen: the layer name sanitized to a
