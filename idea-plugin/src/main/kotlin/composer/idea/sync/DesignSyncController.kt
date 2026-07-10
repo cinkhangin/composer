@@ -11,6 +11,7 @@ import com.intellij.openapi.editor.event.DocumentListener
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
+import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.ui.update.MergingUpdateQueue
@@ -23,14 +24,13 @@ import composer.idea.ComposerNotifications
 import composer.model.DesignJson
 import composer.model.Node
 import org.jetbrains.concurrency.CancellablePromise
-import org.jetbrains.kotlin.psi.KtFile
 
 /**
  * Two-way sync between the Kotlin document and the embedded designer.
  *
- * Read direction: a DocumentListener + 500ms merge window re-parses (in a
- * non-blocking background read action) and pushes the design when it actually
- * changed; a parse that finds no screens keeps the designer's last good design
+ * Read direction: a DocumentListener + 500ms merge window re-parses the document
+ * text (in a non-blocking background read action) and pushes the design when it
+ * actually changed; a parse that finds no screens keeps the designer's last good design
  * and reports it via [onScreensChanged]. Write direction ([applyDesignerEdit]):
  * decode + plan minimal edits ([WriteBackPlanner]) in a background read action,
  * then hop to the EDT for one undoable write command (unique undo group per
@@ -97,8 +97,7 @@ class DesignSyncController(
 
     private sealed interface EditOutcome
     private data object Drop : EditOutcome
-    private data object Stale : EditOutcome
-    private class PlannedEdit(val plan: WriteBackPlan, val stamp: Long, val ktFile: KtFile) : EditOutcome
+    private class PlannedEdit(val plan: WriteBackPlan, val stamp: Long, val psiFile: PsiFile?) : EditOutcome
 
     /**
      * Designer → code. Entered on the EDT (bridge messages arrive via
@@ -111,14 +110,12 @@ class DesignSyncController(
         if (project.isDisposed || !file.isValid) return
         if (designJson == lastPushed) return // echo of our own push
         val doc = FileDocumentManager.getInstance().getDocument(file) ?: return
-        PsiDocumentManager.getInstance(project).commitAllDocuments()
         pendingEdit?.cancel() // superseded by this newer edit
         pendingEdit = ReadAction.nonBlocking<EditOutcome> { planEdit(designJson, doc) }
             .expireWith(this)
             .finishOnUiThread(ModalityState.defaultModalityState()) { outcome ->
                 when (outcome) {
                     Drop -> Unit
-                    Stale -> applyDesignerEdit(designJson) // re-commit + re-plan
                     is PlannedEdit ->
                         if (doc.modificationStamp != outcome.stamp) {
                             applyDesignerEdit(designJson) // changed between plan and write
@@ -141,16 +138,15 @@ class DesignSyncController(
             )
             return Drop
         }
-        // The document changed after our EDT commit — PSI offsets would be stale.
-        if (!PsiDocumentManager.getInstance(project).isCommitted(doc)) return Stale
-        val ktFile = PsiManager.getInstance(project).findFile(file) as? KtFile ?: return Drop
+        val text = doc.text
         val stamp = doc.modificationStamp
         // parseAndPush just parsed this text for the designer — reuse it as `previous`.
         val cached = cachedParse?.takeIf { it.stamp == stamp }
-        val previous = cached?.design ?: DesignParser.parse(ktFile) ?: emptyPrevious(ktFile)
-        val plan = WriteBackPlanner.plan(doc.text, previous, edited)
+        val previous = cached?.design ?: DesignParser.parse(text) ?: DesignParser.skeleton(text)
+        val plan = WriteBackPlanner.plan(text, previous, edited)
         if (plan.edits.isEmpty()) return Drop // geometry-only change or true no-op
-        return PlannedEdit(plan, stamp, ktFile)
+        // The PSI file rides along only for the write command's undo bookkeeping.
+        return PlannedEdit(plan, stamp, PsiManager.getInstance(project).findFile(file))
     }
 
     /** EDT: apply the planned edits as one write command in its own undo group. */
@@ -161,7 +157,7 @@ class DesignSyncController(
                 for (e in planned.plan.edits.sortedByDescending { it.start }) {
                     doc.replaceString(e.start, e.end, e.replacement)
                 }
-            }, planned.ktFile)
+            }, planned.psiFile)
             PsiDocumentManager.getInstance(project).commitDocument(doc)
         } finally {
             suppressDocEvents = false
@@ -182,24 +178,20 @@ class DesignSyncController(
     // ---- code → designer -------------------------------------------------------
 
     /**
-     * Entered on the EDT (MergingUpdateQueue default): documents commit there,
-     * then the parse itself runs as a non-blocking read action off the EDT
-     * (SlowOperations hygiene — PSI walks of big files don't belong on the UI
-     * thread) and the push hops back to the EDT. A failed parse (no screen-shaped
+     * Entered on the EDT (MergingUpdateQueue default); the parse itself runs as
+     * a non-blocking read action off the EDT (SlowOperations hygiene — parsing
+     * big files doesn't belong on the UI thread) and the push hops back to the
+     * EDT. A failed parse (no screen-shaped
      * functions) pushes NOTHING — the designer keeps the last good design and the
      * editor shows its no-screens hint via [onScreensChanged].
      */
     private fun parseAndPush() {
         if (project.isDisposed || !file.isValid) return
-        PsiDocumentManager.getInstance(project).commitAllDocuments()
         ReadAction.nonBlocking<String?> {
-            val ktFile = PsiManager.getInstance(project).findFile(file) as? KtFile
-                ?: return@nonBlocking null
-            val parsed = DesignParser.parse(ktFile) ?: return@nonBlocking null
             val doc = FileDocumentManager.getInstance().getDocument(file)
-            if (doc != null && PsiDocumentManager.getInstance(project).isCommitted(doc)) {
-                cachedParse = CachedParse(parsed, doc.modificationStamp)
-            }
+                ?: return@nonBlocking null
+            val parsed = DesignParser.parse(doc.text) ?: return@nonBlocking null
+            cachedParse = CachedParse(parsed, doc.modificationStamp)
             DesignJson.encode(parsed.artboard)
         }
             .expireWith(this)
@@ -214,17 +206,6 @@ class DesignSyncController(
             }
             .submit(AppExecutorUtil.getAppExecutorService())
     }
-
-    private fun emptyPrevious(ktFile: KtFile): ParsedDesign = ParsedDesign(
-        artboard = Node.Artboard(id = "artboard"),
-        functions = emptyList(),
-        existingImports = ktFile.importDirectives.mapNotNull { it.importPath?.pathStr },
-        importInsertOffset = ktFile.importDirectives.lastOrNull()?.textRange?.endOffset
-            ?: ktFile.packageDirective?.textRange?.endOffset ?: 0,
-        topLevelFunctionNames = ktFile.declarations
-            .filterIsInstance<org.jetbrains.kotlin.psi.KtNamedFunction>()
-            .mapNotNull { it.name },
-    )
 
     override fun dispose() {}
 }

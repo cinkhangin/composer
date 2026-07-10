@@ -21,7 +21,7 @@ object DesignParser {
     /** Names the parser recognizes → the FQN codegen imports them from. */
     private val EXPECTED_FQNS: Map<String, Set<String>> = buildMap<String, Set<String>> {
         fun put(fqn: String, vararg names: String) {
-            for (n in names) merge(n, setOf(fqn)) { a, b -> a + b }
+            for (n in names) this[n] = (this[n] ?: emptySet()) + fqn
         }
         for (n in listOf(
             "Text", "Button", "ElevatedButton", "FilledTonalButton", "OutlinedButton", "TextButton",

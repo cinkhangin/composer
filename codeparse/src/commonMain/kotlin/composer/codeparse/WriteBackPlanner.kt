@@ -76,7 +76,7 @@ object WriteBackPlanner {
         }
 
         val edits = mutableListOf<TextEdit>()
-        val newImports = sortedSetOf<String>()
+        val newImports = mutableSetOf<String>()
 
         for (screen in editedScreens) {
             val prev = prevById[screen.id]
@@ -123,7 +123,7 @@ object WriteBackPlanner {
                 .filterNot { it.endsWith(".*") }
                 .map { it.substringAfterLast('.') }
                 .toSet()
-            val toAdd = newImports.filter { fqn ->
+            val toAdd = newImports.sorted().filter { fqn ->
                 fqn !in existingExact &&
                     fqn.substringBeforeLast('.') !in starPkgs &&
                     // a same-simple-name import from elsewhere already binds the name —
