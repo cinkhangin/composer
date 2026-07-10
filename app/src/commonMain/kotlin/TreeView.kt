@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.withFrameNanos
@@ -155,6 +156,13 @@ private fun RowItem(
         isSelected -> Tk.accentSoft
         hovered -> Tk.elevated
         else -> Color.Transparent
+    }
+
+    // Drop the row's hit box when it leaves the composition — collapsed rows and
+    // renumbered ids (the IDE round-trip re-ids every node) otherwise linger as
+    // ghost bands that win the drop-target scan and no-op every move there.
+    DisposableEffect(node.id) {
+        onDispose { dnd.bounds.remove(node.id) }
     }
 
     Box(
