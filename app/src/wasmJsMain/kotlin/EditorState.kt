@@ -444,6 +444,41 @@ class EditorState(initial: Node) {
     }
 
     /** Translate node [id] by (dx, dy) dp — adds/updates an Offset modifier. */
+    /** Translate a canvas shape by (dx, dy) dp — shapes carry model coords, not Offset modifiers. */
+    fun moveShape(id: String, dx: Int, dy: Int) {
+        update(id, coalesceKey = "shapemove:$id") { node ->
+            when (node) {
+                is Node.Line -> node.copy(x1 = node.x1 + dx, y1 = node.y1 + dy, x2 = node.x2 + dx, y2 = node.y2 + dy)
+                is Node.RectShape -> node.copy(x = node.x + dx, y = node.y + dy)
+                is Node.CircleShape -> node.copy(cx = node.cx + dx, cy = node.cy + dy)
+                is Node.EllipseShape -> node.copy(x = node.x + dx, y = node.y + dy)
+                is Node.ArcShape -> node.copy(x = node.x + dx, y = node.y + dy)
+                else -> node
+            }
+        }
+    }
+
+    /** Grow a canvas shape by (dw, dh) dp (floor 1); circles follow the dominant axis. */
+    fun resizeShape(id: String, dw: Int, dh: Int) {
+        update(id, coalesceKey = "shapesize:$id") { node ->
+            when (node) {
+                is Node.RectShape ->
+                    node.copy(width = (node.width + dw).coerceAtLeast(1), height = (node.height + dh).coerceAtLeast(1))
+                is Node.EllipseShape ->
+                    node.copy(width = (node.width + dw).coerceAtLeast(1), height = (node.height + dh).coerceAtLeast(1))
+                is Node.ArcShape ->
+                    node.copy(width = (node.width + dw).coerceAtLeast(1), height = (node.height + dh).coerceAtLeast(1))
+                is Node.CircleShape -> {
+                    // Diameter delta on the dominant drag axis; slow 1dp drags still move.
+                    val d = if (abs(dw) >= abs(dh)) dw else dh
+                    val dr = if (d != 0 && d / 2 == 0) (if (d > 0) 1 else -1) else d / 2
+                    node.copy(radius = (node.radius + dr).coerceAtLeast(1))
+                }
+                else -> node
+            }
+        }
+    }
+
     fun offsetNode(id: String, dx: Int, dy: Int) {
         update(id, coalesceKey = "offset:$id") { node ->
             val mods = node.modifier

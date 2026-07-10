@@ -115,7 +115,10 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.runtime.key
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
@@ -392,7 +395,8 @@ fun RenderNode(
                 }
                 themeColor(raw, scheme)
             }
-            Canvas(modifier = modifier) {
+            Box(modifier = modifier) {
+            Canvas(modifier = Modifier.matchParentSize()) {
                 shapes.forEachIndexed { i, shape ->
                     val c = colors[i]
                     when (shape) {
@@ -445,6 +449,23 @@ fun RenderNode(
                         else -> Unit
                     }
                 }
+            }
+            // Shapes are draw calls, not layout nodes — give each an invisible
+            // hit box at its drawn extent so click-select, hover, and the
+            // SelectionOverlay work like for any component. The box reports 0×0
+            // (free placement, like ScreenFrame) so it never affects the
+            // Canvas's own measured size.
+            shapes.forEach { shape ->
+                val r = shapeHitRect(shape) ?: return@forEach
+                key(shape.id) {
+                    Box(
+                        Modifier
+                            .placeShapeBox(r)
+                            .then(selectionModifier(shape, onSelect))
+                            .onGloballyPositioned { onBounds(shape.id, it) },
+                    )
+                }
+            }
             }
         }
         is Node.Line, is Node.RectShape, is Node.CircleShape,
@@ -883,3 +904,36 @@ fun List<ModifierSpec>.toModifier(scheme: ColorScheme): Modifier =
             is ModifierSpec.FillMaxSize -> acc.fillMaxSize(spec.fraction)
         }
     }
+
+
+/** A canvas shape's drawn extent in dp: (x, y, w, h); null for unknown nodes. */
+private fun shapeHitRect(shape: Node): ShapeRect? = when (shape) {
+    is Node.Line -> {
+        // Pad thin lines so they stay clickable (at least an ~8dp band).
+        val pad = maxOf(shape.strokeWidth / 2, 4)
+        ShapeRect(
+            minOf(shape.x1, shape.x2) - pad,
+            minOf(shape.y1, shape.y2) - pad,
+            kotlin.math.abs(shape.x2 - shape.x1) + pad * 2,
+            kotlin.math.abs(shape.y2 - shape.y1) + pad * 2,
+        )
+    }
+    is Node.RectShape -> ShapeRect(shape.x, shape.y, shape.width, shape.height)
+    is Node.CircleShape -> ShapeRect(shape.cx - shape.radius, shape.cy - shape.radius, shape.radius * 2, shape.radius * 2)
+    is Node.EllipseShape -> ShapeRect(shape.x, shape.y, shape.width, shape.height)
+    is Node.ArcShape -> ShapeRect(shape.x, shape.y, shape.width, shape.height)
+    else -> null
+}
+
+private class ShapeRect(val x: Int, val y: Int, val w: Int, val h: Int)
+
+/**
+ * Measure at the shape's fixed extent, report 0×0, place at the shape's offset —
+ * free placement inside the Canvas box that can't grow the canvas or be clamped.
+ */
+private fun Modifier.placeShapeBox(r: ShapeRect): Modifier = layout { measurable, _ ->
+    val placeable = measurable.measure(
+        Constraints.fixed(r.w.dp.roundToPx().coerceAtLeast(1), r.h.dp.roundToPx().coerceAtLeast(1)),
+    )
+    layout(0, 0) { placeable.place(r.x.dp.roundToPx(), r.y.dp.roundToPx()) }
+}

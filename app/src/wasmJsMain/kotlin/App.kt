@@ -114,6 +114,7 @@ import composer.model.CornerUnit
 import composer.model.backgroundCorner
 import composer.model.childNodes
 import composer.model.findById
+import composer.model.isShape
 import composer.render.LocalDesignRoot
 import composer.render.RenderNode
 import composer.render.toColorScheme
@@ -761,6 +762,7 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
                 // the PREVIOUSLY selected node.
                 key(sel) {
                     val isScreen = state.selected is Node.Composable
+                    val isShape = state.selected?.isShape() == true
                     SelectionOverlay(
                         screen = Rect(tl.x, tl.y, br.x, br.y),
                         viewport = Size(cw, ch),
@@ -773,27 +775,36 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
                         // handle moves them so the opposite edge stays pinned. Components
                         // are LAYOUT children (their position is the parent's business,
                         // like Figma auto-layout items) — corners/edges only resize.
-                        anchorMove = false,
-                        resizable = !isScreen,
+                        // Shapes float freely inside their Canvas (model coords), so
+                        // top/left handles move-compensate like screens once did.
+                        anchorMove = isShape,
+                        resizable = !isScreen && state.selected !is Node.Line,
                         onMove = { dx, dy ->
-                            if (isScreen) state.moveComposable(sel, dx, dy) else state.offsetNode(sel, dx, dy)
+                            when {
+                                isScreen -> state.moveComposable(sel, dx, dy)
+                                isShape -> state.moveShape(sel, dx, dy)
+                                else -> state.offsetNode(sel, dx, dy)
+                            }
                         },
                         // ~8dp of SCREEN travel snaps at any zoom (threshold is in artboard dp).
                         onBodyMove = { dx, dy ->
-                            if (isScreen) {
-                                state.moveComposableSnapped(sel, dx, dy, threshold = (8f / scale).roundToInt().coerceAtLeast(2))
-                            } else {
-                                state.offsetNode(sel, dx, dy)
+                            when {
+                                isScreen ->
+                                    state.moveComposableSnapped(sel, dx, dy, threshold = (8f / scale).roundToInt().coerceAtLeast(2))
+                                isShape -> state.moveShape(sel, dx, dy)
+                                else -> state.offsetNode(sel, dx, dy)
                             }
                         },
                         onBodyMoveEnd = { if (isScreen) state.endScreenDrag() },
                         onResize = { dw, dh ->
-                            if (isScreen) {
-                                state.resizeComposable(sel, dw, dh)
-                            } else {
-                                val baseW = with(density) { b.width.toDp().value }.roundToInt()
-                                val baseH = with(density) { b.height.toDp().value }.roundToInt()
-                                state.resizeNode(sel, baseW, baseH, dw, dh)
+                            when {
+                                isScreen -> state.resizeComposable(sel, dw, dh)
+                                isShape -> state.resizeShape(sel, dw, dh)
+                                else -> {
+                                    val baseW = with(density) { b.width.toDp().value }.roundToInt()
+                                    val baseH = with(density) { b.height.toDp().value }.roundToInt()
+                                    state.resizeNode(sel, baseW, baseH, dw, dh)
+                                }
                             }
                         },
                         onDrill = { frame ->
@@ -1501,9 +1512,14 @@ private fun handleShortcut(event: KeyEvent, state: EditorState): Boolean {
                     Key.DirectionUp -> 0 to -step
                     else -> 0 to step
                 }
-                // Nudge a screen on the artboard canvas; a component via its Offset modifier.
-                if (state.root.findById(id) is Node.Composable) state.moveComposable(id, dx, dy)
-                else state.offsetNode(id, dx, dy)
+                // Nudge a screen on the artboard canvas; a shape via its model
+                // coords; a component via its Offset modifier.
+                val node = state.root.findById(id)
+                when {
+                    node is Node.Composable -> state.moveComposable(id, dx, dy)
+                    node?.isShape() == true -> state.moveShape(id, dx, dy)
+                    else -> state.offsetNode(id, dx, dy)
+                }
                 true
             }
         }
