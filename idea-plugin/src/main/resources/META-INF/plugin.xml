@@ -14,12 +14,24 @@
     <depends>com.intellij.modules.platform</depends>
     <depends>org.jetbrains.kotlin</depends>
 
+    <!-- J0 experiment: on IDEs that ship Compose (AS 261+/IDEA 251+), use the
+         platform's compose+skiko instead of bundling our own (the two skiko
+         native libs cannot coexist in one process). NOTE: this module does not
+         exist in 242 — the final plugin needs a range split. -->
+    <dependencies>
+        <module name="intellij.platform.compose"/>
+    </dependencies>
+
     <extensions defaultExtensionNs="com.intellij">
         <fileEditorProvider implementation="composer.idea.editor.ComposerSplitEditorProvider"/>
         <notificationGroup id="Composer" displayType="BALLOON"/>
         <toolWindow id="Composer App" anchor="right" secondary="false"
                     factoryClass="composer.idea.app.ComposerAppToolWindowFactory"
                     icon="AllIcons.Toolwindows.ToolWindowHierarchy"/>
+        <!-- J0 spike probe — TEMPORARY, removed when the in-process designer lands. -->
+        <toolWindow id="Compose Probe" anchor="bottom" secondary="true"
+                    factoryClass="composer.idea.app.ComposeProbeToolWindowFactory"
+                    icon="AllIcons.Toolwindows.ToolWindowPalette"/>
     </extensions>
 
     <!-- PSI use is syntax-level only, so both Kotlin plugin modes work. -->

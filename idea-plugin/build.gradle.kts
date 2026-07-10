@@ -32,7 +32,32 @@ dependencies {
     implementation(project(":codegen"))
     implementation(project(":codeparse")) // pure common-Kotlin parser — no compiler/PSI dependency
     webDist(project(mapOf("path" to ":app", "configuration" to "webDist")))
+    // The in-process (no-JCEF) designer: :app's jvm variant carries the
+    // Compose Desktop runtime; all @Composable code stays in :app — this
+    // module only consumes plain JComponents.
+    implementation(project(":app"))
     // NEVER add kotlinx-coroutines here — the platform bundles a patched build.
+}
+
+configurations.runtimeClasspath {
+    // The platform's patched kotlinx-coroutines must win at runtime.
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jdk8")
+    // Platform-compose mode (-Pcomposer.platformCompose=true): don't bundle
+    // compose/skiko — the IDE's own copies are used via the plugin.xml module
+    // dependency on intellij.platform.compose. Two skiko dylibs in one process
+    // fail (objc class collisions + UnsatisfiedLinkError on Metal init), so on
+    // Compose-shipping IDEs we may ONLY bundle what the platform lacks:
+    // material3 + material (ripple/icons) + components-resources.
+    if (providers.gradleProperty("composer.platformCompose").orNull == "true") {
+        exclude(group = "org.jetbrains.compose.desktop")
+        exclude(group = "org.jetbrains.compose.runtime")
+        exclude(group = "org.jetbrains.compose.foundation")
+        exclude(group = "org.jetbrains.compose.ui")
+        exclude(group = "org.jetbrains.compose.animation")
+        exclude(group = "org.jetbrains.skiko")
+    }
 }
 
 intellijPlatform {

@@ -8,6 +8,11 @@ plugins {
 }
 
 kotlin {
+    jvmToolchain(17)
+
+    // The in-process IDE designer (ComposePanel host) — consumed by :idea-plugin.
+    jvm()
+
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
         outputModuleName.set("composer")
@@ -47,6 +52,17 @@ kotlin {
                 implementation("org.jetbrains.compose.components:components-resources:1.11.1")
                 implementation("org.jetbrains.compose.ui:ui:1.11.1")
                 implementation("org.jetbrains.kotlinx:kotlinx-browser:0.3")
+                implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+            }
+        }
+        val jvmMain by getting {
+            dependencies {
+                implementation(project(":model"))
+                implementation(project(":codegen"))
+                implementation(project(":codeparse"))
+                // Compose Desktop (macOS arm64 for now; other hosts when needed).
+                implementation("org.jetbrains.compose.desktop:desktop-jvm-macos-arm64:1.11.1")
+                implementation("org.jetbrains.compose.material3:material3-desktop:1.9.0")
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
             }
         }
