@@ -141,31 +141,38 @@ object WriteBackPlanner {
         }
 
         // ---- import merge (append-only) --------------------------------------
-        if (edits.isNotEmpty() && newImports.isNotEmpty()) {
-            val starPkgs = previous.existingImports.filter { it.endsWith(".*") }.map { it.removeSuffix(".*") }
-            val existingExact = previous.existingImports.toSet()
-            val boundSimpleNames = previous.existingImports
-                .filterNot { it.endsWith(".*") }
-                .map { it.substringAfterLast('.') }
-                .toSet()
-            val toAdd = newImports.sorted().filter { fqn ->
-                fqn !in existingExact &&
-                    fqn.substringBeforeLast('.') !in starPkgs &&
-                    // a same-simple-name import from elsewhere already binds the name —
-                    // adding ours would be a redeclaration error
-                    fqn.substringAfterLast('.') !in boundSimpleNames
-            }
-            if (toAdd.isNotEmpty()) {
-                val block = toAdd.joinToString("") { "\nimport $it" }
-                val prefix = if (previous.existingImports.isEmpty() && previous.importInsertOffset > 0) "\n" else ""
-                edits += TextEdit(previous.importInsertOffset, previous.importInsertOffset, prefix + block)
-            }
+        if (edits.isNotEmpty()) {
+            planImportMerge(previous, newImports)?.let { edits += it }
         }
 
         val renames = renamedIds.mapNotNull { id ->
             prevById[id]?.let { ScreenRename(from = it.functionName, to = names.getValue(id)) }
         }
         return WriteBackPlan(edits, renames, warnings)
+    }
+
+    /**
+     * Append-only import merge: new FQNs minus exact-existing, star-covered,
+     * and same-simple-name-bound (a redeclaration error). Never removes or
+     * reorders — removal needs resolve and could strip RawCode-only imports.
+     */
+    internal fun planImportMerge(previous: ParsedDesign, newImports: Set<String>): TextEdit? {
+        if (newImports.isEmpty()) return null
+        val starPkgs = previous.existingImports.filter { it.endsWith(".*") }.map { it.removeSuffix(".*") }
+        val existingExact = previous.existingImports.toSet()
+        val boundSimpleNames = previous.existingImports
+            .filterNot { it.endsWith(".*") }
+            .map { it.substringAfterLast('.') }
+            .toSet()
+        val toAdd = newImports.sorted().filter { fqn ->
+            fqn !in existingExact &&
+                fqn.substringBeforeLast('.') !in starPkgs &&
+                fqn.substringAfterLast('.') !in boundSimpleNames
+        }
+        if (toAdd.isEmpty()) return null
+        val block = toAdd.joinToString("") { "\nimport $it" }
+        val prefix = if (previous.existingImports.isEmpty() && previous.importInsertOffset > 0) "\n" else ""
+        return TextEdit(previous.importInsertOffset, previous.importInsertOffset, prefix + block)
     }
 
     /** Apply [plan] to [text] (tests / non-IDE callers). */
