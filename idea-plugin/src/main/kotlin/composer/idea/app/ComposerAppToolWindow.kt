@@ -215,7 +215,11 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
     private fun ensureBrowser() {
         if (browser != null) return
         if (!JBCefApp.isSupported()) {
-            showStatus("The Composer designer needs JCEF, which this IDE runtime doesn't provide.")
+            showStatus(
+                "<html>The Composer designer needs JCEF, which this IDE runtime doesn't provide.<br>" +
+                    "Fix: Search Everywhere (Shift Shift) \u2192 \"Choose Boot Java Runtime for the IDE\" \u2192 " +
+                    "pick a runtime with JCEF \u2192 restart.</html>",
+            )
             return
         }
         val url = try {

@@ -133,7 +133,12 @@ class ComposerPreviewEditor(
         if (browser != null) return
         panel.removeHierarchyListener(showListener)
         if (!JBCefApp.isSupported()) {
-            showStatus("The Composer designer needs JCEF, which this IDE runtime doesn't provide.", retry = false)
+            showStatus(
+                "<html>The Composer designer needs JCEF, which this IDE runtime doesn't provide.<br>" +
+                    "Fix: Search Everywhere (Shift Shift) \u2192 \"Choose Boot Java Runtime for the IDE\" \u2192 " +
+                    "pick a runtime with JCEF \u2192 restart.</html>",
+                retry = false,
+            )
             return
         }
         val url = try {
