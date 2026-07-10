@@ -69,3 +69,20 @@ tasks.named<RunIdeTask>("runIde") {
         rootProject.layout.projectDirectory.dir("app/build/dist/wasmJs/productionExecutable").asFile.absolutePath,
     )
 }
+
+// Run the plugin in a locally installed Android Studio instead of the IDEA
+// sandbox: ./gradlew :idea-plugin:runAndroidStudio
+// (override the install path with -Pcomposer.androidStudio.path=/path/to/Android Studio.app)
+val androidStudioPath = providers.gradleProperty("composer.androidStudio.path").orNull
+    ?: "${System.getProperty("user.home")}/Applications/Android Studio.app"
+if (file(androidStudioPath).exists()) {
+    intellijPlatformTesting.runIde.register("runAndroidStudio") {
+        localPath = file(androidStudioPath)
+        task {
+            systemProperty(
+                "composer.web.dist.dir",
+                rootProject.layout.projectDirectory.dir("app/build/dist/wasmJs/productionExecutable").asFile.absolutePath,
+            )
+        }
+    }
+}
