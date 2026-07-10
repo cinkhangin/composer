@@ -7,11 +7,6 @@ import composer.model.HAlignment
 import composer.model.ModifierSpec
 import composer.model.PaddingMode
 import composer.model.VAlignment
-import org.jetbrains.kotlin.psi.KtBinaryExpression
-import org.jetbrains.kotlin.psi.KtCallExpression
-import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
-import org.jetbrains.kotlin.psi.KtExpression
-import org.jetbrains.kotlin.psi.KtNameReferenceExpression
 
 /**
  * `Modifier.padding(16.dp).fillMaxWidth()…` → ordered [ModifierSpec] list — the
@@ -23,7 +18,7 @@ import org.jetbrains.kotlin.psi.KtNameReferenceExpression
  * chain call `padding(<scopeParam>)` is the scope-imposed prefix codegen
  * prepends, not model data — it's stripped (and re-imposed on regeneration).
  */
-internal fun parseModifierChain(expr: KtExpression, scopeParam: String? = null): List<ModifierSpec>? {
+internal fun parseModifierChain(expr: KExpr, scopeParam: String? = null): List<ModifierSpec>? {
     val calls = chainCalls(expr.unparen()) ?: return null
     val specs = mutableListOf<ModifierSpec>()
     calls.forEachIndexed { i, call ->
@@ -34,24 +29,25 @@ internal fun parseModifierChain(expr: KtExpression, scopeParam: String? = null):
 }
 
 /** The chain's calls in application order; null unless rooted at bare `Modifier`. */
-private fun chainCalls(expr: KtExpression): List<KtCallExpression>? {
-    if (expr is KtNameReferenceExpression && expr.getReferencedName() == "Modifier") return emptyList()
-    val calls = ArrayDeque<KtCallExpression>()
-    var cur: KtExpression = expr
-    while (cur is KtDotQualifiedExpression) {
-        val sel = cur.selectorExpression?.unparen() as? KtCallExpression ?: return null
+private fun chainCalls(expr: KExpr): List<KCall>? {
+    if (expr is KName && expr.name == "Modifier") return emptyList()
+    val calls = ArrayDeque<KCall>()
+    var cur: KExpr = expr
+    while (true) {
+        val dot = cur.asDot() ?: break
+        val sel = dot.selector?.unparen() as? KCall ?: return null
         calls.addFirst(sel)
-        cur = cur.receiverExpression.unparen()
+        cur = dot.receiver.unparen()
     }
-    val root = cur as? KtNameReferenceExpression ?: return null
-    if (root.getReferencedName() != "Modifier") return null
+    val root = cur as? KName ?: return null
+    if (root.name != "Modifier") return null
     return calls.toList()
 }
 
-private fun isScopePadding(call: KtCallExpression, scopeParam: String): Boolean =
+private fun isScopePadding(call: KCall, scopeParam: String): Boolean =
     callName(call) == "padding" && nameOf(call.singlePositionalArg()) == scopeParam
 
-private fun parseModifierCall(call: KtCallExpression): ModifierSpec? {
+private fun parseModifierCall(call: KCall): ModifierSpec? {
     val shape = callShape(call) ?: return null
     if (shape.trailingLambda != null) return null
     return when (shape.name) {
@@ -120,10 +116,10 @@ private fun fillFraction(shape: CallShape): Float? = when {
  * the scope (Row's Top/CenterVertically/Bottom, Column's Start/CenterHorizontally/End,
  * Box's 2D names) — the sets don't overlap.
  */
-private fun alignSpec(expr: KtExpression): ModifierSpec.Align? {
-    val dot = expr.unparen() as? KtDotQualifiedExpression ?: return null
-    if (nameOf(dot.receiverExpression) != "Alignment") return null
-    return when (val name = nameOf(dot.selectorExpression) ?: return null) {
+private fun alignSpec(expr: KExpr): ModifierSpec.Align? {
+    val dot = expr.unparen().asDot() ?: return null
+    if (nameOf(dot.receiver) != "Alignment") return null
+    return when (val name = nameOf(dot.selector) ?: return null) {
         "Top" -> ModifierSpec.Align(vertical = VAlignment.Top)
         "CenterVertically" -> ModifierSpec.Align(vertical = VAlignment.Center)
         "Bottom" -> ModifierSpec.Align(vertical = VAlignment.Bottom)
@@ -134,9 +130,7 @@ private fun alignSpec(expr: KtExpression): ModifierSpec.Align? {
     }
 }
 
-private fun noArgs(shape: CallShape): Boolean = shape.positional.isEmpty() && shape.named.isEmpty()
-
-private fun single(shape: CallShape): KtExpression? =
+private fun single(shape: CallShape): KExpr? =
     if (shape.named.isEmpty()) shape.positional.singleOrNull() else null
 
 private fun parsePadding(shape: CallShape): ModifierSpec.Padding? {
@@ -172,9 +166,9 @@ private fun parseBackground(shape: CallShape): ModifierSpec.Background? {
         return ModifierSpec.Background(color = solid, corner = corner, cornerUnit = unit)
     }
     // Brush.<builder>(listOf(c1, c2, …))
-    val dot = fill as? KtDotQualifiedExpression ?: return null
-    if (nameOf(dot.receiverExpression) != "Brush") return null
-    val brushCall = dot.selectorExpression?.unparen() as? KtCallExpression ?: return null
+    val dot = fill.asDot() ?: return null
+    if (nameOf(dot.receiver) != "Brush") return null
+    val brushCall = dot.selector?.unparen() as? KCall ?: return null
     val direction = when (callName(brushCall)) {
         "verticalGradient" -> GradientDirection.Vertical
         "horizontalGradient" -> GradientDirection.Horizontal
@@ -182,12 +176,11 @@ private fun parseBackground(shape: CallShape): ModifierSpec.Background? {
         "radialGradient" -> GradientDirection.Radial
         else -> return null
     }
-    val listCall = brushCall.singlePositionalArg()?.unparen() as? KtCallExpression ?: return null
-    if (callName(listCall) != "listOf" || listCall.lambdaArguments.isNotEmpty()) return null
-    val stops = listCall.valueArguments.map { arg ->
-        val v = arg as? org.jetbrains.kotlin.psi.KtValueArgument ?: return null
-        if (v.getArgumentName() != null || v.isSpread) return null
-        colorValue(v.getArgumentExpression()) ?: return null
+    val listCall = brushCall.singlePositionalArg()?.unparen() as? KCall ?: return null
+    if (callName(listCall) != "listOf" || listCall.trailingLambdas.isNotEmpty()) return null
+    val stops = listCall.args.map { arg ->
+        if (arg.name != null || arg.isSpread) return null
+        colorValue(arg.expr) ?: return null
     }
     if (stops.size < 2) return null
     return ModifierSpec.Background(
@@ -200,8 +193,8 @@ private fun parseBackground(shape: CallShape): ModifierSpec.Background? {
 }
 
 private fun parseAspectRatio(shape: CallShape): ModifierSpec.AspectRatio? {
-    val arg = single(shape)?.unparen() as? KtBinaryExpression ?: return null
-    if (arg.operationReference.getReferencedName() != "/") return null
+    val arg = single(shape)?.unparen() as? KBinary ?: return null
+    if (arg.op != "/") return null
     val w = floatLit(arg.left) ?: return null
     val h = floatLit(arg.right) ?: return null
     // The model stores ints; only integral ratios are representable.
@@ -225,7 +218,7 @@ private fun parseShadow(
 ): ModifierSpec? {
     if (shape.named.isNotEmpty() || shape.positional.size != 2) return null
     val (corner, unit) = shapeCorner(shape.positional[0]) ?: return null
-    val shadowCall = shape.positional[1].unparen() as? KtCallExpression ?: return null
+    val shadowCall = shape.positional[1].unparen() as? KCall ?: return null
     if (callName(shadowCall) != "Shadow") return null
     val s = callShape(shadowCall) ?: return null
     if (s.trailingLambda != null || s.positional.isNotEmpty()) return null
@@ -236,7 +229,7 @@ private fun parseShadow(
     var offsetX = 0
     var offsetY = 0
     s.named["offset"]?.let { off ->
-        val call = off.unparen() as? KtCallExpression ?: return null
+        val call = off.unparen() as? KCall ?: return null
         if (callName(call) != "DpOffset") return null
         val os = callShape(call) ?: return null
         if (os.named.isNotEmpty() || os.positional.size != 2 || os.trailingLambda != null) return null

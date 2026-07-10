@@ -18,7 +18,7 @@ class RoundTripTest {
         for (seed in 1..150) {
             val tree = TreeGen(seed).design()
             val code = CodeGen.generate(tree)
-            val parsed = DesignParser.parse(PsiTestEnv.ktFile(code))
+            val parsed = DesignParser.parse(code)
             assertNotNull(parsed, "seed $seed produced unparseable output:\n$code")
             assertEquals(
                 canon(tree),
@@ -33,7 +33,7 @@ class RoundTripTest {
         for (seed in 1..150) {
             val tree = TreeGen(seed).design()
             val code = CodeGen.generate(tree)
-            val parsed = DesignParser.parse(PsiTestEnv.ktFile(code))
+            val parsed = DesignParser.parse(code)
             assertNotNull(parsed, "seed $seed unparseable:\n$code")
             val regenerated = CodeGen.generate(parsed.artboard)
             assertEquals(code, regenerated, "seed $seed regeneration drifted")
@@ -44,8 +44,8 @@ class RoundTripTest {
     fun reparse_of_unchanged_text_yields_stable_ids_and_hashes() {
         val tree = TreeGen(7).design()
         val code = CodeGen.generate(tree)
-        val a = DesignParser.parse(PsiTestEnv.ktFile(code))!!
-        val b = DesignParser.parse(PsiTestEnv.ktFile(code))!!
+        val a = DesignParser.parse(code)!!
+        val b = DesignParser.parse(code)!!
         assertEquals(a.artboard, b.artboard)
         assertEquals(a.functions, b.functions)
     }

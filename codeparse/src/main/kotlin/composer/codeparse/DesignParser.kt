@@ -1,20 +1,20 @@
 package composer.codeparse
 
 import composer.model.Node
-import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.psi.KtNamedFunction
 
 /**
- * Kotlin file → Composer design tree: one [Node.Composable] screen per parseable
+ * Kotlin source → Composer design tree: one [Node.Composable] screen per parseable
  * top-level `@Composable` function; everything the model can't represent inside a
- * body becomes a locked [Node.RawCode]. Purely syntactic (no resolve) — fast,
- * dumb-mode-safe, and honest: the failure mode of the accepted ambiguities is a
- * standard-Compose regeneration of a function the user explicitly edited.
+ * body becomes a locked [Node.RawCode]. Purely syntactic (no resolve, no PSI —
+ * the hand-rolled scanner in Lexer/FileScanner/StatementParser runs on any
+ * Kotlin target, including Wasm) — fast, dumb-mode-safe, and honest: the failure
+ * mode of the accepted ambiguities is a standard-Compose regeneration of a
+ * function the user explicitly edited.
  *
- * A function is a screen iff: top-level, `@Composable`, zero value parameters,
- * no receiver, no type parameters, no explicit return type, block body. Anything
- * else in the file (theme vals, `AppTheme`, helpers, other declarations) is
- * untouched file text the write-back never rewrites.
+ * A function is a screen iff: top-level, `@Composable`, no receiver, no type
+ * parameters, no explicit return type, block body. Anything else in the file
+ * (theme vals, `AppTheme`, helpers, other declarations) is untouched file text
+ * the write-back never rewrites.
  */
 object DesignParser {
 
@@ -40,19 +40,20 @@ object DesignParser {
     }
 
     /**
-     * Parse [file], or null when it has no screen-shaped `@Composable` function.
+     * Parse [text], or null when it has no screen-shaped `@Composable` function.
      */
-    fun parse(file: KtFile): ParsedDesign? {
+    fun parse(text: String): ParsedDesign? {
+        val file = scanSource(text)
         val functions = file.declarations
-            .filterIsInstance<KtNamedFunction>()
+            .filterIsInstance<KFunctionDecl>()
             .filter { isScreenFunction(it) }
         if (functions.isEmpty()) return null
 
-        val imports = file.importDirectives.mapNotNull { it.importPath?.pathStr }
         val ctx = ParseCtx(
+            text = text,
+            comments = file.comments,
             blockedNames = blockedNames(file),
-            screenIdsByName = functions.associate { (it.name ?: "") to "" }.keys
-                .filter { it.isNotEmpty() }
+            screenIdsByName = functions.mapNotNull { it.name }.distinct()
                 .withIndex()
                 .associate { (i, name) -> name to "s${i + 1}" },
         )
@@ -63,7 +64,7 @@ object DesignParser {
         functions.forEachIndexed { i, fn ->
             val name = fn.name ?: return@forEachIndexed
             val screenId = ctx.screenIdsByName.getValue(name)
-            val body = fn.bodyBlockExpression ?: return@forEachIndexed
+            val body = fn.bodyBlock ?: return@forEachIndexed
             val children = parseBlock(body, ctx)
             val screen = Node.Composable(
                 id = screenId,
@@ -73,13 +74,13 @@ object DesignParser {
             )
             screens += screen
             layerNames[screenId] = name
-            ctx.record(screenId, fn)
+            ctx.record(screenId, fn.range)
             parsedFns += ParsedFunction(
                 screenId = screenId,
                 functionName = name,
-                fnRange = fn.textRange.startOffset until fn.textRange.endOffset,
+                fnRange = fn.range,
                 treeHash = ParsedFunction.hashOf(screen),
-                paramList = fn.valueParameterList?.text ?: "()",
+                paramList = fn.paramListText,
             )
         }
         if (screens.isEmpty()) return null
@@ -93,43 +94,60 @@ object DesignParser {
         return ParsedDesign(
             artboard = artboard,
             functions = parsedFns,
-            existingImports = imports,
+            existingImports = file.imports.map { it.pathStr },
             importInsertOffset = importInsertOffset(file),
-            topLevelFunctionNames = file.declarations.filterIsInstance<KtNamedFunction>().mapNotNull { it.name },
+            topLevelFunctionNames = file.declarations.filterIsInstance<KFunctionDecl>().mapNotNull { it.name },
             sourceRanges = ctx.sourceRanges.toMap(),
+            hasNonScreenDeclarations = file.declarations.any {
+                it !is KFunctionDecl || !isScreenFunction(it)
+            },
+        )
+    }
+
+    /**
+     * File-level bookkeeping of [text] with NO screens parsed — the `previous`
+     * for a write-back into a file the designer hasn't seen yet.
+     */
+    fun skeleton(text: String): ParsedDesign {
+        val file = scanSource(text)
+        return ParsedDesign(
+            artboard = Node.Artboard(id = "artboard"),
+            functions = emptyList(),
+            existingImports = file.imports.map { it.pathStr },
+            importInsertOffset = importInsertOffset(file),
+            topLevelFunctionNames = file.declarations.filterIsInstance<KFunctionDecl>().mapNotNull { it.name },
+            hasNonScreenDeclarations = file.declarations.isNotEmpty(),
         )
     }
 
     // Value parameters ARE allowed (the signature is preserved verbatim on
     // write-back); statements that reference them simply become RawCode.
-    private fun isScreenFunction(fn: KtNamedFunction): Boolean =
+    private fun isScreenFunction(fn: KFunctionDecl): Boolean =
         fn.name != null &&
-            fn.annotationEntries.any { it.shortName?.asString() == "Composable" } &&
-            fn.receiverTypeReference == null &&
-            fn.typeParameters.isEmpty() &&
-            fn.typeReference == null &&
-            fn.bodyBlockExpression != null
+            "Composable" in fn.annotationNames &&
+            !fn.hasReceiver &&
+            !fn.hasTypeParams &&
+            !fn.hasReturnType &&
+            fn.bodyBlock != null
 
     /**
      * Simple names disabled file-wide: an explicit import binds the name to a
      * different FQN than codegen's (e.g. `import my.ds.Text`). Star imports and
      * unimported names stay usable (syntactic best-effort).
      */
-    private fun blockedNames(file: KtFile): Set<String> {
+    private fun blockedNames(file: KSourceFile): Set<String> {
         val blocked = mutableSetOf<String>()
-        for (directive in file.importDirectives) {
-            val path = directive.importPath ?: continue
-            if (path.isAllUnder) continue
-            val bound = path.alias?.identifier ?: path.fqName?.shortName()?.asString() ?: continue
+        for (import in file.imports) {
+            if (import.isAllUnder) continue
+            val bound = import.alias ?: import.fqName.substringAfterLast('.')
             val expected = EXPECTED_FQNS[bound] ?: continue
-            val fqn = path.fqName?.asString() ?: continue
-            if (fqn !in expected || path.alias != null) blocked += bound
+            if (import.fqName !in expected || import.alias != null) blocked += bound
         }
         return blocked
     }
 
-    private fun importInsertOffset(file: KtFile): Int =
-        file.importDirectives.lastOrNull()?.textRange?.endOffset
-            ?: file.packageDirective?.textRange?.endOffset
+    private fun importInsertOffset(file: KSourceFile): Int =
+        file.imports.lastOrNull()?.endOffset
+            ?: file.packageEndOffset
             ?: 0
 }

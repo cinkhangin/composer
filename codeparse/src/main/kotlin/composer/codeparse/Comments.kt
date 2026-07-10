@@ -13,27 +13,27 @@ internal fun startsItsLine(text: String, start: Int): Boolean {
 }
 
 /** Comments in the run directly above statement [index] of [block]. */
-internal fun attachedComments(input: ParseInput, block: KBlock, index: Int): List<KComment> {
+internal fun attachedComments(text: String, comments: List<KComment>, block: KBlock, index: Int): List<KComment> {
     val stmt = block.statements[index]
     val prevEnd = if (index > 0) block.statements[index - 1].range.last + 1 else block.bodyRange.first
-    val run = input.comments.filter { it.range.first >= prevEnd && it.range.last < stmt.range.first }
+    val run = comments.filter { it.range.first >= prevEnd && it.range.last < stmt.range.first }
     // Drop leading comments that share a line with earlier code — they trail the
     // previous statement and were handled there.
     var drop = 0
-    while (drop < run.size && !startsItsLine(input.text, run[drop].range.first)) drop++
+    while (drop < run.size && !startsItsLine(text, run[drop].range.first)) drop++
     return run.drop(drop)
 }
 
 /** The last comment on statement [index]'s own line after it, or null. */
-internal fun trailingComment(input: ParseInput, block: KBlock, index: Int): KComment? {
+internal fun trailingComment(text: String, comments: List<KComment>, block: KBlock, index: Int): KComment? {
     val stmt = block.statements[index]
     val limit = block.statements.getOrNull(index + 1)?.range?.first ?: (block.bodyRange.last + 1)
     var pos = stmt.range.last + 1
     var last: KComment? = null
-    for (c in input.comments) {
+    for (c in comments) {
         if (c.range.first < pos) continue
         if (c.range.first >= limit) break
-        val between = input.text.substring(pos, c.range.first)
+        val between = text.substring(pos, c.range.first)
         if (between.contains('\n') || between.isNotBlank()) break // newline or a real token (e.g. `;`)
         last = c
         pos = c.range.last + 1
@@ -46,15 +46,15 @@ internal fun trailingComment(input: ParseInput, block: KBlock, index: Int): KCom
  * block) — the trailing run parseBlock preserves as one RawCode. Returns the
  * (startOffset, endOffset-exclusive) span of the run, or null.
  */
-internal fun trailingBlockComments(input: ParseInput, block: KBlock): Pair<Int, Int>? {
+internal fun trailingBlockComments(text: String, comments: List<KComment>, block: KBlock): Pair<Int, Int>? {
     val from = block.statements.lastOrNull()?.range?.let { it.last + 1 } ?: block.bodyRange.first
     var first: KComment? = null
     var last: KComment? = null
-    for (c in input.comments) {
+    for (c in comments) {
         if (c.range.first < from) continue
         if (c.range.last > block.bodyRange.last) break
         // A same-line trailer of the last statement was already captured with it.
-        if (first != null || startsItsLine(input.text, c.range.first)) {
+        if (first != null || startsItsLine(text, c.range.first)) {
             if (first == null) first = c
             last = c
         }

@@ -15,18 +15,6 @@ import composer.model.TextWeight
 import composer.model.TopAppBarVariant
 import composer.model.VAlignment
 import composer.model.VArrangement
-import com.intellij.psi.PsiComment
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiWhiteSpace
-import org.jetbrains.kotlin.psi.KtBinaryExpression
-import org.jetbrains.kotlin.psi.KtBlockExpression
-import org.jetbrains.kotlin.psi.KtCallExpression
-import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
-import org.jetbrains.kotlin.psi.KtExpression
-import org.jetbrains.kotlin.psi.KtLambdaArgument
-import org.jetbrains.kotlin.psi.KtLambdaExpression
-import org.jetbrains.kotlin.psi.KtPrefixExpression
-import org.jetbrains.kotlin.psi.KtProperty
 import kotlin.math.roundToInt
 
 /**
@@ -36,6 +24,10 @@ import kotlin.math.roundToInt
  * statement never poisons its recognized siblings.
  */
 internal class ParseCtx(
+    /** The full source text (raw capture + line-start expansion). */
+    val text: String,
+    /** All comments in the file, sorted by offset. */
+    val comments: List<KComment>,
     /** Simple names disabled file-wide by a conflicting explicit import. */
     val blockedNames: Set<String>,
     /** Top-level `@Composable` function name → its screen id (for instances). */
@@ -50,135 +42,77 @@ internal class ParseCtx(
     /** Best-effort node id → source range (parse-time offsets, end exclusive). */
     val sourceRanges = mutableMapOf<String, IntRange>()
 
-    fun record(id: String, element: PsiElement) {
-        sourceRanges[id] = element.textRange.startOffset until element.textRange.endOffset
+    fun record(id: String, range: IntRange) {
+        sourceRanges[id] = range
     }
 }
 
 // ---- block parsing ---------------------------------------------------------
 
 /** Parse a block's statements into nodes ([scopeParam] = Scaffold content lambda param). */
-internal fun parseBlock(block: KtBlockExpression, ctx: ParseCtx, scopeParam: String? = null): List<Node> {
+internal fun parseBlock(block: KBlock, ctx: ParseCtx, scopeParam: String? = null): List<Node> {
     val out = mutableListOf<Node>()
     var pending: PendingState? = null
 
     fun flushPending() {
-        pending?.let { out += rawCodeNode(ctx, it.first, it.stmt) }
+        pending?.let { out += rawCodeNode(ctx, it.stmt.range.first, it.stmt.range.last + 1) }
         pending = null
     }
 
-    for (stmt in block.statements) {
-        val comments = attachedComments(stmt)
-        val trailing = trailingComment(stmt)
+    block.statements.forEachIndexed { index, stmt ->
+        val comments = attachedComments(ctx.text, ctx.comments, block, index)
+        val trailing = trailingComment(ctx.text, ctx.comments, block, index)
         if (trailing != null) {
             // A same-line trailing comment can't ride on a model node — preserve
             // the whole line (plus attached comments) verbatim.
             flushPending()
-            out += rawCodeNode(ctx, comments.firstOrNull() ?: stmt, trailing)
-            continue
+            out += rawCodeNode(ctx, comments.firstOrNull()?.range?.first ?: stmt.range.first, trailing.range.last + 1)
+            return@forEachIndexed
         }
         if (comments.isEmpty()) {
             matchStateDecl(stmt)?.let { state ->
                 flushPending()
                 pending = state
-                continue
+                return@forEachIndexed
             }
         }
         val parsed = parseComponent(stmt, comments, pending, ctx, scopeParam)
         if (parsed == null) {
             flushPending()
-            out += rawCodeNode(ctx, comments.firstOrNull() ?: stmt, stmt)
+            out += rawCodeNode(ctx, comments.firstOrNull()?.range?.first ?: stmt.range.first, stmt.range.last + 1)
         } else if (parsed.usedPending && stateUsedElsewhere(block, pending!!, stmt)) {
             // Swallowing renames the var to stateN on regeneration — unsafe when
             // any OTHER statement references it. Preserve decl + consumer verbatim.
             flushPending()
-            out += rawCodeNode(ctx, stmt, stmt)
+            out += rawCodeNode(ctx, stmt.range.first, stmt.range.last + 1)
         } else {
             if (parsed.usedPending) {
                 // The swallowed state decl regenerates with its consumer — one range.
-                ctx.sourceRanges[parsed.node.id] =
-                    pending!!.first.textRange.startOffset until stmt.textRange.endOffset
+                ctx.sourceRanges[parsed.node.id] = pending!!.stmt.range.first until stmt.range.last + 1
                 pending = null
             } else {
                 flushPending()
-                ctx.record(parsed.node.id, stmt)
+                ctx.record(parsed.node.id, stmt.range)
             }
             out += parsed.node
         }
     }
     flushPending()
-    trailingBlockComments(block)?.let { (first, last) -> out += rawCodeNode(ctx, first, last) }
+    trailingBlockComments(ctx.text, ctx.comments, block)?.let { (first, last) -> out += rawCodeNode(ctx, first, last) }
     return out
 }
 
 private class Parsed(val node: Node, val usedPending: Boolean = false)
 
-// ---- comments & raw capture -------------------------------------------------
+// ---- raw capture -------------------------------------------------------------
 
-/** Comments in the contiguous comment/whitespace run directly above [stmt]. */
-private fun attachedComments(stmt: PsiElement): List<PsiComment> {
-    val comments = ArrayDeque<PsiComment>()
-    var cur = stmt.prevSibling
-    while (cur is PsiWhiteSpace || cur is PsiComment) {
-        if (cur is PsiComment) comments.addFirst(cur)
-        cur = cur.prevSibling
-    }
-    // Drop a leading comment that shares a line with earlier code (it trails the
-    // previous statement and is handled there).
-    while (comments.isNotEmpty() && !startsItsLine(comments.first())) comments.removeFirst()
-    return comments.toList()
-}
-
-/** The last comment on [stmt]'s own line after it, or null. */
-private fun trailingComment(stmt: PsiElement): PsiComment? {
-    var last: PsiComment? = null
-    var cur = stmt.nextSibling
-    while (true) {
-        when {
-            cur is PsiComment -> last = cur
-            cur is PsiWhiteSpace && !cur.text.contains('\n') -> Unit
-            else -> return last
-        }
-        cur = cur.nextSibling
-    }
-}
-
-/** Comments between the last statement and the closing brace (or a comment-only block). */
-private fun trailingBlockComments(block: KtBlockExpression): Pair<PsiElement, PsiElement>? {
-    // Lambda bodies have no own braces, so the last statement is often the last
-    // child (nextSibling == null) — that means NO trailing run, not "scan from
-    // the block start" (which would re-capture already-consumed comments).
-    val lastStmt = block.statements.lastOrNull()
-    var first: PsiComment? = null
-    var last: PsiComment? = null
-    var cur: PsiElement? = if (lastStmt != null) lastStmt.nextSibling else block.firstChild
-    while (cur != null && cur != block.rBrace) {
-        if (cur is PsiComment) {
-            // Same-line trailers were already captured with their statement.
-            if (first != null || startsItsLine(cur)) {
-                if (first == null) first = cur
-                last = cur
-            }
-        }
-        cur = cur.nextSibling
-    }
-    return if (first != null && last != null) first to last else null
-}
-
-private fun startsItsLine(e: PsiElement): Boolean {
-    val text = e.containingFile.text
-    val start = e.textRange.startOffset
-    val lineStart = text.lastIndexOf('\n', start - 1) + 1
-    return text.substring(lineStart, start).isBlank()
-}
-
-internal fun rawCodeNode(ctx: ParseCtx, first: PsiElement, last: PsiElement): Node.RawCode {
-    val text = first.containingFile.text
-    var start = first.textRange.startOffset
+internal fun rawCodeNode(ctx: ParseCtx, startOffset: Int, endOffset: Int): Node.RawCode {
+    val text = ctx.text
+    var start = startOffset
     val lineStart = text.lastIndexOf('\n', start - 1) + 1
     if (text.substring(lineStart, start).isBlank()) start = lineStart
-    val node = Node.RawCode(ctx.newId(), dedent(text.substring(start, last.textRange.endOffset)))
-    ctx.sourceRanges[node.id] = start until last.textRange.endOffset
+    val node = Node.RawCode(ctx.newId(), dedent(text.substring(start, endOffset)))
+    ctx.sourceRanges[node.id] = start until endOffset
     return node
 }
 
@@ -205,58 +139,60 @@ internal class PendingState(
     val str: String? = null,
     val float: Float? = null,
     val int: Int? = null,
-    val stmt: KtProperty,
-    val first: PsiElement,
+    val stmt: KStatement,
 )
 
-private fun matchStateDecl(stmt: KtExpression): PendingState? {
-    val p = stmt as? KtProperty ?: return null
-    if (!p.isVar || p.receiverTypeReference != null || p.typeReference != null) return null
+private fun matchStateDecl(stmt: KStatement): PendingState? {
+    val p = stmt as? KPropertyStatement ?: return null
+    if (!p.isVar || p.hasReceiver || p.hasType) return null
     val name = p.name ?: return null
-    val remember = p.delegateExpression?.unparen() as? KtCallExpression ?: return null
+    val remember = p.delegate?.unparen() as? KCall ?: return null
     if (callName(remember) != "remember") return null
-    if (remember.valueArguments.any { it !is KtLambdaArgument }) return null
-    val lambda = remember.lambdaArguments.singleOrNull()?.getLambdaExpression() ?: return null
-    if (lambda.valueParameters.isNotEmpty()) return null
-    val only = lambda.bodyExpression?.statements?.singleOrNull()?.unparen() as? KtCallExpression ?: return null
+    if (remember.args.isNotEmpty()) return null
+    val lambda = remember.trailingLambdas.singleOrNull() ?: return null
+    if (lambda.params.isNotEmpty()) return null
+    val only = lambda.body.singleExprStatement() as? KCall ?: return null
     if (callName(only) != "mutableStateOf") return null
     val arg = only.singlePositionalArg() ?: return null
-    boolLit(arg)?.let { return PendingState(name, bool = it, stmt = p, first = p) }
-    stringLit(arg)?.let { return PendingState(name, str = it, stmt = p, first = p) }
-    floatLit(arg)?.let { return PendingState(name, float = it, stmt = p, first = p) }
-    intLit(arg)?.let { return PendingState(name, int = it, stmt = p, first = p) }
+    boolLit(arg)?.let { return PendingState(name, bool = it, stmt = p) }
+    stringLit(arg)?.let { return PendingState(name, str = it, stmt = p) }
+    floatLit(arg)?.let { return PendingState(name, float = it, stmt = p) }
+    intLit(arg)?.let { return PendingState(name, int = it, stmt = p) }
     return null
 }
 
+/** The single expression statement of a block, unparenthesized, or null. */
+private fun KBlock.singleExprStatement(): KExpr? =
+    (statements.singleOrNull() as? KExprStatement)?.expr?.unparen()
+
 /** `{ v = it }` */
-private fun isAssignItLambda(expr: KtExpression?, v: String): Boolean {
-    val body = singleLambdaStatement(expr) as? KtBinaryExpression ?: return false
-    if (body.operationReference.getReferencedName() != "=") return false
+private fun isAssignItLambda(expr: KExpr?, v: String): Boolean {
+    val body = singleLambdaStatement(expr) as? KBinary ?: return false
+    if (body.op != "=") return false
     return nameOf(body.left) == v && nameOf(body.right) == "it"
 }
 
 /** `{ v = !v }` */
-private fun isToggleLambda(expr: KtExpression?, v: String): Boolean {
-    val body = singleLambdaStatement(expr) as? KtBinaryExpression ?: return false
-    if (body.operationReference.getReferencedName() != "=") return false
+private fun isToggleLambda(expr: KExpr?, v: String): Boolean {
+    val body = singleLambdaStatement(expr) as? KBinary ?: return false
+    if (body.op != "=") return false
     if (nameOf(body.left) != v) return false
-    val not = body.right?.unparen() as? KtPrefixExpression ?: return false
-    if (not.operationReference.getReferencedName() != "!") return false
-    return nameOf(not.baseExpression) == v
+    val not = body.right?.unparen() as? KPrefix ?: return false
+    if (not.op != "!") return false
+    return nameOf(not.base) == v
 }
 
-private fun singleLambdaStatement(expr: KtExpression?): KtExpression? {
-    val l = expr?.unparen() as? KtLambdaExpression ?: return null
-    if (l.valueParameters.isNotEmpty()) return null
-    return l.bodyExpression?.statements?.singleOrNull()?.unparen()
+private fun singleLambdaStatement(expr: KExpr?): KExpr? {
+    val l = expr?.unparen() as? KLambda ?: return null
+    if (l.params.isNotEmpty()) return null
+    return l.body.singleExprStatement()
 }
 
 /** True when [state]'s var is referenced by any block statement other than its decl and [consumer]. */
-private fun stateUsedElsewhere(block: KtBlockExpression, state: PendingState, consumer: KtExpression): Boolean =
+private fun stateUsedElsewhere(block: KBlock, state: PendingState, consumer: KStatement): Boolean =
     block.statements.any { sibling ->
         if (sibling === state.stmt || sibling === consumer) return@any false
-        com.intellij.psi.util.PsiTreeUtil.findChildrenOfType(sibling, org.jetbrains.kotlin.psi.KtNameReferenceExpression::class.java)
-            .any { it.getReferencedName() == state.name }
+        sibling.tokens.any { it.kind == TokKind.IDENT && it.text == state.name }
     }
 
 // ---- component dispatch ------------------------------------------------------
@@ -288,13 +224,13 @@ private const val FONT_COMMENT_SUFFIX = "\" — embed it as a font resource and 
 private const val LOCAL_IMAGE_COMMENT = "// Local image — set a URL or wire up a real painter/resource here."
 
 private fun parseComponent(
-    stmt: KtExpression,
-    comments: List<PsiComment>,
+    stmt: KStatement,
+    comments: List<KComment>,
     pending: PendingState?,
     ctx: ParseCtx,
     scopeParam: String?,
 ): Parsed? {
-    val call = stmt.unparen() as? KtCallExpression ?: return null
+    val call = (stmt as? KExprStatement)?.expr?.unparen() as? KCall ?: return null
     val shape = callShape(call) ?: return null
     if (shape.name in ctx.blockedNames) return null
 
@@ -364,7 +300,7 @@ private fun isSymbolComment(text: String): Boolean =
 
 // ---- shared helpers ----------------------------------------------------------
 
-/** Parse an optional `modifier =` argument; Result.failure = unrecognized chain. */
+/** Parse an optional `modifier =` argument; null = unrecognized chain. */
 private fun modifierOf(shape: CallShape, scopeParam: String?): List<ModifierSpec>? {
     val expr = shape.named["modifier"] ?: return emptyList()
     return parseModifierChain(expr, scopeParam)
@@ -381,11 +317,10 @@ private inline fun simpleLeaf(
     return Parsed(build(ctx.newId(), m))
 }
 
-private fun childrenOf(lambda: KtLambdaExpression?, ctx: ParseCtx): List<Node>? {
+private fun childrenOf(lambda: KLambda?, ctx: ParseCtx): List<Node>? {
     if (lambda == null) return emptyList()
-    if (lambda.valueParameters.isNotEmpty()) return null
-    val body = lambda.bodyExpression ?: return emptyList()
-    return parseBlock(body, ctx)
+    if (lambda.params.isNotEmpty()) return null
+    return parseBlock(lambda.body, ctx)
 }
 
 // ---- leaves -------------------------------------------------------------------
@@ -432,7 +367,7 @@ private fun parseAsyncImage(shape: CallShape, ctx: ParseCtx, scopeParam: String?
 private fun parseImagePlaceholder(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
     if (shape.trailingLambda != null || shape.positional.isNotEmpty()) return null
     if (!shape.named.keys.all { it in setOf("painter", "contentDescription", "modifier") }) return null
-    val painter = shape.named["painter"]?.unparen() as? KtCallExpression ?: return null
+    val painter = shape.named["painter"]?.unparen() as? KCall ?: return null
     if (callName(painter) != "ColorPainter") return null
     val color = colorValue(painter.singlePositionalArg()) ?: return null
     val desc = stringOrNullLit(shape.named["contentDescription"] ?: return null)?.getOrNull() ?: ""
@@ -458,14 +393,14 @@ private fun parseIcon(shape: CallShape, ctx: ParseCtx, scopeParam: String?, comm
 }
 
 /** `painterResource(Res.drawable.ic_<x>)` → `x`, or null for any other shape. */
-private fun painterSymbol(expr: KtExpression?): String? {
-    val call = expr?.unparen() as? KtCallExpression ?: return null
+private fun painterSymbol(expr: KExpr?): String? {
+    val call = expr?.unparen() as? KCall ?: return null
     if (callName(call) != "painterResource") return null
-    val arg = call.singlePositionalArg()?.unparen() as? KtDotQualifiedExpression ?: return null
-    val sel = nameOf(arg.selectorExpression) ?: return null
+    val arg = call.singlePositionalArg()?.unparen().asDot() ?: return null
+    val sel = nameOf(arg.selector) ?: return null
     if (!sel.startsWith("ic_")) return null
-    val recv = arg.receiverExpression.unparen() as? KtDotQualifiedExpression ?: return null
-    if (nameOf(recv.receiverExpression) != "Res" || nameOf(recv.selectorExpression) != "drawable") return null
+    val recv = arg.receiver.unparen().asDot() ?: return null
+    if (nameOf(recv.receiver) != "Res" || nameOf(recv.selector) != "drawable") return null
     return sel.removePrefix("ic_").takeIf { it.isNotEmpty() }
 }
 
@@ -477,8 +412,8 @@ private fun parseIconButton(shape: CallShape, ctx: ParseCtx, scopeParam: String?
     // Body must be exactly `Icon(Icons.Default.X, contentDescription = null)` —
     // the model has no children slot here.
     val body = shape.trailingLambda ?: return null
-    if (body.valueParameters.isNotEmpty()) return null
-    val only = body.bodyExpression?.statements?.singleOrNull()?.unparen() as? KtCallExpression ?: return null
+    if (body.params.isNotEmpty()) return null
+    val only = body.body.singleExprStatement() as? KCall ?: return null
     val inner = callShape(only) ?: return null
     if (inner.name != "Icon" || inner.trailingLambda != null || inner.positional.size != 1) return null
     if (!inner.named.keys.all { it == "contentDescription" }) return null
@@ -499,7 +434,7 @@ private fun parseTextField(shape: CallShape, pending: PendingState?, ctx: ParseC
     val m = modifierOf(shape, scopeParam) ?: return null
     var placeholder = ""
     shape.named["label"]?.let { label ->
-        val only = singleLambdaStatement(label) as? KtCallExpression ?: return null
+        val only = singleLambdaStatement(label) as? KCall ?: return null
         val inner = callShape(only) ?: return null
         if (inner.name != "Text" || inner.named.isNotEmpty() || inner.trailingLambda != null) return null
         placeholder = stringLit(inner.positional.singleOrNull()) ?: return null
@@ -634,7 +569,7 @@ private fun parseDialog(shape: CallShape, ctx: ParseCtx, scopeParam: String?): P
     // Exact inverse of codegen's wrapper idiom — anything else stays RawCode.
     if (shape.positional.isNotEmpty() || !shape.named.keys.all { it == "onDismissRequest" }) return null
     if (!isEmptyLambda(shape.named["onDismissRequest"] ?: return null)) return null
-    val surfCall = singleLambdaStatement(shape.trailingLambda) as? KtCallExpression ?: return null
+    val surfCall = singleLambdaStatement(shape.trailingLambda) as? KCall ?: return null
     val surf = callShape(surfCall) ?: return null
     if (surf.name != "Surface" || surf.positional.isNotEmpty()) return null
     if (!surf.named.keys.all { it in setOf("modifier", "shape") }) return null
@@ -654,8 +589,8 @@ private fun parseBottomSheet(shape: CallShape, ctx: ParseCtx, scopeParam: String
 }
 
 /** The `Column(modifier = Modifier.padding(N.dp)) { children }` inside Dialog/BottomSheet. */
-private fun wrapperColumnChildren(lambda: KtLambdaExpression?, paddingAll: Int, ctx: ParseCtx): List<Node>? {
-    val colCall = singleLambdaStatement(lambda) as? KtCallExpression ?: return null
+private fun wrapperColumnChildren(lambda: KLambda?, paddingAll: Int, ctx: ParseCtx): List<Node>? {
+    val colCall = singleLambdaStatement(lambda) as? KCall ?: return null
     val col = callShape(colCall) ?: return null
     if (col.name != "Column" || col.positional.isNotEmpty() || !col.named.keys.all { it == "modifier" }) return null
     val chain = parseModifierChain(col.named["modifier"] ?: return null) ?: return null
@@ -675,22 +610,22 @@ private fun parseScaffold(shape: CallShape, ctx: ParseCtx, scopeParam: String?):
     // children may reference it by name, and regeneration always calls it
     // `innerPadding`.
     val content = shape.trailingLambda
-    val param = content?.valueParameters?.singleOrNull()?.name
-    if (content != null && content.valueParameters.size > 1) return null
+    val param = content?.params?.singleOrNull()
+    if (content != null && content.params.size > 1) return null
     if (param != null && param != "innerPadding") return null
 
     val id = ctx.newId()
     fun slot(argName: String, slotId: String, slotLabel: String): Node.Slot? {
         val lambda = shape.lambdaArg(argName) ?: return Node.Slot("$id-$slotId", slotLabel)
-        if (lambda.valueParameters.isNotEmpty()) return null
-        val kids = lambda.bodyExpression?.let { parseBlock(it, ctx) } ?: emptyList()
-        ctx.record("$id-$slotId", lambda)
+        if (lambda.params.isNotEmpty()) return null
+        val kids = parseBlock(lambda.body, ctx)
+        ctx.record("$id-$slotId", lambda.range)
         return Node.Slot("$id-$slotId", slotLabel, kids)
     }
     val topBar = slot("topBar", "topBar", "topBar") ?: return null
     val bottomBar = slot("bottomBar", "bottomBar", "bottomBar") ?: return null
     val fab = slot("floatingActionButton", "fab", "fab") ?: return null
-    val kids = content?.bodyExpression?.let { parseBlock(it, ctx, scopeParam = param) } ?: emptyList()
+    val kids = content?.let { parseBlock(it.body, ctx, scopeParam = param) } ?: emptyList()
     return Parsed(Node.Scaffold(id, kids, topBar, bottomBar, fab, m))
 }
 
@@ -702,9 +637,9 @@ private fun parseTopAppBar(shape: CallShape, ctx: ParseCtx, scopeParam: String?)
     val title = shape.named["title"]?.let { singleSlotNode(it, ctx) ?: return null }?.firstOrNull()
     val nav = shape.named["navigationIcon"]?.let { singleSlotNode(it, ctx) ?: return null }?.firstOrNull()
     val actions = shape.named["actions"]?.let { expr ->
-        val lambda = expr.unparen() as? KtLambdaExpression ?: return null
-        if (lambda.valueParameters.isNotEmpty()) return null
-        lambda.bodyExpression?.let { parseBlock(it, ctx) } ?: emptyList()
+        val lambda = expr.unparen() as? KLambda ?: return null
+        if (lambda.params.isNotEmpty()) return null
+        parseBlock(lambda.body, ctx)
     } ?: emptyList()
     return Parsed(Node.TopAppBar(id, title, nav, actions, m, TOP_BAR_VARIANTS.getValue(shape.name)))
 }
@@ -713,16 +648,20 @@ private fun parseTopAppBar(shape: CallShape, ctx: ParseCtx, scopeParam: String?)
  * A single-node slot (`title = { … }`): 0 statements → empty, 1 → parsed
  * normally, 2+ → ONE RawCode spanning the lambda body (the slot holds one node).
  */
-private fun singleSlotNode(expr: KtExpression, ctx: ParseCtx): List<Node>? {
-    val lambda = expr.unparen() as? KtLambdaExpression ?: return null
-    if (lambda.valueParameters.isNotEmpty()) return null
-    val body = lambda.bodyExpression ?: return emptyList()
+private fun singleSlotNode(expr: KExpr, ctx: ParseCtx): List<Node>? {
+    val lambda = expr.unparen() as? KLambda ?: return null
+    if (lambda.params.isNotEmpty()) return null
+    val body = lambda.body
     if (body.statements.size >= 2) {
         // Span from the first comment/statement so leading comments aren't dropped.
-        val first = generateSequence(body.firstChild?.nextSibling) { it.nextSibling }
-            .firstOrNull { it is PsiComment || (it is KtExpression && it in body.statements) }
-            ?: body.statements.first()
-        return listOf(rawCodeNode(ctx, first, body.statements.last()))
+        val firstComment = ctx.comments.firstOrNull {
+            it.range.first >= body.bodyRange.first && it.range.last <= body.bodyRange.last
+        }
+        val first = minOf(
+            firstComment?.range?.first ?: Int.MAX_VALUE,
+            body.statements.first().range.first,
+        )
+        return listOf(rawCodeNode(ctx, first, body.statements.last().range.last + 1))
     }
     return parseBlock(body, ctx)
 }
@@ -730,60 +669,59 @@ private fun singleSlotNode(expr: KtExpression, ctx: ParseCtx): List<Node>? {
 // ---- small expression readers --------------------------------------------------
 
 /** `Prefix.Name` (e.g. `FontWeight.Bold`) → enum via [convert]; null on mismatch. */
-private inline fun <T> enumFrom(expr: KtExpression, prefix: String, convert: (String) -> T): T? {
+private inline fun <T> enumFrom(expr: KExpr, prefix: String, convert: (String) -> T): T? {
     val (receiver, name) = dottedName(expr) ?: return null
     if (receiver != prefix) return null
     return runCatching { convert(name) }.getOrNull()
 }
 
 /** `Arrangement.spacedBy(N.dp)` → N. */
-private fun spacedBy(expr: KtExpression): Int? {
-    val dot = expr.unparen() as? KtDotQualifiedExpression ?: return null
-    if (nameOf(dot.receiverExpression) != "Arrangement") return null
-    val call = dot.selectorExpression?.unparen() as? KtCallExpression ?: return null
+private fun spacedBy(expr: KExpr): Int? {
+    val dot = expr.unparen().asDot() ?: return null
+    if (nameOf(dot.receiver) != "Arrangement") return null
+    val call = dot.selector?.unparen() as? KCall ?: return null
     if (callName(call) != "spacedBy") return null
     return dpInt(call.singlePositionalArg())
 }
 
-private inline fun <T> arrangementFrom(expr: KtExpression, convert: (String) -> T): T? =
+private inline fun <T> arrangementFrom(expr: KExpr, convert: (String) -> T): T? =
     enumFrom(expr, "Arrangement", convert)
 
-private fun hAlignFrom(expr: KtExpression): HAlignment? = when (dottedName(expr)) {
+private fun hAlignFrom(expr: KExpr): HAlignment? = when (dottedName(expr)) {
     "Alignment" to "Start" -> HAlignment.Start
     "Alignment" to "CenterHorizontally" -> HAlignment.Center
     "Alignment" to "End" -> HAlignment.End
     else -> null
 }
 
-private fun vAlignFrom(expr: KtExpression): VAlignment? = when (dottedName(expr)) {
+private fun vAlignFrom(expr: KExpr): VAlignment? = when (dottedName(expr)) {
     "Alignment" to "Top" -> VAlignment.Top
     "Alignment" to "CenterVertically" -> VAlignment.Center
     "Alignment" to "Bottom" -> VAlignment.Bottom
     else -> null
 }
 
-/** `Icons.Default.X` → [IconKind.X]. */
 // ---- tabs / navigation / chips / badge ----------------------------------------
 
 /** `state == N` → N (the item index codegen derives selection from). */
-private fun intEqValue(expr: KtExpression?, v: String): Int? {
-    val b = expr?.unparen() as? KtBinaryExpression ?: return null
-    if (b.operationReference.getReferencedName() != "==") return null
+private fun intEqValue(expr: KExpr?, v: String): Int? {
+    val b = expr?.unparen() as? KBinary ?: return null
+    if (b.op != "==") return null
     if (nameOf(b.left) != v) return null
     return intLit(b.right)
 }
 
 /** `{ state = N }` → N. */
-private fun assignIntLambda(expr: KtExpression?, v: String): Int? {
-    val body = singleLambdaStatement(expr) as? KtBinaryExpression ?: return null
-    if (body.operationReference.getReferencedName() != "=") return null
+private fun assignIntLambda(expr: KExpr?, v: String): Int? {
+    val body = singleLambdaStatement(expr) as? KBinary ?: return null
+    if (body.op != "=") return null
     if (nameOf(body.left) != v) return null
     return intLit(body.right)
 }
 
 /** `{ Text("x") }` → x. */
-private fun lambdaTextLabel(expr: KtExpression?): String? {
-    val only = singleLambdaStatement(expr ?: return null) as? KtCallExpression ?: return null
+private fun lambdaTextLabel(expr: KExpr?): String? {
+    val only = singleLambdaStatement(expr ?: return null) as? KCall ?: return null
     val ls = callShape(only) ?: return null
     if (ls.name != "Text" || ls.positional.size != 1 || ls.named.isNotEmpty() || ls.trailingLambda != null) return null
     return stringLit(ls.positional[0])
@@ -794,12 +732,12 @@ private fun lambdaTextLabel(expr: KtExpression?): String? {
  * contentDescription = null) }` → x (a sourcing comment inside the lambda is
  * tolerated — regeneration reproduces it from the symbol). Anything else → null.
  */
-private fun lambdaIconSymbol(expr: KtExpression?): String? {
-    val lam = expr?.unparen() as? KtLambdaExpression ?: return null
-    if (lam.valueParameters.isNotEmpty()) return null
-    val stmts = lam.bodyExpression?.statements ?: return ""
+private fun lambdaIconSymbol(expr: KExpr?): String? {
+    val lam = expr?.unparen() as? KLambda ?: return null
+    if (lam.params.isNotEmpty()) return null
+    val stmts = lam.body.statements
     if (stmts.isEmpty()) return ""
-    val only = stmts.singleOrNull()?.unparen() as? KtCallExpression ?: return null
+    val only = (stmts.singleOrNull() as? KExprStatement)?.expr?.unparen() as? KCall ?: return null
     val ish = callShape(only) ?: return null
     if (ish.name != "Icon" || ish.trailingLambda != null || ish.positional.size != 1) return null
     if (!ish.named.keys.all { it == "contentDescription" }) return null
@@ -814,10 +752,10 @@ private fun parseTabRow(shape: CallShape, pending: PendingState?, ctx: ParseCtx,
     if (nameOf(shape.named["selectedTabIndex"]) != v.name) return null
     val m = modifierOf(shape, scopeParam) ?: return null
     val body = shape.trailingLambda ?: return null
-    if (body.valueParameters.isNotEmpty()) return null
+    if (body.params.isNotEmpty()) return null
     val tabs = mutableListOf<Node>()
-    for ((i, stmt) in (body.bodyExpression?.statements ?: emptyList()).withIndex()) {
-        val call = stmt.unparen() as? KtCallExpression ?: return null
+    for ((i, stmt) in body.body.statements.withIndex()) {
+        val call = (stmt as? KExprStatement)?.expr?.unparen() as? KCall ?: return null
         val ts = callShape(call) ?: return null
         if (ts.name != "Tab" || ts.positional.isNotEmpty() || ts.trailingLambda != null) return null
         if (!ts.named.keys.all { it in setOf("selected", "onClick", "text", "modifier") }) return null
@@ -846,10 +784,10 @@ private fun parseNavigationBar(shape: CallShape, pending: PendingState?, ctx: Pa
     if (!shape.named.keys.all { it == "modifier" }) return null
     val m = modifierOf(shape, scopeParam) ?: return null
     val body = shape.trailingLambda ?: return null
-    if (body.valueParameters.isNotEmpty()) return null
+    if (body.params.isNotEmpty()) return null
     val items = mutableListOf<Node>()
-    for ((i, stmt) in (body.bodyExpression?.statements ?: emptyList()).withIndex()) {
-        val call = stmt.unparen() as? KtCallExpression ?: return null
+    for ((i, stmt) in body.body.statements.withIndex()) {
+        val call = (stmt as? KExprStatement)?.expr?.unparen() as? KCall ?: return null
         val ns = callShape(call) ?: return null
         if (ns.name != "NavigationBarItem" || ns.positional.isNotEmpty() || ns.trailingLambda != null) return null
         if (!ns.named.keys.all { it in setOf("selected", "onClick", "icon", "label", "modifier") }) return null
@@ -890,14 +828,14 @@ private fun parseBadgedBox(shape: CallShape, ctx: ParseCtx, scopeParam: String?)
     if (shape.positional.isNotEmpty()) return null
     if (!shape.named.keys.all { it in setOf("badge", "modifier") }) return null
     val badgeLambda = shape.named["badge"] ?: return null
-    val badgeCall = singleLambdaStatement(badgeLambda) as? KtCallExpression ?: return null
+    val badgeCall = singleLambdaStatement(badgeLambda) as? KCall ?: return null
     val bs = callShape(badgeCall) ?: return null
     if (bs.name != "Badge" || bs.positional.isNotEmpty() || bs.named.isNotEmpty()) return null
     val badge = when (val lam = bs.trailingLambda) {
         null -> ""
         else -> {
-            if (lam.valueParameters.isNotEmpty()) return null
-            val only = lam.bodyExpression?.statements?.singleOrNull()?.unparen() as? KtCallExpression ?: return null
+            if (lam.params.isNotEmpty()) return null
+            val only = (lam.body.statements.singleOrNull() as? KExprStatement)?.expr?.unparen() as? KCall ?: return null
             val tsh = callShape(only) ?: return null
             if (tsh.name != "Text" || tsh.positional.size != 1 || tsh.named.isNotEmpty() || tsh.trailingLambda != null) return null
             stringLit(tsh.positional[0]) ?: return null
@@ -911,16 +849,16 @@ private fun parseBadgedBox(shape: CallShape, ctx: ParseCtx, scopeParam: String?)
 // ---- canvas shapes --------------------------------------------------------------
 
 /** `N.dp.toPx()` → N (codegen parenthesizes negatives: `(-8).dp.toPx()`). */
-private fun dpPxValue(expr: KtExpression?): Int? {
-    val dot = expr?.unparen() as? KtDotQualifiedExpression ?: return null
-    val call = dot.selectorExpression?.unparen() as? KtCallExpression ?: return null
-    if (callName(call) != "toPx" || call.valueArguments.isNotEmpty() || call.lambdaArguments.isNotEmpty()) return null
-    return dpInt(dot.receiverExpression)
+private fun dpPxValue(expr: KExpr?): Int? {
+    val dot = expr?.unparen().asDot() ?: return null
+    val call = dot.selector?.unparen() as? KCall ?: return null
+    if (callName(call) != "toPx" || call.args.isNotEmpty() || call.trailingLambdas.isNotEmpty()) return null
+    return dpInt(dot.receiver)
 }
 
 /** `Offset(a.dp.toPx(), b.dp.toPx())` / `Size(...)` → the two dp ints. */
-private fun dpPxPair(expr: KtExpression?, fnName: String): Pair<Int, Int>? {
-    val call = expr?.unparen() as? KtCallExpression ?: return null
+private fun dpPxPair(expr: KExpr?, fnName: String): Pair<Int, Int>? {
+    val call = expr?.unparen() as? KCall ?: return null
     if (callName(call) != fnName) return null
     val cs = callShape(call) ?: return null
     if (cs.named.isNotEmpty() || cs.trailingLambda != null || cs.positional.size != 2) return null
@@ -930,8 +868,8 @@ private fun dpPxPair(expr: KtExpression?, fnName: String): Pair<Int, Int>? {
 }
 
 /** `Stroke(w.dp.toPx())` → w. */
-private fun strokeWidthOf(expr: KtExpression?): Int? {
-    val call = expr?.unparen() as? KtCallExpression ?: return null
+private fun strokeWidthOf(expr: KExpr?): Int? {
+    val call = expr?.unparen() as? KCall ?: return null
     if (callName(call) != "Stroke") return null
     val cs = callShape(call) ?: return null
     if (cs.named.isNotEmpty() || cs.trailingLambda != null) return null
@@ -939,7 +877,7 @@ private fun strokeWidthOf(expr: KtExpression?): Int? {
 }
 
 /** `120f` float literal that is a whole number → 120 (angles are Int in the model). */
-private fun intFromFloat(expr: KtExpression?): Int? =
+private fun intFromFloat(expr: KExpr?): Int? =
     floatLit(expr)?.takeIf { it == it.toInt().toFloat() }?.toInt()
 
 private fun parseCanvas(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
@@ -947,16 +885,16 @@ private fun parseCanvas(shape: CallShape, ctx: ParseCtx, scopeParam: String?): P
     if (!shape.named.keys.all { it == "modifier" }) return null
     val m = modifierOf(shape, scopeParam) ?: return null
     val body = shape.trailingLambda ?: return null
-    if (body.valueParameters.isNotEmpty()) return null
+    if (body.params.isNotEmpty()) return null
     val shapes = mutableListOf<Node>()
-    for (stmt in body.bodyExpression?.statements ?: emptyList()) {
-        val call = stmt.unparen() as? KtCallExpression ?: return null
+    for (stmt in body.body.statements) {
+        val call = (stmt as? KExprStatement)?.expr?.unparen() as? KCall ?: return null
         shapes += parseShapeCall(call, ctx) ?: return null
     }
     return Parsed(Node.Canvas(ctx.newId(), shapes, m))
 }
 
-private fun parseShapeCall(call: KtCallExpression, ctx: ParseCtx): Node? {
+private fun parseShapeCall(call: KCall, ctx: ParseCtx): Node? {
     val cs = callShape(call) ?: return null
     if (cs.trailingLambda != null || cs.positional.size != 1) return null
     val color = colorValue(cs.positional[0]) ?: return null
@@ -974,7 +912,7 @@ private fun parseShapeCall(call: KtCallExpression, ctx: ParseCtx): Node? {
             val (x, y) = dpPxPair(cs.named["topLeft"], "Offset") ?: return null
             val (w, h) = dpPxPair(cs.named["size"], "Size") ?: return null
             val corner = cs.named["cornerRadius"]?.let { cr ->
-                val c = cr.unparen() as? KtCallExpression ?: return null
+                val c = cr.unparen() as? KCall ?: return null
                 if (callName(c) != "CornerRadius") return null
                 dpPxValue(c.singlePositionalArg()) ?: return null
             } ?: 0
@@ -1012,10 +950,11 @@ private fun parseShapeCall(call: KtCallExpression, ctx: ParseCtx): Node? {
     }
 }
 
-private fun iconKind(expr: KtExpression): IconKind? {
-    val outer = expr.unparen() as? KtDotQualifiedExpression ?: return null
-    val name = nameOf(outer.selectorExpression) ?: return null
-    val inner = outer.receiverExpression.unparen() as? KtDotQualifiedExpression ?: return null
-    if (nameOf(inner.receiverExpression) != "Icons" || nameOf(inner.selectorExpression) != "Default") return null
+/** `Icons.Default.X` → [IconKind.X]. */
+private fun iconKind(expr: KExpr): IconKind? {
+    val outer = expr.unparen().asDot() ?: return null
+    val name = nameOf(outer.selector) ?: return null
+    val inner = outer.receiver.unparen().asDot() ?: return null
+    if (nameOf(inner.receiver) != "Icons" || nameOf(inner.selector) != "Default") return null
     return runCatching { IconKind.valueOf(name) }.getOrNull()
 }

@@ -23,11 +23,17 @@ data class ParsedDesign(
     val topLevelFunctionNames: List<String>,
     /**
      * Best-effort node id → source text range (parse-time offsets, end exclusive)
-     * of the PSI element that produced the node. Screens map to their whole
+     * of the source element that produced the node. Screens map to their whole
      * function declaration; statement-level nodes to their statement (a swallowed
      * hoisted-state decl extends its consumer's range). Used for selection sync.
      */
     val sourceRanges: Map<String, IntRange> = emptyMap(),
+    /**
+     * True when the file contains top-level code besides screen functions
+     * (helpers, theme vals, classes) — code a wholesale regeneration from the
+     * design tree would drop. The web editor surfaces this as a notice.
+     */
+    val hasNonScreenDeclarations: Boolean = false,
 )
 
 data class ParsedFunction(

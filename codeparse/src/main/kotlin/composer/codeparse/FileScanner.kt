@@ -30,6 +30,9 @@ private class Scanner(val text: String, lexed: LexResult) {
     val comments = lexed.comments
     var i = 0
 
+    /** End of the previously consumed structure — leading comments never bind past it. */
+    var prevEnd = 0
+
     fun scan(): KSourceFile {
         var packageEnd: Int? = null
         val imports = ArrayList<KImport>()
@@ -37,10 +40,17 @@ private class Scanner(val text: String, lexed: LexResult) {
         while (i < tokens.size) {
             val t = tokens[i]
             when {
-                t.isKeyword("package") -> packageEnd = skipDottedName(i + 1)
-                t.isKeyword("import") -> parseImport()?.let { imports += it }
+                t.isKeyword("package") -> {
+                    packageEnd = skipDottedName(i + 1)
+                    packageEnd?.let { prevEnd = it }
+                }
+                t.isKeyword("import") -> parseImport()?.let { imports += it; prevEnd = it.endOffset }
                 isFileAnnotation() -> skipAnnotation()
-                else -> decls += parseDeclaration()
+                else -> {
+                    val d = parseDeclaration()
+                    decls += d
+                    prevEnd = maxOf(prevEnd, d.range.last + 1)
+                }
             }
         }
         return KSourceFile(text, packageEnd, imports, decls, comments)
@@ -140,12 +150,35 @@ private class Scanner(val text: String, lexed: LexResult) {
         return skipStatementLike(declStart, declStartTok)
     }
 
-    /** Declaration start offset: first annotation/modifier token, extended over a directly preceding KDoc. */
+    /**
+     * Declaration start: first annotation/modifier token, extended over the
+     * leading comments PSI binds to the declaration — the contiguous comment run
+     * directly above (a blank line breaks the run), plus a KDoc even across
+     * blank lines. Never crosses the previous declaration's end.
+     */
     fun declStart(declStartTok: Int): Int {
-        val start = tokens[declStartTok].start
-        val kdoc = comments.lastOrNull { it.range.last < start && it.text.startsWith("/**") }
-            ?: return start
-        return if (text.substring(kdoc.range.last + 1, start).isBlank()) kdoc.range.first else start
+        var start = tokens[declStartTok].start
+        while (true) {
+            val c = comments.lastOrNull { it.range.last < start && it.range.first >= prevEnd } ?: break
+            val gap = text.substring(c.range.last + 1, start)
+            if (gap.isNotBlank()) break
+            val isKdoc = c.text.startsWith("/**") && c.text.length > 4
+            if (!isKdoc && gap.count { it == '\n' } > 1) break
+            start = c.range.first
+        }
+        return start
+    }
+
+    /** PSI binds a same-line trailing comment run to the declaration it follows. */
+    fun extendOverTrailingComments(endOffset: Int): Int {
+        var end = endOffset
+        for (c in comments) {
+            if (c.range.first < end) continue
+            val gap = text.substring(end, c.range.first)
+            if (gap.contains('\n') || gap.isNotBlank()) break
+            end = c.range.last + 1
+        }
+        return end
     }
 
     fun parseFunction(declStart: Int, annotations: List<String>): KDeclaration {
@@ -209,7 +242,7 @@ private class Scanner(val text: String, lexed: LexResult) {
         }
         return KFunctionDecl(
             name, annotations, hasReceiver, hasTypeParams, hasReturnType,
-            paramListText, bodyBlock, declStart until endOffset,
+            paramListText, bodyBlock, declStart until extendOverTrailingComments(endOffset),
         )
     }
 
@@ -261,7 +294,7 @@ private class Scanner(val text: String, lexed: LexResult) {
             }
             i = j
         }
-        return KOtherDecl(declStart until tokens[(i - 1).coerceAtLeast(0)].end)
+        return KOtherDecl(declStart until extendOverTrailingComments(tokens[(i - 1).coerceAtLeast(0)].end))
     }
 
     fun skipClassLike(declStart: Int): KDeclaration {
@@ -275,7 +308,7 @@ private class Scanner(val text: String, lexed: LexResult) {
                     "{" -> {
                         val close = matchBracket(tokens, i, tokens.size)
                         i = if (close == -1) tokens.size else close + 1
-                        return KOtherDecl(declStart until tokens[i - 1].end)
+                        return KOtherDecl(declStart until extendOverTrailingComments(tokens[i - 1].end))
                     }
                     "(", "[", "<" -> {
                         val close = if (t.text == "<") matchAngleTokens(i) else
@@ -295,7 +328,7 @@ private class Scanner(val text: String, lexed: LexResult) {
             }
             i++
         }
-        return KOtherDecl(declStart until tokens[(i - 1).coerceAtLeast(0)].end)
+        return KOtherDecl(declStart until extendOverTrailingComments(tokens[(i - 1).coerceAtLeast(0)].end))
     }
 
     /** Recovery: skip one statement-extent from the declaration start. */
@@ -303,13 +336,13 @@ private class Scanner(val text: String, lexed: LexResult) {
         val restart = tokens.indexOfFirst { it.start >= declStart }.coerceAtLeast(0)
         val end = statementEnd(tokens, maxOf(restart, 0), tokens.size).coerceAtLeast(i + 1)
         i = maxOf(end, i + 1).coerceAtMost(tokens.size)
-        return KOtherDecl(declStart until tokens[(i - 1).coerceAtLeast(0)].end)
+        return KOtherDecl(declStart until extendOverTrailingComments(tokens[(i - 1).coerceAtLeast(0)].end))
     }
 
     fun skipStatementLike(declStart: Int, declStartTok: Int): KDeclaration {
         val end = statementEnd(tokens, declStartTok, tokens.size)
         i = maxOf(end, declStartTok + 1)
-        return KOtherDecl(declStart until tokens[(i - 1).coerceAtLeast(0)].end)
+        return KOtherDecl(declStart until extendOverTrailingComments(tokens[(i - 1).coerceAtLeast(0)].end))
     }
 
     /** Index past the matching `>`, or null (mirrors [matchAngle] for scanner use). */

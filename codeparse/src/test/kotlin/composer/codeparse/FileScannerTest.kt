@@ -144,14 +144,21 @@ class FileScannerTest {
     }
 
     @Test
-    fun plain_comment_above_is_not_part_of_the_declaration() {
-        val src = """
+    fun adjacent_comment_binds_but_a_blank_line_breaks_the_run() {
+        // PSI binds the contiguous comment run directly above a declaration.
+        val adjacent = """
             // just a note
             @Composable
             fun Home() { }
         """.trimIndent()
-        val fn = funs(src).single()
-        assertEquals(src.indexOf("@Composable"), fn.range.first)
+        assertEquals(0, funs(adjacent).single().range.first)
+        val gapped = """
+            // detached note
+
+            @Composable
+            fun Home() { }
+        """.trimIndent()
+        assertEquals(gapped.indexOf("@Composable"), funs(gapped).single().range.first)
     }
 
     @Test

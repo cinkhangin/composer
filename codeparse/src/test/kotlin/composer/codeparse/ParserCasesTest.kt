@@ -22,7 +22,7 @@ class ParserCasesTest {
             body.trimEnd().lines().forEach { appendLine(if (it.isBlank()) "" else "    $it") }
             appendLine("}")
         }
-        val parsed = DesignParser.parse(PsiTestEnv.ktFile(text)) ?: error("no screen parsed")
+        val parsed = DesignParser.parse(text) ?: error("no screen parsed")
         return parsed.artboard.composables.single() as Node.Composable
     }
 
@@ -91,7 +91,7 @@ class ParserCasesTest {
 
     @Test
     fun conflicting_import_blocks_the_name_file_wide() {
-        val file = PsiTestEnv.ktFile(
+        val file =
             """
             import my.designsystem.Text
             import androidx.compose.runtime.Composable
@@ -100,8 +100,7 @@ class ParserCasesTest {
             fun Screen() {
                 Text("hello")
             }
-            """.trimIndent(),
-        )
+            """.trimIndent()
         val screen = DesignParser.parse(file)!!.artboard.composables.single() as Node.Composable
         assertTrue(screen.children.single() is Node.RawCode)
     }
@@ -142,7 +141,7 @@ class ParserCasesTest {
 
     @Test
     fun functions_with_parameters_parse_with_signature_preserved() {
-        val file = PsiTestEnv.ktFile(
+        val file =
             """
             import androidx.compose.runtime.Composable
 
@@ -156,8 +155,7 @@ class ParserCasesTest {
                 Text(label)
                 Text("static")
             }
-            """.trimIndent(),
-        )
+            """.trimIndent()
         val parsed = DesignParser.parse(file)!!
         assertEquals(listOf("Screen", "Helper"), parsed.functions.map { it.functionName })
         val helper = parsed.functions.last()
@@ -170,12 +168,12 @@ class ParserCasesTest {
 
     @Test
     fun file_without_composables_parses_to_null() {
-        assertNull(DesignParser.parse(PsiTestEnv.ktFile("fun main() {}")))
+        assertNull(DesignParser.parse("fun main() {}"))
     }
 
     @Test
     fun same_file_instance_calls_become_instances() {
-        val file = PsiTestEnv.ktFile(
+        val file =
             """
             import androidx.compose.runtime.Composable
 
@@ -188,8 +186,7 @@ class ParserCasesTest {
             fun Home() {
                 CardWidget()
             }
-            """.trimIndent(),
-        )
+            """.trimIndent()
         val parsed = DesignParser.parse(file)!!
         val home = parsed.artboard.composables[1] as Node.Composable
         val inst = home.children.single() as Node.Instance

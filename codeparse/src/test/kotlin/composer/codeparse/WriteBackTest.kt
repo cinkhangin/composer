@@ -25,7 +25,7 @@ class WriteBackTest {
         layerNames = mapOf("s1" to "FirstScreen", "s2" to "SecondScreen"),
     )
 
-    private fun parse(text: String): ParsedDesign = DesignParser.parse(PsiTestEnv.ktFile(text))!!
+    private fun parse(text: String): ParsedDesign = DesignParser.parse(text)!!
 
     @Test
     fun editing_a_parameterized_screen_preserves_its_signature() {
