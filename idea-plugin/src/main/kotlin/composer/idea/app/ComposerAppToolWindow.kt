@@ -11,8 +11,16 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
+import com.intellij.openapi.editor.EditorFactory
+import com.intellij.openapi.editor.event.CaretEvent
+import com.intellij.openapi.editor.event.CaretListener
+import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
+import com.intellij.util.ui.update.MergingUpdateQueue
+import com.intellij.util.ui.update.Update
 import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.ui.JBColor
@@ -74,6 +82,10 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
     private var bootTimer: Timer? = null
     private var rev = 0
     private var lastIncomingRev = 0
+    private var lastSelectionId: String? = null
+    private var suppressCaretEvents = false
+    private var caretSyncInstalled = false
+    private val selectionQueue = MergingUpdateQueue("composer-app-selection", 200, true, null, this)
 
     private val service get() = ComposerAppService.getInstance(project)
     private val settings get() = project.service<ComposerAppSettings>()
@@ -156,7 +168,48 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
 
     private fun startWith(main: VirtualFile) {
         service.start(main)
+        installCaretSync()
         ensureBrowser()
+    }
+
+    /** IDE caret in an owned file → designer selection (debounced, deduped). */
+    private fun installCaretSync() {
+        if (caretSyncInstalled) return
+        caretSyncInstalled = true
+        EditorFactory.getInstance().eventMulticaster.addCaretListener(
+            object : CaretListener {
+                override fun caretPositionChanged(event: CaretEvent) {
+                    if (suppressCaretEvents) return
+                    val editor = event.editor
+                    if (editor.project != project) return
+                    val file = FileDocumentManager.getInstance().getFile(editor.document) ?: return
+                    if (!service.ownsFile(file)) return
+                    selectionQueue.queue(
+                        Update.create("caret") {
+                            val id = service.nodeIdAt(file, editor.caretModel.offset) ?: return@create
+                            if (id == lastSelectionId) return@create
+                            lastSelectionId = id
+                            bridge?.send(BridgeMsg(type = "selectNode", rev = ++rev, nodeId = id))
+                        },
+                    )
+                }
+            },
+            this,
+        )
+    }
+
+    /** Designer selection → open the owning file and place the caret (no focus steal). */
+    private fun onDesignerSelection(nodeId: String?) {
+        lastSelectionId = nodeId
+        if (nodeId == null) return
+        val (vf, range) = service.sourceRangeOf(nodeId) ?: return
+        suppressCaretEvents = true
+        try {
+            FileEditorManager.getInstance(project)
+                .openTextEditor(OpenFileDescriptor(project, vf, range.first), false)
+        } finally {
+            suppressCaretEvents = false
+        }
     }
 
     private fun ensureBrowser() {
@@ -241,7 +294,7 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
         lastIncomingRev = msg.rev
         when (msg.type) {
             "designChanged" -> msg.design?.let { service.applyDesignerEdit(it) }
-            // Selection file-hopping lands with the polish milestone.
+            "selectionChanged" -> onDesignerSelection(msg.nodeId)
         }
     }
 

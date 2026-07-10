@@ -90,6 +90,32 @@ class ComposerAppService(private val project: Project) : Disposable {
         lastPushed = null
     }
 
+    /** The file + source range of [nodeId] in the last parse (selection sync). */
+    fun sourceRangeOf(nodeId: String): Pair<VirtualFile, IntRange>? {
+        val parsed = lastParsed ?: return null
+        for (f in parsed.files) {
+            val range = f.design?.sourceRanges?.get(nodeId) ?: continue
+            val vf = VirtualFileManager.getInstance().findFileByUrl("file://${f.path}")
+                ?: candidateFiles().firstOrNull { it.path == f.path }
+                ?: continue
+            return vf to range
+        }
+        return null
+    }
+
+    /** Deepest parsed node whose range contains [offset] in [file], or null. */
+    fun nodeIdAt(file: VirtualFile, offset: Int): String? {
+        val parsed = lastParsed ?: return null
+        val design = parsed.files.firstOrNull { it.path == file.path }?.design ?: return null
+        return design.sourceRanges
+            .filter { offset in it.value }
+            .minByOrNull { it.value.last - it.value.first }
+            ?.key
+    }
+
+    /** True when [file] belongs to the app's owned set (advisory checks). */
+    fun ownsFile(file: VirtualFile): Boolean = isOwnedCandidate(file)
+
     /** Re-push the last good design to a freshly booted designer. */
     fun repushForNewDesigner() {
         lastPushed = null
