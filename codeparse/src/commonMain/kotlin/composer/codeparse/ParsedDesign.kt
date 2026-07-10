@@ -55,6 +55,11 @@ data class ParsedFunction(
      * notion of parameters, and statements that use them are RawCode anyway.
      */
     val paramList: String = "()",
+    /**
+     * True when [paramList] is codegen's own synthesized nav-callback shape —
+     * write-back may re-synthesize it; false = user-authored, spliced verbatim.
+     */
+    val paramsCanonical: Boolean = false,
 ) {
     companion object {
         fun hashOf(screen: composer.model.Node.Composable): Int =

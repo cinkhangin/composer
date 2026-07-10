@@ -9,6 +9,10 @@ import composer.model.HAlignment
 import composer.model.HArrangement
 import composer.model.IconKind
 import composer.model.ModifierSpec
+import composer.model.NavAction
+import composer.model.navAction
+import composer.model.withNavAction
+import composer.model.mapChildren
 import composer.model.Node
 import composer.model.PaddingMode
 import composer.model.TextAlignment
@@ -280,11 +284,31 @@ internal class TreeGen(seed: Int) {
             screens += s
             names[s.id] = "Screen${i + 2}"
         }
+        val withNav = screens.map { s -> assignNavActions(s, screens) }
         return Node.Artboard(
             id = "artboard",
-            composables = screens,
+            composables = withNav,
             layerNames = names,
             componentIds = referenced.toList(),
         )
+    }
+
+    /**
+     * Seeded nav post-pass: a fraction of clickables get Navigate/Back actions,
+     * including the occasional DANGLING target to pin the degrade-to-None path.
+     */
+    private fun assignNavActions(screen: Node.Composable, screens: List<Node.Composable>): Node.Composable {
+        fun walk(n: Node): Node {
+            val decorated = if (n.navAction() != null && rnd.nextInt(4) == 0) {
+                val action = when (rnd.nextInt(4)) {
+                    0 -> NavAction.Back
+                    1 -> NavAction.Navigate("dangling-${rnd.nextInt(9)}")
+                    else -> NavAction.Navigate(screens[rnd.nextInt(screens.size)].id)
+                }
+                n.withNavAction(action)
+            } else n
+            return decorated.mapChildren(::walk)
+        }
+        return walk(screen) as Node.Composable
     }
 }

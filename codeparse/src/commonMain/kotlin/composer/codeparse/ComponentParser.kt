@@ -7,6 +7,7 @@ import composer.model.HAlignment
 import composer.model.HArrangement
 import composer.model.IconKind
 import composer.model.ModifierSpec
+import composer.model.NavAction
 import composer.model.Node
 import composer.model.PaddingMode
 import composer.model.TextAlignment
@@ -41,6 +42,12 @@ internal class ParseCtx(
 
     /** Best-effort node id → source range (parse-time offsets, end exclusive). */
     val sourceRanges = mutableMapOf<String, IntRange>()
+
+    /**
+     * The current function's canonical nav-callback params (name → action);
+     * set per screen by DesignParser, empty for non-canonical signatures.
+     */
+    var navParams: Map<String, NavAction> = emptyMap()
 
     fun record(id: String, range: IntRange) {
         sourceRanges[id] = range
@@ -165,6 +172,16 @@ private fun matchStateDecl(stmt: KStatement): PendingState? {
 private fun KBlock.singleExprStatement(): KExpr? =
     (statements.singleOrNull() as? KExprStatement)?.expr?.unparen()
 
+/**
+ * The canonical onClick inverse: `{}` → [NavAction.None]; a bare identifier
+ * naming one of the function's declared nav params → its action; anything
+ * else → null (whole statement RawCode, as before).
+ */
+private fun navActionOf(expr: KExpr?, ctx: ParseCtx): NavAction? = when {
+    isEmptyLambda(expr) -> NavAction.None
+    else -> nameOf(expr?.unparen())?.let { ctx.navParams[it] }
+}
+
 /** `{ v = it }` */
 private fun isAssignItLambda(expr: KExpr?, v: String): Boolean {
     val body = singleLambdaStatement(expr) as? KBinary ?: return false
@@ -259,7 +276,7 @@ private fun parseComponent(
         "Slider" -> parseSlider(shape, pending, ctx, scopeParam)
         "CircularProgressIndicator" -> simpleLeaf(shape, ctx, scopeParam) { id, m -> Node.CircularProgress(id, m) }
         "LinearProgressIndicator" -> simpleLeaf(shape, ctx, scopeParam) { id, m -> Node.LinearProgress(id, m) }
-        "Card" -> parsePlainContainer(shape, ctx, scopeParam) { id, kids, m -> Node.Card(id, kids, m) }
+        "Card" -> parseCard(shape, ctx, scopeParam)
         "FloatingActionButton" -> parseFab(shape, ctx, scopeParam)
         "Dialog" -> parseDialog(shape, ctx, scopeParam)
         "ModalBottomSheet" -> parseBottomSheet(shape, ctx, scopeParam)
@@ -407,7 +424,7 @@ private fun painterSymbol(expr: KExpr?): String? {
 private fun parseIconButton(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
     if (shape.positional.isNotEmpty()) return null
     if (!shape.named.keys.all { it in setOf("onClick", "modifier") }) return null
-    if (!isEmptyLambda(shape.named["onClick"] ?: return null)) return null
+    val nav = navActionOf(shape.named["onClick"] ?: return null, ctx) ?: return null
     val m = modifierOf(shape, scopeParam) ?: return null
     // Body must be exactly `Icon(Icons.Default.X, contentDescription = null)` —
     // the model has no children slot here.
@@ -419,10 +436,10 @@ private fun parseIconButton(shape: CallShape, ctx: ParseCtx, scopeParam: String?
     if (!inner.named.keys.all { it == "contentDescription" }) return null
     if (inner.named["contentDescription"]?.let { stringOrNullLit(it)?.getOrNull() } != null) return null
     painterSymbol(inner.positional[0])?.let { symbol ->
-        return Parsed(Node.IconButton(ctx.newId(), IconKind.Menu, m, symbol = symbol))
+        return Parsed(Node.IconButton(ctx.newId(), IconKind.Menu, m, symbol = symbol, navAction = nav))
     }
     val icon = iconKind(inner.positional[0]) ?: return null
-    return Parsed(Node.IconButton(ctx.newId(), icon, m))
+    return Parsed(Node.IconButton(ctx.newId(), icon, m, navAction = nav))
 }
 
 private fun parseTextField(shape: CallShape, pending: PendingState?, ctx: ParseCtx, scopeParam: String?): Parsed? {
@@ -483,11 +500,11 @@ private fun parseSlider(shape: CallShape, pending: PendingState?, ctx: ParseCtx,
 private fun parseButton(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
     if (shape.positional.isNotEmpty()) return null
     if (!shape.named.keys.all { it in setOf("onClick", "modifier") }) return null
-    if (!isEmptyLambda(shape.named["onClick"] ?: return null)) return null
+    val nav = navActionOf(shape.named["onClick"] ?: return null, ctx) ?: return null
     val m = modifierOf(shape, scopeParam) ?: return null
     val id = ctx.newId()
     val kids = childrenOf(shape.trailingLambda, ctx) ?: return null
-    return Parsed(Node.Button(id = id, modifier = m, variant = BUTTON_VARIANTS.getValue(shape.name), children = kids))
+    return Parsed(Node.Button(id = id, modifier = m, variant = BUTTON_VARIANTS.getValue(shape.name), children = kids, navAction = nav))
 }
 
 private inline fun parsePlainContainer(
@@ -503,14 +520,29 @@ private inline fun parsePlainContainer(
     return Parsed(build(id, kids, m))
 }
 
-private fun parseFab(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
+private fun parseCard(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
     if (shape.positional.isNotEmpty()) return null
     if (!shape.named.keys.all { it in setOf("onClick", "modifier") }) return null
-    if (!isEmptyLambda(shape.named["onClick"] ?: return null)) return null
+    // The clickable overload carries a nav action; the plain form has no onClick.
+    val nav = shape.named["onClick"]?.let { expr ->
+        val a = navActionOf(expr, ctx) ?: return null
+        if (a == NavAction.None) return null // canonical plain Card omits onClick entirely
+        a
+    } ?: NavAction.None
     val m = modifierOf(shape, scopeParam) ?: return null
     val id = ctx.newId()
     val kids = childrenOf(shape.trailingLambda, ctx) ?: return null
-    return Parsed(Node.Fab(id, kids, m))
+    return Parsed(Node.Card(id, kids, m, navAction = nav))
+}
+
+private fun parseFab(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
+    if (shape.positional.isNotEmpty()) return null
+    if (!shape.named.keys.all { it in setOf("onClick", "modifier") }) return null
+    val nav = navActionOf(shape.named["onClick"] ?: return null, ctx) ?: return null
+    val m = modifierOf(shape, scopeParam) ?: return null
+    val id = ctx.newId()
+    val kids = childrenOf(shape.trailingLambda, ctx) ?: return null
+    return Parsed(Node.Fab(id, kids, m, navAction = nav))
 }
 
 private fun parseColumn(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
@@ -815,13 +847,19 @@ private fun parseChip(shape: CallShape, pending: PendingState?, ctx: ParseCtx, s
     val symbol = shape.named[iconParam]?.let { lambdaIconSymbol(it) ?: return null } ?: ""
     val m = modifierOf(shape, scopeParam) ?: return null
     if (stateful) {
-        val v = pending?.takeIf { it.bool != null } ?: return null
-        if (nameOf(shape.named["selected"]) != v.name) return null
-        if (!isToggleLambda(shape.named["onClick"], v.name)) return null
-        return Parsed(Node.Chip(ctx.newId(), label, variant, selected = v.bool!!, symbol = symbol, modifier = m), usedPending = true)
+        // Toggle form: hoisted state var + toggle lambda (no nav action).
+        val v = pending?.takeIf { it.bool != null }
+        if (v != null && nameOf(shape.named["selected"]) == v.name && isToggleLambda(shape.named["onClick"], v.name)) {
+            return Parsed(Node.Chip(ctx.newId(), label, variant, selected = v.bool!!, symbol = symbol, modifier = m), usedPending = true)
+        }
+        // Nav form: a chip that navigates doesn't toggle — literal `selected` + nav onClick.
+        val selected = boolLit(shape.named["selected"] ?: return null) ?: return null
+        val nav = navActionOf(shape.named["onClick"] ?: return null, ctx) ?: return null
+        if (nav == NavAction.None) return null // canonical stateless Filter/Input always navigates
+        return Parsed(Node.Chip(ctx.newId(), label, variant, selected = selected, symbol = symbol, modifier = m, navAction = nav))
     }
-    if (!isEmptyLambda(shape.named["onClick"] ?: return null)) return null
-    return Parsed(Node.Chip(ctx.newId(), label, variant, symbol = symbol, modifier = m))
+    val nav = navActionOf(shape.named["onClick"] ?: return null, ctx) ?: return null
+    return Parsed(Node.Chip(ctx.newId(), label, variant, symbol = symbol, modifier = m, navAction = nav))
 }
 
 private fun parseBadgedBox(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {

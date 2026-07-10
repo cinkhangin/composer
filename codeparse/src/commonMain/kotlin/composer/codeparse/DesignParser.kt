@@ -1,5 +1,6 @@
 package composer.codeparse
 
+import composer.model.NavAction
 import composer.model.Node
 
 /**
@@ -65,7 +66,10 @@ object DesignParser {
             val name = fn.name ?: return@forEachIndexed
             val screenId = ctx.screenIdsByName.getValue(name)
             val body = fn.bodyBlock ?: return@forEachIndexed
+            val navParams = parseNavParamList(fn.paramListText, ctx.screenIdsByName)
+            ctx.navParams = navParams ?: emptyMap()
             val children = parseBlock(body, ctx)
+            ctx.navParams = emptyMap()
             val screen = Node.Composable(
                 id = screenId,
                 children = children,
@@ -81,6 +85,7 @@ object DesignParser {
                 fnRange = fn.range,
                 treeHash = ParsedFunction.hashOf(screen),
                 paramList = fn.paramListText,
+                paramsCanonical = navParams != null,
             )
         }
         if (screens.isEmpty()) return null
@@ -156,6 +161,37 @@ object DesignParser {
             if (import.fqName !in expected || import.alias != null) blocked += bound
         }
         return blocked
+    }
+
+    private val NAV_PARAM = Regex("""^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*\(\)\s*->\s*Unit\s*=\s*\{\}$""")
+
+    /**
+     * The exact inverse of codegen's synthesized nav-callback signature:
+     * `()` or `(name: () -> Unit = {}, …)` where every name is `onBack` or
+     * `onNavigateTo<Fn>` resolving to a screen in this file. Returns the
+     * name → action map, or null for any other (user-authored) signature —
+     * which is then preserved verbatim, exactly as before.
+     */
+    private fun parseNavParamList(paramsText: String, screenIdsByName: Map<String, String>): Map<String, NavAction>? {
+        val trimmed = paramsText.trim()
+        if (!trimmed.startsWith("(") || !trimmed.endsWith(")")) return null
+        val inner = trimmed.substring(1, trimmed.length - 1).trim()
+        if (inner.isEmpty()) return emptyMap()
+        val out = LinkedHashMap<String, NavAction>()
+        for (part in inner.split(',')) {
+            val m = NAV_PARAM.matchEntire(part.trim()) ?: return null
+            val name = m.groupValues[1]
+            val action = when {
+                name == "onBack" -> NavAction.Back
+                name.startsWith("onNavigateTo") -> {
+                    val target = name.removePrefix("onNavigateTo")
+                    NavAction.Navigate(screenIdsByName[target] ?: return null)
+                }
+                else -> return null
+            }
+            if (out.put(name, action) != null) return null
+        }
+        return out
     }
 
     private fun importInsertOffset(file: KSourceFile): Int =

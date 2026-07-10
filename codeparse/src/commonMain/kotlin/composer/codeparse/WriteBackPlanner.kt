@@ -1,7 +1,9 @@
 package composer.codeparse
 
 import composer.codegen.CodeGen
+import composer.model.NavAction
 import composer.model.Node
+import composer.model.navAction
 import composer.model.childNodes
 import composer.model.validComponentIds
 
@@ -12,7 +14,12 @@ data class TextEdit(val start: Int, val end: Int, val replacement: String)
 data class ScreenRename(val from: String, val to: String)
 
 /** Edits to apply (unordered) — apply descending by [TextEdit.start]. */
-data class WriteBackPlan(val edits: List<TextEdit>, val renames: List<ScreenRename> = emptyList())
+data class WriteBackPlan(
+    val edits: List<TextEdit>,
+    val renames: List<ScreenRename> = emptyList(),
+    /** Human-readable caveats (e.g. nav callbacks not wired into a custom signature). */
+    val warnings: List<String> = emptyList(),
+)
 
 /**
  * Designer edits → minimal text edits, honoring the preservation contract:
@@ -68,15 +75,28 @@ object WriteBackPlanner {
         val renamedIds = editedScreens.mapNotNull { s ->
             prevById[s.id]?.takeIf { it.functionName != names[s.id] }?.screenId
         }.toSet()
+        // A renamed OR deleted screen changes its referrers' emission: instance
+        // calls and synthesized nav-callback param names both derive from it.
+        val deletedIds = previous.functions.map { it.screenId }.filterNot { it in editedIds }.toSet()
+        val changedTargets = renamedIds + deletedIds
 
         fun referencesRenamed(screen: Node.Composable): Boolean {
             fun walk(n: Node): Boolean =
-                (n is Node.Instance && n.refId in renamedIds) || n.childNodes().any(::walk)
+                (n is Node.Instance && n.refId in changedTargets) ||
+                    (n.navAction() as? NavAction.Navigate)?.screenId in changedTargets ||
+                    n.childNodes().any(::walk)
+            return walk(screen)
+        }
+
+        fun hasNavActions(screen: Node.Composable): Boolean {
+            fun walk(n: Node): Boolean =
+                (n.navAction() ?: NavAction.None) != NavAction.None || n.childNodes().any(::walk)
             return walk(screen)
         }
 
         val edits = mutableListOf<TextEdit>()
         val newImports = mutableSetOf<String>()
+        val warnings = mutableListOf<String>()
 
         for (screen in editedScreens) {
             val prev = prevById[screen.id]
@@ -85,9 +105,14 @@ object WriteBackPlanner {
                 prev.functionName != names.getValue(screen.id) ||
                 referencesRenamed(screen)
             if (!changed) continue
-            // New screens get an empty signature; existing ones keep theirs verbatim
-            // (parameters aren't modeled — bodies using them are RawCode).
-            val code = CodeGen.screenFunction(screen, names.getValue(screen.id), componentFns, params = prev?.paramList ?: "()")
+            // New/canonical screens get a synthesized nav-callback signature;
+            // user-authored ones keep theirs verbatim (nav actions whose params
+            // aren't declared there degrade to onClick = {}).
+            val verbatimParams = prev?.takeIf { !it.paramsCanonical }?.paramList
+            if (verbatimParams != null && hasNavActions(screen)) {
+                warnings += "\"${names.getValue(screen.id)}\" has navigation actions but a custom signature — callbacks that aren't declared in it were not wired."
+            }
+            val code = CodeGen.screenFunction(screen, names.getValue(screen.id), componentFns, params = verbatimParams, navFns = names)
             newImports += code.imports
             if (prev == null) {
                 // Append at EOF, separated by exactly one blank line.
@@ -140,7 +165,7 @@ object WriteBackPlanner {
         val renames = renamedIds.mapNotNull { id ->
             prevById[id]?.let { ScreenRename(from = it.functionName, to = names.getValue(id)) }
         }
-        return WriteBackPlan(edits, renames)
+        return WriteBackPlan(edits, renames, warnings)
     }
 
     /** Apply [plan] to [text] (tests / non-IDE callers). */

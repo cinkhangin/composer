@@ -1,7 +1,10 @@
 package composer.codeparse
 
 import composer.model.ModifierSpec
+import composer.model.NavAction
 import composer.model.Node
+import composer.model.navAction
+import composer.model.withNavAction
 import composer.model.childNodes
 import composer.model.mapChildren
 import composer.model.withId
@@ -28,6 +31,9 @@ internal fun canon(root: Node): Node {
         node.childNodes().forEach(::assign)
     }
     assign(root)
+    // Live navigation targets = screens on the artboard; a Navigate to anything
+    // else is invisible in emitted code (codegen degrades it to None).
+    val screenIds = (root as? Node.Artboard)?.composables?.mapTo(mutableSetOf()) { it.id } ?: emptySet<String>()
 
     fun rewrite(node: Node): Node {
         val renamed = node.withId(idMap.getValue(node.id))
@@ -57,7 +63,13 @@ internal fun canon(root: Node): Node {
             }
             else -> renamed
         }
-        val withMods = fixed.let { n ->
+        val navFixed = when (val a = fixed.navAction()) {
+            is NavAction.Navigate ->
+                if (a.screenId in screenIds) fixed.withNavAction(NavAction.Navigate(idMap.getValue(a.screenId)))
+                else fixed.withNavAction(NavAction.None)
+            else -> fixed
+        }
+        val withMods = navFixed.let { n ->
             val mods = n.modifier.map { spec ->
                 when {
                     spec is ModifierSpec.Background && spec.gradientStops().isNotEmpty() ->
