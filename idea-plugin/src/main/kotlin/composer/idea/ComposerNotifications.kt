@@ -1,8 +1,13 @@
 package composer.idea
 
+import com.intellij.notification.Notification
+import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
+import java.awt.datatransfer.StringSelection
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -18,6 +23,21 @@ object ComposerNotifications {
 
     fun infoOnce(project: Project?, key: String, content: String) =
         once(project, key, content, NotificationType.INFORMATION)
+
+    /** Info balloon with a "copy" action putting [copyText] on the clipboard. */
+    fun infoOnceWithCopy(project: Project?, key: String, content: String, copyLabel: String, copyText: String) {
+        if (!shown.add(key)) return
+        NotificationGroupManager.getInstance()
+            .getNotificationGroup("Composer")
+            .createNotification(content, NotificationType.INFORMATION)
+            .addAction(object : NotificationAction(copyLabel) {
+                override fun actionPerformed(e: AnActionEvent, notification: Notification) {
+                    CopyPasteManager.getInstance().setContents(StringSelection(copyText))
+                    notification.expire()
+                }
+            })
+            .notify(project)
+    }
 
     private fun once(project: Project?, key: String, content: String, type: NotificationType) {
         if (!shown.add(key)) return

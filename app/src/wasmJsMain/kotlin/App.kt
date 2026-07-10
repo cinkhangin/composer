@@ -879,7 +879,8 @@ private fun SizeBadge(state: EditorState, modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            ToolButton("Composable", icon = AppIconKind.Plus) { state.addComposable() }
+            // App mode: a composable here IS a screen (3 generated files + a route).
+            ToolButton(if (EmbeddedBridge.appMode) "Screen" else "Composable", icon = AppIconKind.Plus) { state.addComposable() }
             val comps = state.componentDefs()
             if (comps.isNotEmpty()) {
                 Box(Modifier.width(1.dp).height(20.dp).padding(horizontal = 2.dp).background(Tk.border))

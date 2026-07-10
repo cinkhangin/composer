@@ -135,18 +135,19 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
             .expireWith(this)
             .finishOnUiThread(ModalityState.defaultModalityState()) { vf ->
                 if (vf == null) {
-                    showStatus(
-                        "No MainActivity.kt with a NavDisplay found. Scaffolding a new app arrives in the next step.",
-                        enable = true,
-                    )
-                    ComposerNotifications.infoOnce(
-                        project,
-                        "composer.app.nomain",
-                        "Composer App Designer needs a MainActivity.kt using Navigation 3's NavDisplay to adopt.",
-                    )
+                    // Nothing to adopt — offer to scaffold a fresh app skeleton.
+                    val created = ComposerAppScaffold.scaffold(project)
+                    if (created == null) {
+                        showStatus("Design your whole app: screens, ViewModels, and navigation.", enable = true)
+                    } else {
+                        settings.state.enabled = true
+                        settings.state.mainActivityUrl = created.url
+                        startWith(created)
+                    }
                 } else {
                     settings.state.enabled = true
                     settings.state.mainActivityUrl = vf.url
+                    ComposerAppScaffold.notifyDepsIfMissing(project)
                     startWith(vf)
                 }
             }

@@ -173,7 +173,7 @@ object AppParser {
 
     private val PACKAGE = Regex("""^\s*package\s+([A-Za-z_][\w.]*)""", RegexOption.MULTILINE)
 
-    internal fun packageNameOf(text: String): String? = PACKAGE.find(text)?.groupValues?.get(1)
+    fun packageNameOf(text: String): String? = PACKAGE.find(text)?.groupValues?.get(1)
 
     private class ThemeParse(val themes: List<NamedTheme>, val active: Int)
 
