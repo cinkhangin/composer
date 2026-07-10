@@ -92,10 +92,14 @@ import composer.ui.ToolButton
  * back into [EditorState], so the canvas and code panel update live.
  */
 @Composable
-fun Inspector(state: EditorState, modifier: Modifier = Modifier) {
+fun Inspector(state: EditorState, modifier: Modifier = Modifier, onCollapse: (() -> Unit)? = null) {
     Column(modifier = modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxWidth().height(46.dp).padding(horizontal = 16.dp), contentAlignment = Alignment.CenterStart) {
-            SectionHeader("Inspector", icon = AppIconKind.Sliders)
+        Row(
+            Modifier.fillMaxWidth().height(46.dp).padding(start = 16.dp, end = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SectionHeader("Inspector", icon = AppIconKind.Sliders, modifier = Modifier.weight(1f))
+            onCollapse?.let { SquareIconButton(AppIconKind.CollapseRight, tip = "Hide inspector", onClick = it) }
         }
         HDivider()
 

@@ -15,6 +15,7 @@ enum class AppIconKind {
     Grip, Plus, Close, Trash, ArrowUp, ArrowDown, Duplicate,
     Sliders, Layers, ChevronRight, ChevronDown, Sun, Moon, Code, Design, File, Home, Fit,
     Undo, Redo, Share, Menu,
+    CollapseLeft, ExpandLeft, CollapseRight, ExpandRight,
 }
 
 @Composable
@@ -45,4 +46,8 @@ private fun AppIconKind.symbolName(): String = when (this) {
     AppIconKind.Redo -> "redo"
     AppIconKind.Share -> "share"
     AppIconKind.Menu -> "menu"
+    AppIconKind.CollapseLeft -> "left_panel_close"
+    AppIconKind.ExpandLeft -> "left_panel_open"
+    AppIconKind.CollapseRight -> "right_panel_close"
+    AppIconKind.ExpandRight -> "right_panel_open"
 }

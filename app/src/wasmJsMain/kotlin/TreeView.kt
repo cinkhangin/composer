@@ -53,6 +53,7 @@ import composer.ui.AppIcon
 import composer.ui.AppIconKind
 import composer.ui.ComponentGlyph
 import composer.ui.SectionHeader
+import composer.ui.SquareIconButton
 import composer.ui.Tk
 
 private val ROW_HEIGHT = 28.dp
@@ -64,7 +65,7 @@ private val ROW_HEIGHT = 28.dp
  * the middle of a container). Two-way synced with the canvas via {selectedId}.
  */
 @Composable
-fun TreeView(state: EditorState, modifier: Modifier = Modifier) {
+fun TreeView(state: EditorState, modifier: Modifier = Modifier, onCollapse: (() -> Unit)? = null) {
     val expanded = remember { mutableStateMapOf<String, Boolean>() }
     val dnd = remember { TreeDndState() }
     val scroll = rememberScrollState()
@@ -95,8 +96,12 @@ fun TreeView(state: EditorState, modifier: Modifier = Modifier) {
         }
     }
     Column(modifier = modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxWidth().height(46.dp).padding(horizontal = 16.dp), contentAlignment = Alignment.CenterStart) {
-            SectionHeader("Layers", icon = AppIconKind.Layers)
+        Row(
+            Modifier.fillMaxWidth().height(46.dp).padding(start = 16.dp, end = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SectionHeader("Layers", icon = AppIconKind.Layers, modifier = Modifier.weight(1f))
+            onCollapse?.let { SquareIconButton(AppIconKind.CollapseLeft, tip = "Hide layers", onClick = it) }
         }
         Column(
             modifier = Modifier

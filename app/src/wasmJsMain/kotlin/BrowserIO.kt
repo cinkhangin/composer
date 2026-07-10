@@ -75,3 +75,14 @@ fun dismissBootLoader() {
 fun openUrl(url: String) {
     window.open(url, "_blank")
 }
+
+// Side-panel visibility (IntelliJ-style collapse) — persisted per panel.
+private const val PANEL_KEY_PREFIX = "composer.panel."
+const val PANEL_LEFT = "layers"
+const val PANEL_RIGHT = "inspector"
+
+fun loadPanelOpen(panel: String): Boolean = localStorage.getItem(PANEL_KEY_PREFIX + panel) != "closed"
+
+fun savePanelOpen(panel: String, open: Boolean) {
+    localStorage.setItem(PANEL_KEY_PREFIX + panel, if (open) "open" else "closed")
+}

@@ -119,6 +119,7 @@ import composer.render.RenderNode
 import composer.render.toColorScheme
 import composer.ui.AppIcon
 import composer.ui.AppIconKind
+import composer.ui.SquareIconButton
 import composer.ui.HDivider
 import composer.ui.Island
 import composer.ui.LocalThemeSwatches
@@ -242,7 +243,11 @@ fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
             modifier = Modifier.weight(1f).fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Tk.gap),
         ) {
-            Island(Modifier.width(240.dp).fillMaxHeight()) { TreeView(state) }
+            if (state.leftPanelOpen) {
+                Island(Modifier.width(240.dp).fillMaxHeight()) { TreeView(state, onCollapse = state::toggleLeftPanel) }
+            } else {
+                CollapsedPanelStrip(AppIconKind.ExpandLeft, tip = "Show layers", onExpand = state::toggleLeftPanel)
+            }
             Island(
                 Modifier.weight(1f).fillMaxHeight().then(
                     // On any canvas press, reclaim editor focus (Initial pass, no consume) so
@@ -258,9 +263,26 @@ fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
             ) {
                 if (state.showCode) CodePanel(state, codeSync) else Canvas(state)
             }
-            Island(Modifier.width(240.dp).fillMaxHeight()) { Inspector(state) }
+            if (state.rightPanelOpen) {
+                Island(Modifier.width(240.dp).fillMaxHeight()) { Inspector(state, onCollapse = state::toggleRightPanel) }
+            } else {
+                CollapsedPanelStrip(AppIconKind.ExpandRight, tip = "Show inspector", onExpand = state::toggleRightPanel)
+            }
         }
     }
+    }
+}
+
+/**
+ * A collapsed side panel: a slim island with just the expand affordance, aligned
+ * with the neighbors' headers (IntelliJ tool-window style).
+ */
+@Composable
+private fun CollapsedPanelStrip(icon: AppIconKind, tip: String, onExpand: () -> Unit) {
+    Island(Modifier.width(46.dp).fillMaxHeight()) {
+        Box(Modifier.fillMaxWidth().height(46.dp), contentAlignment = Alignment.Center) {
+            SquareIconButton(icon, tip = tip, onClick = onExpand)
+        }
     }
 }
 

@@ -59,6 +59,23 @@ class EditorState(initial: Node) {
         showCode = value
     }
 
+    // Side panels collapse to slim strips (IntelliJ tool-window style) so the
+    // canvas/code gets the room; the preference persists across sessions.
+    var leftPanelOpen by mutableStateOf(loadPanelOpen(PANEL_LEFT))
+        private set
+    var rightPanelOpen by mutableStateOf(loadPanelOpen(PANEL_RIGHT))
+        private set
+
+    fun toggleLeftPanel() {
+        leftPanelOpen = !leftPanelOpen
+        savePanelOpen(PANEL_LEFT, leftPanelOpen)
+    }
+
+    fun toggleRightPanel() {
+        rightPanelOpen = !rightPanelOpen
+        savePanelOpen(PANEL_RIGHT, rightPanelOpen)
+    }
+
     /** The design root — always an [Node.Artboard] (see the migration in the constructor). */
     val artboard: Node.Artboard get() = root as Node.Artboard
 
