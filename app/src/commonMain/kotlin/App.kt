@@ -1245,8 +1245,12 @@ private fun SelectionOverlay(
         }
 
         // Figma-style dimensions pill under the selection's bottom edge (when that
-        // edge is on screen); centered on the visible span of the selection.
-        if (outer.bottom >= 0f && outer.bottom <= viewport.height - 12f * onePx) {
+        // edge is on screen); centered on the visible span of the selection. A
+        // viewport narrower than the pill (IDE tool window) inverts the clamp
+        // range — coerceIn would throw and kill the composition, so skip it.
+        if (outer.bottom >= 0f && outer.bottom <= viewport.height - 12f * onePx &&
+            viewport.width >= 120f * onePx
+        ) {
             val cx = ((vx0 + vx1) / 2f).coerceIn(60f * onePx, viewport.width - 60f * onePx)
             Box(
                 modifier = Modifier
