@@ -54,13 +54,29 @@ object DesignerHosts {
 
     private val forceJcef: Boolean get() = java.lang.Boolean.getBoolean("composer.designer.jcef")
 
+    /**
+     * True when the IDE ships Compose for Desktop and exposes it to this plugin
+     * (the plugin.xml `intellij.platform.compose` module dependency, present in
+     * platform-compose builds). The plugin never bundles compose itself: on old
+     * IDEs a bundled runtime dies on the platform-forced kotlin-stdlib split
+     * (kotlin.time.Duration is platform-loaded under our newer skiko), and on
+     * new IDEs the second skiko native can't coexist with the platform's.
+     */
+    private val platformComposeAvailable: Boolean by lazy {
+        runCatching {
+            Class.forName("androidx.compose.ui.awt.ComposePanel", false, DesignerHosts::class.java.classLoader)
+        }.isSuccess
+    }
+
     fun create(parent: Disposable): Result {
-        if (!forceJcef) return Result.Ok(DirectDesignerHost().also { Disposer.register(parent, it) })
+        if (platformComposeAvailable && !forceJcef) {
+            return Result.Ok(DirectDesignerHost().also { Disposer.register(parent, it) })
+        }
         if (!JBCefApp.isSupported()) {
             return Result.Failed(
-                "<html>JCEF designer mode is forced (composer.designer.jcef) but this IDE runtime has no JCEF.<br>" +
-                    "Fix: Search Everywhere (Shift Shift) → \"Choose Boot Java Runtime for the IDE\" → " +
-                    "pick a runtime with JCEF → restart. Or drop the flag to use the in-process designer.</html>",
+                "<html>This IDE has neither bundled Compose (2025.1+/AS Narwhal+) nor a JCEF runtime,<br>" +
+                    "so no designer can run. Fix: Search Everywhere (Shift Shift) → " +
+                    "\"Choose Boot Java Runtime for the IDE\" → pick a runtime with JCEF → restart.</html>",
                 retryable = false,
             )
         }

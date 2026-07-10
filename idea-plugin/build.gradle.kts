@@ -44,20 +44,21 @@ configurations.runtimeClasspath {
     exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
     exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
     exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jdk8")
-    // Platform-compose mode (-Pcomposer.platformCompose=true): don't bundle
-    // compose/skiko — the IDE's own copies are used via the plugin.xml module
-    // dependency on intellij.platform.compose. Two skiko dylibs in one process
-    // fail (objc class collisions + UnsatisfiedLinkError on Metal init), so on
-    // Compose-shipping IDEs we may ONLY bundle what the platform lacks:
-    // material3 + material (ripple/icons) + components-resources.
-    if (providers.gradleProperty("composer.platformCompose").orNull == "true") {
-        exclude(group = "org.jetbrains.compose.desktop")
-        exclude(group = "org.jetbrains.compose.runtime")
-        exclude(group = "org.jetbrains.compose.foundation")
-        exclude(group = "org.jetbrains.compose.ui")
-        exclude(group = "org.jetbrains.compose.animation")
-        exclude(group = "org.jetbrains.skiko")
-    }
+    // NEVER bundle compose/skiko: on Compose-shipping IDEs (AS 261+/IDEA 251+)
+    // the platform's copies are used via the plugin.xml module dependency on
+    // intellij.platform.compose (two skiko dylibs in one process fail with objc
+    // class collisions + UnsatisfiedLinkError), and on older IDEs a bundled
+    // runtime dies anyway: the plugin classloader force-loads signature classes
+    // like kotlin.time.Duration from the PLATFORM's older stdlib, splitting the
+    // stdlib under skiko (NoSuchMethodError in the Metal redrawer). Older IDEs
+    // use the JCEF web designer instead. We bundle ONLY what compose-shipping
+    // platforms lack: material3 + material (ripple/icons) + components-resources.
+    exclude(group = "org.jetbrains.compose.desktop")
+    exclude(group = "org.jetbrains.compose.runtime")
+    exclude(group = "org.jetbrains.compose.foundation")
+    exclude(group = "org.jetbrains.compose.ui")
+    exclude(group = "org.jetbrains.compose.animation")
+    exclude(group = "org.jetbrains.skiko")
 }
 
 intellijPlatform {
@@ -109,6 +110,10 @@ tasks.named<RunIdeTask>("runIde") {
         "composer.web.dist.dir",
         rootProject.layout.projectDirectory.dir("app/build/dist/wasmJs/productionExecutable").asFile.absolutePath,
     )
+    // The platform plugin auto-attaches the Compose Hot Reload agent (alpha,
+    // class-redefinition) when it sees compose on the classpath — keep that
+    // instrumentation out of the designer host.
+    composeHotReload = false
 }
 
 // Run the plugin in a locally installed Android Studio instead of the IDEA
@@ -124,6 +129,7 @@ if (file(androidStudioPath).exists()) {
                 "composer.web.dist.dir",
                 rootProject.layout.projectDirectory.dir("app/build/dist/wasmJs/productionExecutable").asFile.absolutePath,
             )
+            composeHotReload = false
         }
     }
 }

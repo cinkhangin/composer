@@ -52,6 +52,7 @@ import javax.swing.Timer
  */
 class ComposerAppToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
+        thisLogger().info("Composer createToolWindowContent")
         val panel = ComposerAppPanel(project)
         val content = toolWindow.contentManager.factory.createContent(panel.component, "", false)
         Disposer.register(content, panel)
@@ -64,10 +65,24 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
     val component = JPanel(BorderLayout())
     private val cards = JPanel(CardLayout())
     private val statusLabel = JBLabel("", SwingConstants.CENTER)
-    private val enableButton = JButton("Enable App Designer").apply { addActionListener { enable() } }
+    // NOTE: triggered from mousePressed, not an ActionListener — inside this
+    // tool window the button's action event never fires (press delivered,
+    // release/action swallowed; keyboard activation dead too). Root cause
+    // untracked; the raw press is reliable.
+    private val enableButton = JButton("Enable App Designer").apply {
+        addMouseListener(object : java.awt.event.MouseAdapter() {
+            override fun mousePressed(e: java.awt.event.MouseEvent) {
+                if (isVisible) enable()
+            }
+        })
+    }
     private val retryButton = JButton("Retry").apply {
         isVisible = false
-        addActionListener { retry() }
+        addMouseListener(object : java.awt.event.MouseAdapter() {
+            override fun mousePressed(e: java.awt.event.MouseEvent) {
+                if (isVisible) retry()
+            }
+        })
     }
     private val warningBanner = JBLabel("", SwingConstants.CENTER).apply {
         border = JBUI.Borders.empty(6)
@@ -87,6 +102,7 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
     private val settings get() = project.service<ComposerAppSettings>()
 
     init {
+        log.info("Composer panel init (enabled=${settings.state.enabled}, url=${settings.state.mainActivityUrl})")
         val statusPanel = JPanel(GridBagLayout())
         val column = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -119,19 +135,27 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
             }
         } else {
             showStatus("Design your whole app: screens, ViewModels, and navigation.", enable = true)
+            autoAdopt()
         }
     }
 
-    private fun showStatus(text: String, enable: Boolean = false, retry: Boolean = false) {
-        statusLabel.text = text
-        enableButton.isVisible = enable
-        retryButton.isVisible = retry
-        (cards.layout as CardLayout).show(cards, CARD_STATUS)
+    /**
+     * Adopt silently when the project already has a NavDisplay MainActivity —
+     * the designer should just appear; the button stays for the scaffold path.
+     */
+    private fun autoAdopt() {
+        findAdoptableMainActivity { vf ->
+            if (vf != null && host == null) {
+                log.info("Composer auto-adopting ${vf.path}")
+                settings.state.enabled = true
+                settings.state.mainActivityUrl = vf.url
+                ComposerAppScaffold.notifyDepsIfMissing(project)
+                startWith(vf)
+            }
+        }
     }
 
-    /** Find a MainActivity with a NavDisplay and adopt it (scaffolding comes later). */
-    private fun enable() {
-        showStatus("Looking for MainActivity.kt…")
+    private fun findAdoptableMainActivity(onDone: (VirtualFile?) -> Unit) {
         ReadAction.nonBlocking<VirtualFile?> {
             FilenameIndex.getVirtualFilesByName("MainActivity.kt", GlobalSearchScope.projectScope(project))
                 .firstOrNull { vf ->
@@ -142,25 +166,40 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
         }
             .inSmartMode(project) // FilenameIndex during indexing would fail the promise silently
             .expireWith(this)
-            .finishOnUiThread(ModalityState.defaultModalityState()) { vf ->
-                if (vf == null) {
-                    // Nothing to adopt — offer to scaffold a fresh app skeleton.
-                    val created = ComposerAppScaffold.scaffold(project)
-                    if (created == null) {
-                        showStatus("Design your whole app: screens, ViewModels, and navigation.", enable = true)
-                    } else {
-                        settings.state.enabled = true
-                        settings.state.mainActivityUrl = created.url
-                        startWith(created)
-                    }
+            .finishOnUiThread(ModalityState.defaultModalityState(), onDone)
+            .submit(AppExecutorUtil.getAppExecutorService())
+    }
+
+    private fun showStatus(text: String, enable: Boolean = false, retry: Boolean = false) {
+        statusLabel.text = text
+        enableButton.isVisible = enable
+        retryButton.isVisible = retry
+        (cards.layout as CardLayout).show(cards, CARD_STATUS)
+    }
+
+    /** Find a MainActivity with a NavDisplay and adopt it, else offer to scaffold. */
+    private fun enable() {
+        log.info("Composer enable clicked")
+        showStatus("Looking for MainActivity.kt…")
+        findAdoptableMainActivity { vf ->
+            log.info("Composer adoption search finished: ${vf?.path ?: "none found"}")
+            if (vf == null) {
+                // Nothing to adopt — offer to scaffold a fresh app skeleton.
+                val created = ComposerAppScaffold.scaffold(project)
+                if (created == null) {
+                    showStatus("Design your whole app: screens, ViewModels, and navigation.", enable = true)
                 } else {
                     settings.state.enabled = true
-                    settings.state.mainActivityUrl = vf.url
-                    ComposerAppScaffold.notifyDepsIfMissing(project)
-                    startWith(vf)
+                    settings.state.mainActivityUrl = created.url
+                    startWith(created)
                 }
+            } else {
+                settings.state.enabled = true
+                settings.state.mainActivityUrl = vf.url
+                ComposerAppScaffold.notifyDepsIfMissing(project)
+                startWith(vf)
             }
-            .submit(AppExecutorUtil.getAppExecutorService())
+        }
     }
 
     private fun startWith(main: VirtualFile) {
@@ -210,6 +249,7 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
     }
 
     private fun ensureDesigner() {
+        log.info("Composer ensureDesigner (host=${host != null})")
         if (host != null) return
         val h = when (val r = DesignerHosts.create(this)) {
             is DesignerHosts.Result.Failed -> {
@@ -219,6 +259,7 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
             }
             is DesignerHosts.Result.Ok -> r.host
         }
+        log.info("Composer designer host: ${h.javaClass.simpleName}")
         host = h
         h.onMessage = ::onBridgeMessage
         h.onUndecodable = {
@@ -273,6 +314,7 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
     }
 
     private fun onBridgeMessage(msg: BridgeMsg) {
+        log.info("Composer bridge message: ${msg.type}")
         if (msg.type == "ready") {
             lastIncomingRev = 0
             bootTimer?.stop()
