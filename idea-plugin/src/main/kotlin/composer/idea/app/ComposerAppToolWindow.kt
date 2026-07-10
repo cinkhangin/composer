@@ -140,6 +140,7 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
                     }.getOrDefault(false)
                 }
         }
+            .inSmartMode(project) // FilenameIndex during indexing would fail the promise silently
             .expireWith(this)
             .finishOnUiThread(ModalityState.defaultModalityState()) { vf ->
                 if (vf == null) {
