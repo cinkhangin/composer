@@ -1,5 +1,8 @@
 package composer
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import composer.model.DesignJson
 import composer.model.Node
 import kotlinx.serialization.Serializable
@@ -35,9 +38,15 @@ data class BridgeMsg(
     val design: String? = null,
     val nodeId: String? = null,
     val dark: Boolean? = null,
+    /** True when the host is the whole-app tool window (cosmetic gating only). */
+    val appMode: Boolean? = null,
 )
 
 object EmbeddedBridge {
+    /** Whole-app host mode, as reported by the host's loadDesign (snapshot state). */
+    var appMode by mutableStateOf(false)
+        private set
+
     /** True when running inside a host (the `?embedded=1` query param is present). */
     val active: Boolean by lazy { embeddedFlag() }
 
@@ -112,6 +121,7 @@ object EmbeddedBridge {
         if (msg.rev > 0) lastInRev = msg.rev
         when (msg.type) {
             "loadDesign" -> {
+                msg.appMode?.let { appMode = it }
                 val tree = msg.design?.let { runCatching { DesignJson.decode(it) }.getOrNull() } ?: return
                 onLoadDesign?.invoke(tree)
             }

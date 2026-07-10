@@ -25,6 +25,8 @@ data class BridgeMsg(
     val design: String? = null,
     val nodeId: String? = null,
     val dark: Boolean? = null,
+    /** Sent on `loadDesign` by the whole-app tool window; cosmetic gating on the web side. */
+    val appMode: Boolean? = null,
 )
 
 /** Forward-compatible envelope codec (unknown fields/types are ignored). */
