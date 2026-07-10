@@ -41,32 +41,53 @@ object DesignParser {
     }
 
     /**
+     * Cross-file name environment for app-mode parsing: instance calls and
+     * `onNavigateTo<X>` params resolve through the app's GLOBAL maps instead of
+     * this file's functions, and screen ids are assigned by the app plan.
+     */
+    class ExternalNames(
+        /** Callable composable name → screen id (instances; e.g. `HomeScreenUI` → s2). */
+        val screenIdsByName: Map<String, String>,
+        /** Nav base name → screen id (`onNavigateToHome` → s2). */
+        val navBaseToScreenId: Map<String, String>,
+        /** THIS file's function name → its fixed screen id; other fns aren't screens. */
+        val fixedScreenIds: Map<String, String>,
+        /** Node-id prefix keeping ids unique across the app's separately parsed files. */
+        val idPrefix: String = "",
+    )
+
+    /**
      * Parse [text], or null when it has no screen-shaped `@Composable` function.
      */
-    fun parse(text: String): ParsedDesign? {
+    fun parse(text: String, external: ExternalNames? = null): ParsedDesign? {
         val file = scanSource(text)
         val functions = file.declarations
             .filterIsInstance<KFunctionDecl>()
             .filter { isScreenFunction(it) && !isAppThemeWrapper(it) }
+            .filter { external == null || it.name in external.fixedScreenIds }
         if (functions.isEmpty()) return null
 
         val ctx = ParseCtx(
             text = text,
             comments = file.comments,
             blockedNames = blockedNames(file),
-            screenIdsByName = functions.mapNotNull { it.name }.distinct()
-                .withIndex()
-                .associate { (i, name) -> name to "s${i + 1}" },
+            screenIdsByName = external?.screenIdsByName
+                ?: functions.mapNotNull { it.name }.distinct()
+                    .withIndex()
+                    .associate { (i, name) -> name to "s${i + 1}" },
+            idPrefix = external?.idPrefix ?: "",
         )
+        val fixedIds = external?.fixedScreenIds
+        val navNames = external?.navBaseToScreenId ?: ctx.screenIdsByName
 
         val screens = mutableListOf<Node.Composable>()
         val parsedFns = mutableListOf<ParsedFunction>()
         val layerNames = mutableMapOf<String, String>()
         functions.forEachIndexed { i, fn ->
             val name = fn.name ?: return@forEachIndexed
-            val screenId = ctx.screenIdsByName.getValue(name)
+            val screenId = fixedIds?.getValue(name) ?: ctx.screenIdsByName.getValue(name)
             val body = fn.bodyBlock ?: return@forEachIndexed
-            val navParams = parseNavParamList(fn.paramListText, ctx.screenIdsByName)
+            val navParams = parseNavParamList(fn.paramListText, navNames)
             ctx.navParams = navParams ?: emptyMap()
             val children = parseBlock(body, ctx)
             ctx.navParams = emptyMap()
@@ -103,7 +124,11 @@ object DesignParser {
             importInsertOffset = importInsertOffset(file),
             topLevelFunctionNames = file.declarations.filterIsInstance<KFunctionDecl>().mapNotNull { it.name },
             sourceRanges = ctx.sourceRanges.toMap(),
-            hasNonScreenDeclarations = file.declarations.any { isForeignDeclaration(it) },
+            hasNonScreenDeclarations = file.declarations.any {
+                isForeignDeclaration(it) ||
+                    (external != null && it is KFunctionDecl && isScreenFunction(it) &&
+                        !isAppThemeWrapper(it) && it.name !in external.fixedScreenIds)
+            },
         )
     }
 

@@ -68,8 +68,12 @@ object AppCodeGen {
         val themed = themes.size > 1 || themes.any { it.theme.isCustomized() }
         val used = mutableSetOf("MainActivity", "App", "AppTheme")
         val schemeVals = if (themed) {
+            // Dedupe the BASE, then append "Colors" — so the parser's inverse
+            // (strip the suffix) reproduces the exact val name on regeneration.
             themes.mapIndexed { i, named ->
-                dedupe((CodeGen.sanitizeName(named.name) ?: "Theme${i + 1}") + "Colors", used)
+                val base = dedupe(CodeGen.sanitizeName(named.name) ?: "Theme${i + 1}", used)
+                used += "${base}Colors"
+                "${base}Colors"
             }
         } else emptyList()
         val screens = artboard.composables.filterIsInstance<Node.Composable>()

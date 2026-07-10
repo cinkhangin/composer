@@ -141,10 +141,11 @@ private class Scanner(val text: String, lexed: LexResult) {
             val t = tokens[i]
             when {
                 t.isKeyword("fun") -> return parseFunction(declStart, annotations)
-                t.isKeyword("val") || t.isKeyword("var") -> return skipProperty(declStart)
-                t.isKeyword("class") || t.isKeyword("interface") || t.isKeyword("object") ->
-                    return skipClassLike(declStart)
-                t.isKeyword("typealias") -> return skipStatementLike(declStart, declStartTok)
+                t.isKeyword("val") || t.isKeyword("var") -> return skipProperty(declStart, annotations)
+                t.isKeyword("class") -> return skipClassLike(declStart, annotations, OtherKind.Class)
+                t.isKeyword("interface") -> return skipClassLike(declStart, annotations, OtherKind.Interface)
+                t.isKeyword("object") -> return skipClassLike(declStart, annotations, OtherKind.Object)
+                t.isKeyword("typealias") -> return skipStatementLike(declStart, declStartTok, OtherKind.TypeAlias)
             }
         }
         return skipStatementLike(declStart, declStartTok)
@@ -266,7 +267,8 @@ private class Scanner(val text: String, lexed: LexResult) {
         }
     }
 
-    fun skipProperty(declStart: Int): KDeclaration {
+    fun skipProperty(declStart: Int, annotations: List<String> = emptyList()): KDeclaration {
+        val propName = if (identAt(i + 1)) tokens[i + 1].text else null
         // `val X = lightColorScheme(…)` / `darkColorScheme(…)` — regeneration
         // reproduces these from the design's themes; they're not foreign code.
         val themeArtifact = tokens[i].isKeyword("val") &&
@@ -304,41 +306,76 @@ private class Scanner(val text: String, lexed: LexResult) {
         return KOtherDecl(
             declStart until extendOverTrailingComments(tokens[(i - 1).coerceAtLeast(0)].end),
             themeArtifact = themeArtifact,
+            name = propName,
+            kind = OtherKind.Property,
+            annotationNames = annotations,
         )
     }
 
-    fun skipClassLike(declStart: Int): KDeclaration {
+    fun skipClassLike(declStart: Int, annotations: List<String>, kind: OtherKind): KDeclaration {
         i++ // class/interface/object keyword
+        val name = if (identAt(i)) tokens[i].text else null
         // Header: constructor parens, supertype calls, type params — until the body brace
-        // or a newline that starts something new.
+        // or a newline that starts something new. Supertype simple names are the
+        // last identifier of each dotted name after the header `:` at depth 0.
+        val superTypes = ArrayList<String>()
+        var inSupers = false
+        var inDelegate = false // after `by` — the delegation expr is not a supertype name
+        var lastIdent: String? = null
+        fun flushSuper() {
+            if (inSupers) lastIdent?.let { superTypes += it }
+            lastIdent = null
+        }
+        fun finish(endTokenExclusive: Int): KDeclaration {
+            flushSuper()
+            return KOtherDecl(
+                declStart until extendOverTrailingComments(tokens[(endTokenExclusive - 1).coerceAtLeast(0)].end),
+                name = name,
+                kind = kind,
+                annotationNames = annotations,
+                superTypes = superTypes,
+            )
+        }
         while (i < tokens.size) {
             val t = tokens[i]
+            // Break BEFORE consuming the token: a newline that starts something new
+            // ends a body-less declaration (and must not leak into supertypes).
+            if (t.newlineBefore && i > 0) {
+                val prev = tokens[i - 1]
+                val headerContinues = prev.kind == TokKind.PUNCT &&
+                    prev.text in setOf(":", ",", ".", "(", "<", "by")
+                val glue = t.kind == TokKind.PUNCT && (t.text == ":" || t.text == "," || t.text == "{" || t.text == ".")
+                if (!headerContinues && !glue) return finish(i) // body-less declaration
+            }
             if (t.kind == TokKind.PUNCT) {
                 when (t.text) {
                     "{" -> {
                         val close = matchBracket(tokens, i, tokens.size)
                         i = if (close == -1) tokens.size else close + 1
-                        return KOtherDecl(declStart until extendOverTrailingComments(tokens[i - 1].end))
+                        return finish(i)
                     }
                     "(", "[", "<" -> {
+                        // A supertype's constructor call ends its name; skip the args.
+                        if (t.text == "(") flushSuper()
                         val close = if (t.text == "<") matchAngleTokens(i) else
                             matchBracket(tokens, i, tokens.size).takeIf { it != -1 }?.plus(1)
                         if (close == null) return recoverDecl(declStart)
                         i = close
                         continue
                     }
+                    ":" -> { flushSuper(); inSupers = true }
+                    "," -> { flushSuper(); inDelegate = false }
+                    "." -> {} // dotted supertype — keep tracking the last segment
                 }
-            }
-            if (t.newlineBefore && i > 0) {
-                val prev = tokens[i - 1]
-                val headerContinues = prev.kind == TokKind.PUNCT &&
-                    prev.text in setOf(":", ",", ".", "(", "<", "by")
-                val glue = t.kind == TokKind.PUNCT && (t.text == ":" || t.text == "," || t.text == "{" || t.text == ".")
-                if (!headerContinues && !glue) break // body-less declaration
+            } else if (t.kind == TokKind.IDENT) {
+                when {
+                    t.isKeyword("by") -> { flushSuper(); inDelegate = true }
+                    inSupers && !inDelegate -> lastIdent = t.text
+                }
             }
             i++
         }
-        return KOtherDecl(declStart until extendOverTrailingComments(tokens[(i - 1).coerceAtLeast(0)].end))
+        return finish(i)
     }
 
     /** Recovery: skip one statement-extent from the declaration start. */
@@ -349,10 +386,10 @@ private class Scanner(val text: String, lexed: LexResult) {
         return KOtherDecl(declStart until extendOverTrailingComments(tokens[(i - 1).coerceAtLeast(0)].end))
     }
 
-    fun skipStatementLike(declStart: Int, declStartTok: Int): KDeclaration {
+    fun skipStatementLike(declStart: Int, declStartTok: Int, kind: OtherKind = OtherKind.Other): KDeclaration {
         val end = statementEnd(tokens, declStartTok, tokens.size)
         i = maxOf(end, declStartTok + 1)
-        return KOtherDecl(declStart until extendOverTrailingComments(tokens[(i - 1).coerceAtLeast(0)].end))
+        return KOtherDecl(declStart until extendOverTrailingComments(tokens[(i - 1).coerceAtLeast(0)].end), kind = kind)
     }
 
     /** Index past the matching `>`, or null (mirrors [matchAngle] for scanner use). */

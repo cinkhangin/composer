@@ -145,11 +145,25 @@ internal class KFunctionDecl(
     override val range: IntRange,
 ) : KDeclaration
 
-/** A skipped top-level declaration (class/object/property/…) — extent only. */
+internal enum class OtherKind { Class, Object, Interface, Property, TypeAlias, Other }
+
+/**
+ * A skipped top-level declaration. The parser never descends into these, but
+ * the scanner retains enough header shape (name, kind, annotations, supertype
+ * simple names) for AppParser to recognize generated artifacts — route objects
+ * (`@Serializable data object X : NavKey`), ViewModels, MainActivity — without
+ * ever parsing user code inside them.
+ */
 internal class KOtherDecl(
     override val range: IntRange,
     /** `val X = light|darkColorScheme(…)` — codegen's own theme block, not user code. */
     val themeArtifact: Boolean = false,
+    val name: String? = null,
+    val kind: OtherKind = OtherKind.Other,
+    /** Annotation short names, use-site targets stripped. */
+    val annotationNames: List<String> = emptyList(),
+    /** Supertype simple names from the header (`: NavKey`, `: ViewModel()`). */
+    val superTypes: List<String> = emptyList(),
 ) : KDeclaration
 
 internal class KSourceFile(

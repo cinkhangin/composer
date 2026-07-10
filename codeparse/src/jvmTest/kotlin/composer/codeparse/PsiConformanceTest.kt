@@ -1,7 +1,9 @@
 package composer.codeparse
 
 import composer.codegen.CodeGen
+import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtNamedFunction
+import org.jetbrains.kotlin.psi.KtProperty
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -38,6 +40,31 @@ class PsiConformanceTest {
                 )
             }
         }
+
+        // Class-like declarations: the scanner's enriched header info must match PSI.
+        val psiClasses = file.declarations.filterIsInstance<KtClassOrObject>()
+        val myClasses = scanned.declarations.filterIsInstance<KOtherDecl>()
+            .filter { it.kind == OtherKind.Class || it.kind == OtherKind.Object || it.kind == OtherKind.Interface }
+        assertEquals(psiClasses.map { it.name }, myClasses.map { it.name }, "class names\n$text")
+        psiClasses.zip(myClasses).forEach { (p, m) ->
+            assertEquals(
+                p.textRange.startOffset until p.textRange.endOffset, m.range,
+                "class range of ${p.name}\n$text",
+            )
+            assertEquals(
+                p.annotationEntries.mapNotNull { it.shortName?.asString() },
+                m.annotationNames,
+                "annotations of ${p.name}\n$text",
+            )
+            assertEquals(
+                p.superTypeListEntries.mapNotNull { it.typeAsUserType?.referencedName },
+                m.superTypes,
+                "supertypes of ${p.name}\n$text",
+            )
+        }
+        val psiProps = file.declarations.filterIsInstance<KtProperty>()
+        val myProps = scanned.declarations.filterIsInstance<KOtherDecl>().filter { it.kind == OtherKind.Property }
+        assertEquals(psiProps.map { it.name }, myProps.map { it.name }, "property names\n$text")
 
         assertEquals(
             file.importDirectives.mapNotNull { it.importPath?.pathStr },
@@ -159,6 +186,50 @@ class PsiConformanceTest {
             """
             @Composable
             fun Bare() { Text("b") }
+            """.trimIndent(),
+            // App-mode generated shapes: routes, ViewModel, MainActivity.
+            """
+            package com.example.app
+
+            import androidx.navigation3.runtime.NavKey
+            import kotlinx.serialization.Serializable
+
+            @Serializable
+            data object Login : NavKey
+
+            @Serializable
+            data object Home : NavKey
+
+            data class LoginUiState(
+                val isLoading: Boolean = false,
+            )
+
+            class LoginViewModel : ViewModel() {
+                private val _uiState = MutableStateFlow(LoginUiState())
+                val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
+            }
+
+            class MainActivity : ComponentActivity() {
+                override fun onCreate(savedInstanceState: Bundle?) {
+                    super.onCreate(savedInstanceState)
+                    setContent {
+                        App()
+                    }
+                }
+            }
+            """.trimIndent(),
+            // Generic/delegated/dotted supertypes and enum/companion shapes.
+            """
+            class Repo<T : Any>(val x: T) : Base<T>(), Iface by impl {
+                companion object
+            }
+
+            enum class Kind { A, B }
+
+            class Dotted : androidx.activity.ComponentActivity() {
+            }
+
+            val topLevel: Int = 1
             """.trimIndent(),
             // Trailing lambda on its own line binds to the call (Kotlin gotcha).
             """

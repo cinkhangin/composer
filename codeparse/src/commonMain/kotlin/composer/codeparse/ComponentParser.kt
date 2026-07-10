@@ -33,9 +33,11 @@ internal class ParseCtx(
     val blockedNames: Set<String>,
     /** Top-level `@Composable` function name → its screen id (for instances). */
     val screenIdsByName: Map<String, String>,
+    /** Prepended to node ids — app mode parses each file separately and ids must stay app-unique. */
+    val idPrefix: String = "",
 ) {
     private var n = 0
-    fun newId(): String = "p${++n}"
+    fun newId(): String = "${idPrefix}p${++n}"
 
     /** Screen ids referenced by parsed instances → Artboard.componentIds. */
     val referencedScreenIds = LinkedHashSet<String>()
