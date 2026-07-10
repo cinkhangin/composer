@@ -32,16 +32,10 @@ kotlin {
         }
         val commonMain by getting {
             dependencies {
-                // Direct coordinates: the compose.* DSL aliases are deprecated since CMP 1.10.
-                implementation("org.jetbrains.compose.runtime:runtime:1.11.1")
-                implementation("org.jetbrains.compose.components:components-resources:1.11.1")
-            }
-        }
-        val wasmJsMain by getting {
-            dependencies {
                 implementation(project(":model"))
                 implementation(project(":codegen"))
                 implementation(project(":codeparse")) // code→design for the editable code view
+                // Direct coordinates: the compose.* DSL aliases are deprecated since CMP 1.10.
                 implementation("org.jetbrains.compose.runtime:runtime:1.11.1")
                 implementation("org.jetbrains.compose.foundation:foundation:1.11.1")
                 // material3 is versioned independently of CMP since 1.8.
@@ -51,19 +45,19 @@ kotlin {
                 implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
                 implementation("org.jetbrains.compose.components:components-resources:1.11.1")
                 implementation("org.jetbrains.compose.ui:ui:1.11.1")
-                implementation("org.jetbrains.kotlinx:kotlinx-browser:0.3")
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+            }
+        }
+        val wasmJsMain by getting {
+            dependencies {
+                implementation("org.jetbrains.kotlinx:kotlinx-browser:0.3")
             }
         }
         val jvmMain by getting {
             dependencies {
-                implementation(project(":model"))
-                implementation(project(":codegen"))
-                implementation(project(":codeparse"))
-                // Compose Desktop (macOS arm64 for now; other hosts when needed).
+                // Compose Desktop (macOS arm64 for now; other hosts when needed) —
+                // carries the skiko-awt runtime natives the jvm target renders with.
                 implementation("org.jetbrains.compose.desktop:desktop-jvm-macos-arm64:1.11.1")
-                implementation("org.jetbrains.compose.material3:material3-desktop:1.9.0")
-                implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
             }
         }
     }

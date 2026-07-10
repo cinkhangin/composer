@@ -48,13 +48,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import kotlinx.browser.window
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.onEach
-import org.w3c.dom.events.Event
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -209,9 +207,8 @@ fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
         // Flush on tab close: the 700ms debounce would otherwise drop the last edit.
         // Only save if the design actually diverged, so closing an untouched new design creates no file.
         DisposableEffect(state, ws) {
-            val flush: (Event) -> Unit = { if (state.root != ws.initialDesign) ws.save(state.root) }
-            window.addEventListener("beforeunload", flush)
-            onDispose { window.removeEventListener("beforeunload", flush) }
+            val unregister = registerUnloadFlush { if (state.root != ws.initialDesign) ws.save(state.root) }
+            onDispose { unregister() }
         }
     }
 

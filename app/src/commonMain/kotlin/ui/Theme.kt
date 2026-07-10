@@ -9,7 +9,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import kotlinx.browser.localStorage
+import composer.prefGet
+import composer.prefSet
 
 /**
  * A full set of color tokens. Two instances exist — [DarkPalette] and
@@ -92,17 +93,17 @@ private val LightPalette = Palette(
 
 private const val THEME_KEY = "composer.theme"
 
-/** Active theme. Persisted to localStorage; flipping [isDark] re-renders the whole UI. */
+/** Active theme. Persisted as a preference; flipping [isDark] re-renders the whole UI. */
 object Theme {
     // Default to dark unless the user explicitly chose light last time.
-    var isDark by mutableStateOf(localStorage.getItem(THEME_KEY) != "light")
+    var isDark by mutableStateOf(prefGet(THEME_KEY) != "light")
         private set
 
     val palette: Palette get() = if (isDark) DarkPalette else LightPalette
 
     fun toggle() {
         isDark = !isDark
-        localStorage.setItem(THEME_KEY, if (isDark) "dark" else "light")
+        prefSet(THEME_KEY, if (isDark) "dark" else "light")
     }
 
     /** Host-driven theme (IDE plugin follows the IDE's LaF) — not persisted. */

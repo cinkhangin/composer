@@ -136,14 +136,17 @@ object EmbeddedBridge {
     }
 }
 
-private fun embeddedFlag(): Boolean =
-    js("new URLSearchParams(window.location.search).has('embedded')")
+// ---- Transport seam. Web: the JCEF-injected window globals. JVM: in-process
+// hooks wired directly by the IDE designer panel (DesignerHostConnection). ----
 
-private fun hostReady(): Boolean =
-    js("typeof window.__composerHost !== 'undefined' && window.__composerHost !== null")
+/** True when the app was launched embedded in a host (web: `?embedded=1`). */
+internal expect fun embeddedFlag(): Boolean
 
-private fun hostPost(msg: String): Unit =
-    js("window.__composerHost.postMessage(msg)")
+/** True once the host's message sink exists ([hostPost] may be called). */
+internal expect fun hostReady(): Boolean
 
-private fun registerEmbedReceiver(onMessage: (String) -> Unit): Unit =
-    js("window.__composerEmbed = { receive: function (s) { onMessage(String(s)); } }")
+/** Deliver one web→host envelope. Only called while [hostReady] is true. */
+internal expect fun hostPost(msg: String)
+
+/** Register the host→web receiver. */
+internal expect fun registerEmbedReceiver(onMessage: (String) -> Unit)

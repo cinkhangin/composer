@@ -1,40 +1,27 @@
 package composer
 
 import kotlinx.browser.localStorage
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-
-/** Metadata for one saved design ("file"). */
-@Serializable
-data class FileMeta(val id: String, val name: String, val updatedAt: Double)
-
-/** Outcome of a save attempt. Failures are surfaced (not thrown) so the UI can warn instead of losing data silently. */
-sealed interface SaveResult {
-    data class Ok(val meta: FileMeta) : SaveResult
-    /** localStorage is full (~5 MB) — usually inline base64 images bloating the design JSON. */
-    data object QuotaExceeded : SaveResult
-    data class Error(val name: String) : SaveResult
-}
 
 /**
  * Browser-backed multi-file storage (localStorage). An index of [FileMeta] lives
  * under [INDEX_KEY]; each design's JSON lives under `composer.file.<id>`.
  */
-object FileStore {
+actual object FileStore {
     private const val INDEX_KEY = "composer.files"
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun list(): List<FileMeta> {
+    actual fun list(): List<FileMeta> {
         val raw = localStorage.getItem(INDEX_KEY) ?: return emptyList()
         return runCatching { json.decodeFromString<List<FileMeta>>(raw) }.getOrDefault(emptyList())
             .sortedByDescending { it.updatedAt }
     }
 
-    fun loadDesign(id: String): String? = localStorage.getItem("composer.file.$id")
+    actual fun loadDesign(id: String): String? = localStorage.getItem("composer.file.$id")
 
-    fun save(id: String, name: String, designJson: String): SaveResult {
+    actual fun save(id: String, name: String, designJson: String): SaveResult {
         // Write the (large) design blob first: if quota is hit it fails here, before the
         // index is touched, so the index stays consistent with the last good state.
         setItemSafe("composer.file.$id", designJson).let { if (it.isNotEmpty()) return toFailure(it) }
@@ -44,13 +31,13 @@ object FileStore {
         return SaveResult.Ok(meta)
     }
 
-    fun delete(id: String) {
+    actual fun delete(id: String) {
         localStorage.removeItem("composer.file.$id")
         // Removing frees space, so this write shouldn't hit quota; ignore any failure.
         setItemSafe(INDEX_KEY, json.encodeToString(list().filter { it.id != id }))
     }
 
-    fun newId(): String = "f" + nowMs().toLong().toString()
+    actual fun newId(): String = "f" + nowMs().toLong().toString()
 
     private fun toFailure(errorName: String): SaveResult =
         if (errorName.contains("quota", ignoreCase = true)) SaveResult.QuotaExceeded
