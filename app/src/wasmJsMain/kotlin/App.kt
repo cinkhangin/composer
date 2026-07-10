@@ -8,7 +8,6 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -28,10 +27,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -133,10 +130,6 @@ import composer.ui.Tk
 import composer.ui.TkMenu
 import composer.ui.TkMenuItem
 import composer.ui.ToolButton
-import composer.ui.highlightKotlin
-import composer.res.Res
-import composer.res.jetbrainsmono_regular
-import org.jetbrains.compose.resources.Font
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -149,6 +142,9 @@ import androidx.compose.ui.text.rememberTextMeasurer
 @Composable
 fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
     val state = remember { EditorState(ws.initialDesign) }
+    // Hoisted next to the state so typed code formatting survives Design↔Code
+    // toggles; a file open rebuilds everything via key(openToken) in Root().
+    val codeSync = remember { CodeSyncState() }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
     // Reclaim keyboard focus for the editor whenever the selection changes (e.g. after
@@ -260,7 +256,7 @@ fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
                 ),
                 color = if (state.showCode) Tk.codeBg else Tk.canvasBg,
             ) {
-                if (state.showCode) CodePanel(state) else Canvas(state)
+                if (state.showCode) CodePanel(state, codeSync) else Canvas(state)
             }
             Island(Modifier.width(240.dp).fillMaxHeight()) { Inspector(state) }
         }
@@ -1424,69 +1420,17 @@ private fun Modifier.pixelGrid(scale: Float): Modifier = drawWithContent {
     }
 }
 
-@Composable
-private fun jetBrainsMono(): FontFamily = FontFamily(Font(Res.font.jetbrainsmono_regular))
-
-@Composable
-private fun CodePanel(state: EditorState, modifier: Modifier = Modifier) {
-    val code = remember(state.root) { CodeGen.generate(state.root) }
-    val highlighted = remember(code, Theme.isDark) { highlightKotlin(code, Theme.isDark) }
-    val codeFont = jetBrainsMono()
-    val lineCount = remember(code) { code.count { it == '\n' } + 1 }
-    val gutter = remember(lineCount) {
-        val w = lineCount.toString().length
-        (1..lineCount).joinToString("\n") { it.toString().padStart(w) }
-    }
-    val vScroll = rememberScrollState()
-    val hScroll = rememberScrollState()
-    val codeStyle = TextStyle(color = Tk.codeText, fontFamily = codeFont, fontSize = 12.5.sp, lineHeight = 19.sp)
-    Column(modifier = modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().height(46.dp).padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            BasicText(
-                "Screens.kt",
-                style = TextStyle(color = Tk.textSecondary, fontSize = 12.sp, fontFamily = codeFont),
-                modifier = Modifier.weight(1f),
-            )
-            var copied by remember { mutableStateOf(false) }
-            LaunchedEffect(copied) { if (copied) { delay(1500); copied = false } }
-            ToolButton(if (copied) "Copied ✓" else "Copy", onClick = { copyToClipboard(code); copied = true })
-        }
-        HDivider(Modifier.background(Tk.border))
-        Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
-            // Line-number gutter — shares [vScroll] with the code so they scroll together.
-            BasicText(
-                text = gutter,
-                style = codeStyle.copy(color = Tk.textMuted),
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .verticalScroll(vScroll)
-                    .padding(start = 14.dp, end = 10.dp, top = 16.dp, bottom = 16.dp),
-            )
-            Box(Modifier.fillMaxHeight().width(1.dp).background(Tk.border))
-            BasicText(
-                text = highlighted,
-                style = codeStyle,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .verticalScroll(vScroll)
-                    .horizontalScroll(hScroll)
-                    .padding(horizontal = 14.dp, vertical = 16.dp),
-            )
-        }
-    }
-}
-
 /**
  * Global keyboard shortcuts. Runs as `onKeyEvent` (bubbling), so a focused text
  * field consumes its own keystrokes first — Delete/Backspace only deletes a node
  * when the canvas (not an inspector field) has focus. Returns true when handled.
+ * The code editor owns the keyboard entirely while focused: text fields don't
+ * consume non-editing keys (⌘D, ⌘Y, Escape) and those firing design actions
+ * mid-typing would be destructive.
  */
 private fun handleShortcut(event: KeyEvent, state: EditorState): Boolean {
     if (event.type != KeyEventType.KeyDown) return false
+    if (state.codeEditorFocused) return false
     val cmd = event.isMetaPressed || event.isCtrlPressed
     return when {
         cmd && event.key == Key.Z && event.isShiftPressed -> {

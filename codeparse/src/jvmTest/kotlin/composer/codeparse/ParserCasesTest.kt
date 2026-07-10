@@ -167,6 +167,40 @@ class ParserCasesTest {
     }
 
     @Test
+    fun generated_theme_block_is_not_a_screen_and_not_foreign() {
+        val themed = composer.model.Node.Artboard(
+            id = "a",
+            composables = listOf(Node.Composable("s1", children = listOf(Node.Text("t1", "hi")))),
+            themes = listOf(
+                composer.model.NamedTheme("Light", composer.model.DesignTheme(primary = 0xFF112233)),
+            ),
+        )
+        val code = CodeGen.generate(themed)
+        require("fun AppTheme(" in code && "lightColorScheme(" in code) { code }
+        val parsed = DesignParser.parse(code)!!
+        // The AppTheme wrapper and scheme vals are codegen's own output — one screen, no foreign code.
+        assertEquals(listOf("Composable1"), parsed.artboard.composables.map { parsed.artboard.layerNames[it.id] })
+        assertTrue(!parsed.hasNonScreenDeclarations)
+    }
+
+    @Test
+    fun helper_functions_flag_foreign_declarations() {
+        val parsed = DesignParser.parse(
+            """
+            import androidx.compose.runtime.Composable
+
+            fun helper(): Int = 1
+
+            @Composable
+            fun Screen() {
+                Text("a")
+            }
+            """.trimIndent(),
+        )!!
+        assertTrue(parsed.hasNonScreenDeclarations)
+    }
+
+    @Test
     fun file_without_composables_parses_to_null() {
         assertNull(DesignParser.parse("fun main() {}"))
     }

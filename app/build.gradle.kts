@@ -36,6 +36,7 @@ kotlin {
             dependencies {
                 implementation(project(":model"))
                 implementation(project(":codegen"))
+                implementation(project(":codeparse")) // code→design for the editable code view
                 implementation("org.jetbrains.compose.runtime:runtime:1.11.1")
                 implementation("org.jetbrains.compose.foundation:foundation:1.11.1")
                 // material3 is versioned independently of CMP since 1.8.

@@ -498,6 +498,25 @@ class EditorState(initial: Node) {
         lastCommitKey = null
     }
 
+    /** True while the code editor's text field has focus — global shortcuts stand down. */
+    var codeEditorFocused by mutableStateOf(false)
+
+    /**
+     * Apply a tree parsed from user-typed code in the editable code view.
+     * UNDOABLE, coalesced under one key so a typing burst is one undo step
+     * (any other edit or a select() breaks the chain via lastCommitKey) —
+     * unlike [loadExternal], which serves the IDE bridge where the HOST owns
+     * history; wiping the stacks here would destroy canvas-edit undo too.
+     * Parsed ids replace designer ids, so a dangling selection is cleared.
+     */
+    fun applyCodeEdit(tree: Node) {
+        val newRoot = tree.migrated().dedupeIds()
+        if (newRoot == root) return
+        commit(newRoot, coalesceKey = "code-edit")
+        idCounter = maxOf(idCounter, maxGeneratedId(root))
+        if (selectedId?.let { root.findById(it) } == null) selectedId = null
+    }
+
     /** Reset to a fresh "Hello world" design. Undoable. */
     fun newFile() {
         commit(emptyDesign.migrated().dedupeIds())

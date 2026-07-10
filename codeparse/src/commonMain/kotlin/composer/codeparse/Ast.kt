@@ -146,7 +146,11 @@ internal class KFunctionDecl(
 ) : KDeclaration
 
 /** A skipped top-level declaration (class/object/property/…) — extent only. */
-internal class KOtherDecl(override val range: IntRange) : KDeclaration
+internal class KOtherDecl(
+    override val range: IntRange,
+    /** `val X = light|darkColorScheme(…)` — codegen's own theme block, not user code. */
+    val themeArtifact: Boolean = false,
+) : KDeclaration
 
 internal class KSourceFile(
     val text: String,

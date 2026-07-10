@@ -267,6 +267,13 @@ private class Scanner(val text: String, lexed: LexResult) {
     }
 
     fun skipProperty(declStart: Int): KDeclaration {
+        // `val X = lightColorScheme(…)` / `darkColorScheme(…)` — regeneration
+        // reproduces these from the design's themes; they're not foreign code.
+        val themeArtifact = tokens[i].isKeyword("val") &&
+            identAt(i + 1) && punctAt(i + 2, "=") &&
+            i + 3 < tokens.size &&
+            (tokens[i + 3].isKeyword("lightColorScheme") || tokens[i + 3].isKeyword("darkColorScheme")) &&
+            punctAt(i + 4, "(")
         val end = statementEnd(tokens, i, tokens.size)
         i = end
         // Accessor clauses on following lines: [modifiers] get/set [(…)] [= expr | {…}]
@@ -294,7 +301,10 @@ private class Scanner(val text: String, lexed: LexResult) {
             }
             i = j
         }
-        return KOtherDecl(declStart until extendOverTrailingComments(tokens[(i - 1).coerceAtLeast(0)].end))
+        return KOtherDecl(
+            declStart until extendOverTrailingComments(tokens[(i - 1).coerceAtLeast(0)].end),
+            themeArtifact = themeArtifact,
+        )
     }
 
     fun skipClassLike(declStart: Int): KDeclaration {

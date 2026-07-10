@@ -46,7 +46,7 @@ object DesignParser {
         val file = scanSource(text)
         val functions = file.declarations
             .filterIsInstance<KFunctionDecl>()
-            .filter { isScreenFunction(it) }
+            .filter { isScreenFunction(it) && !isAppThemeWrapper(it) }
         if (functions.isEmpty()) return null
 
         val ctx = ParseCtx(
@@ -98,9 +98,7 @@ object DesignParser {
             importInsertOffset = importInsertOffset(file),
             topLevelFunctionNames = file.declarations.filterIsInstance<KFunctionDecl>().mapNotNull { it.name },
             sourceRanges = ctx.sourceRanges.toMap(),
-            hasNonScreenDeclarations = file.declarations.any {
-                it !is KFunctionDecl || !isScreenFunction(it)
-            },
+            hasNonScreenDeclarations = file.declarations.any { isForeignDeclaration(it) },
         )
     }
 
@@ -116,8 +114,22 @@ object DesignParser {
             existingImports = file.imports.map { it.pathStr },
             importInsertOffset = importInsertOffset(file),
             topLevelFunctionNames = file.declarations.filterIsInstance<KFunctionDecl>().mapNotNull { it.name },
-            hasNonScreenDeclarations = file.declarations.isNotEmpty(),
+            hasNonScreenDeclarations = file.declarations.any { isForeignDeclaration(it) },
         )
+    }
+
+    /**
+     * Codegen's shared theme wrapper — screen-shaped (top-level `@Composable`
+     * with a block body), but it's emitted FROM the design's themes, so parsing
+     * it back as a screen would duplicate it on every round trip.
+     */
+    private fun isAppThemeWrapper(fn: KFunctionDecl): Boolean =
+        fn.name == "AppTheme" && "Composable" in fn.annotationNames && "content" in fn.paramListText
+
+    /** Top-level code regeneration would NOT reproduce (helpers, classes, user vals). */
+    private fun isForeignDeclaration(d: KDeclaration): Boolean = when (d) {
+        is KFunctionDecl -> !isScreenFunction(d) && !isAppThemeWrapper(d)
+        is KOtherDecl -> !d.themeArtifact
     }
 
     // Value parameters ARE allowed (the signature is preserved verbatim on
