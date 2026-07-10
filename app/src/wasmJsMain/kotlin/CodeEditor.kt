@@ -32,6 +32,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
@@ -134,6 +136,12 @@ fun CodePanel(state: EditorState, sync: CodeSyncState, modifier: Modifier = Modi
             .drop(1)
             .debounce(500)
             .collect { text -> parseAndApply(state, sync, text) }
+    }
+
+    // Entering the code view focuses the editor — type immediately, no click needed.
+    val fieldFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        runCatching { fieldFocus.requestFocus() }
     }
 
     // Leaving the code view within the debounce window still lands the edit.
@@ -240,6 +248,7 @@ fun CodePanel(state: EditorState, sync: CodeSyncState, modifier: Modifier = Modi
                             // no soft wrap); min = viewport so empty-area clicks focus.
                             .defaultMinSize(minWidth = minW, minHeight = minH)
                             .padding(horizontal = 14.dp, vertical = 16.dp)
+                            .focusRequester(fieldFocus)
                             .onFocusChanged { state.codeEditorFocused = it.isFocused }
                             .onPreviewKeyEvent { e ->
                                 // Tab indents instead of moving focus.
