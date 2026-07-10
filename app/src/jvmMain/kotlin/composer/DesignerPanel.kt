@@ -23,6 +23,11 @@ class DesignerConnection internal constructor(private val panel: ComposePanel) {
 
     /** Deliver one host→designer envelope. */
     fun deliver(json: String) = DesignerHostTransport.deliver(json)
+
+    /** Detach the host wiring; the panel itself dies with its Swing hierarchy. */
+    fun dispose() {
+        DesignerHostTransport.hostSink = null
+    }
 }
 
 /**

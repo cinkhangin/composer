@@ -85,6 +85,22 @@ if (providers.gradleProperty("composer.bundleWeb").orNull != "false") {
     }
 }
 
+// Platform-compose builds declare the intellij.platform.compose module in
+// plugin.xml (the classes come from the IDE, not the plugin zip — see the
+// runtimeClasspath excludes above). Default builds leave the placeholder empty.
+tasks.processResources {
+    val platformCompose = providers.gradleProperty("composer.platformCompose").orNull == "true"
+    filesMatching("META-INF/plugin.xml") {
+        filter { line ->
+            if (line.trim() == "<!--PLATFORM_COMPOSE-->") {
+                if (platformCompose) {
+                    "    <dependencies><module name=\"intellij.platform.compose\"/></dependencies>"
+                } else ""
+            } else line
+        }
+    }
+}
+
 tasks.named<RunIdeTask>("runIde") {
     // Dev loop: serve the web app straight from :app's dist dir so web-side
     // changes need only :app:wasmJsBrowserDistribution + a preview reload,

@@ -25,16 +25,12 @@ import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
-import com.intellij.ui.jcef.JBCefApp
-import com.intellij.ui.jcef.JBCefBrowser
-import com.intellij.ui.jcef.JBCefBrowserBase
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.ui.JBUI
 import composer.idea.ComposerNotifications
 import composer.idea.bridge.BridgeMsg
-import composer.idea.bridge.DesignerBridge
-import composer.idea.web.ComposerWebServer
-import composer.idea.web.ComposerWebServerStartException
+import composer.idea.bridge.DesignerHost
+import composer.idea.bridge.DesignerHosts
 import java.awt.BorderLayout
 import java.awt.CardLayout
 import java.awt.GridBagConstraints
@@ -48,10 +44,11 @@ import javax.swing.SwingConstants
 import javax.swing.Timer
 
 /**
- * The whole-app designer tool window: one JCEF designer per project showing
- * the aggregated design assembled by [ComposerAppService]. The empty state
- * offers enablement (adopt an existing MainActivity); the browser boots the
- * same bundled web app as the split editor, in embedded+app mode.
+ * The whole-app designer tool window: one designer per project showing the
+ * aggregated design assembled by [ComposerAppService]. The empty state offers
+ * enablement (adopt an existing MainActivity); the designer is the in-process
+ * Compose panel by default ([DesignerHosts]), or the JCEF web app behind
+ * `-Dcomposer.designer.jcef=true`.
  */
 class ComposerAppToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
@@ -77,8 +74,7 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
         isVisible = false
     }
     private val browserContainer = JPanel(BorderLayout())
-    private var browser: JBCefBrowser? = null
-    private var bridge: DesignerBridge? = null
+    private var host: DesignerHost? = null
     private var bootTimer: Timer? = null
     private var rev = 0
     private var lastIncomingRev = 0
@@ -169,7 +165,7 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
     private fun startWith(main: VirtualFile) {
         service.start(main)
         installCaretSync()
-        ensureBrowser()
+        ensureDesigner()
     }
 
     /** IDE caret in an owned file → designer selection (debounced, deduped). */
@@ -189,7 +185,7 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
                             val id = service.nodeIdAt(file, editor.caretModel.offset) ?: return@create
                             if (id == lastSelectionId) return@create
                             lastSelectionId = id
-                            bridge?.send(BridgeMsg(type = "selectNode", rev = ++rev, nodeId = id))
+                            host?.send(BridgeMsg(type = "selectNode", rev = ++rev, nodeId = id))
                         },
                     )
                 }
@@ -212,76 +208,67 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
         }
     }
 
-    private fun ensureBrowser() {
-        if (browser != null) return
-        if (!JBCefApp.isSupported()) {
-            showStatus(
-                "<html>The Composer designer needs JCEF, which this IDE runtime doesn't provide.<br>" +
-                    "Fix: Search Everywhere (Shift Shift) \u2192 \"Choose Boot Java Runtime for the IDE\" \u2192 " +
-                    "pick a runtime with JCEF \u2192 restart.</html>",
-            )
-            return
+    private fun ensureDesigner() {
+        if (host != null) return
+        val h = when (val r = DesignerHosts.create(this)) {
+            is DesignerHosts.Result.Failed -> {
+                log.warn("Designer host unavailable: ${r.message}")
+                showStatus(r.message, retry = r.retryable)
+                return
+            }
+            is DesignerHosts.Result.Ok -> r.host
         }
-        val url = try {
-            service<ComposerWebServer>().baseUrl
-        } catch (e: ComposerWebServerStartException) {
-            log.warn(e)
-            showStatus(e.message ?: "Composer's local web server failed to start.", retry = true)
-            return
-        }
-        showStatus("Loading designer…")
-        val b = JBCefBrowser.createBuilder().setOffScreenRendering(false).build()
-        b.setErrorPage(JBCefBrowserBase.ErrorPage.DEFAULT)
-        Disposer.register(this, b)
-        val br = DesignerBridge(b)
-        Disposer.register(this, br)
-        br.onMessage = ::onBridgeMessage
-        br.onUndecodable = {
+        host = h
+        h.onMessage = ::onBridgeMessage
+        h.onUndecodable = {
             ComposerNotifications.warnOnce(project, "composer.app.bridge", "Composer App Designer received an undecodable message.")
         }
-        browser = b
-        bridge = br
         service.pushDesign = { json ->
-            bridge?.send(BridgeMsg(type = "loadDesign", rev = ++rev, design = json, appMode = true))
+            host?.send(BridgeMsg(type = "loadDesign", rev = ++rev, design = json, appMode = true))
         }
         ApplicationManager.getApplication().messageBus.connect(this)
             .subscribe(LafManagerListener.TOPIC, LafManagerListener { pushTheme() })
-        browserContainer.add(b.component, BorderLayout.CENTER)
+        browserContainer.add(h.component, BorderLayout.CENTER)
         component.revalidate()
-        b.loadURL(url + "?embedded=1")
-        bootTimer = Timer(BOOT_TIMEOUT_MS) { onBootTimeout() }.apply {
-            isRepeats = false
-            start()
+        if (h.needsBootTimeout) {
+            showStatus("Loading designer…")
+            bootTimer = Timer(BOOT_TIMEOUT_MS) { onBootTimeout() }.apply {
+                isRepeats = false
+                start()
+            }
+        } else {
+            // In-process host: composes synchronously with the Swing hierarchy —
+            // show it immediately (`ready` still arrives and repushes the design).
+            (cards.layout as CardLayout).show(cards, CARD_BROWSER)
         }
+        h.load()
     }
 
-    private fun teardownBrowser() {
+    private fun teardownDesigner() {
         bootTimer?.stop()
         bootTimer = null
         service.pushDesign = null
-        bridge?.let(Disposer::dispose)
-        bridge = null
-        browser?.let {
+        host?.let {
             browserContainer.remove(it.component)
             Disposer.dispose(it)
         }
-        browser = null
+        host = null
         lastIncomingRev = 0
     }
 
     private fun retry() {
-        teardownBrowser()
-        ensureBrowser()
+        teardownDesigner()
+        ensureDesigner()
     }
 
     private fun onBootTimeout() {
-        if (browser == null) return
-        teardownBrowser()
+        if (host == null) return
+        teardownDesigner()
         showStatus("The Composer designer failed to load.", retry = true)
     }
 
     private fun pushTheme() {
-        bridge?.send(BridgeMsg(type = "setTheme", dark = !JBColor.isBright()))
+        host?.send(BridgeMsg(type = "setTheme", dark = !JBColor.isBright()))
     }
 
     private fun onBridgeMessage(msg: BridgeMsg) {
@@ -303,7 +290,7 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
     }
 
     override fun dispose() {
-        teardownBrowser()
+        teardownDesigner()
         service.pushDesign = null
         service.onStatus = null
     }
