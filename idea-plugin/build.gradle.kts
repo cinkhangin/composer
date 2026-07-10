@@ -59,6 +59,13 @@ configurations.runtimeClasspath {
     exclude(group = "org.jetbrains.compose.ui")
     exclude(group = "org.jetbrains.compose.animation")
     exclude(group = "org.jetbrains.skiko")
+    // Nor kotlin-stdlib: two stdlib copies across the plugin and the platform's
+    // compose module loader hit JVM loader-constraint violations on any call
+    // that crosses the boundary (LinkageError on kotlin.jvm.internal.* during
+    // recomposition — froze whole compose subtrees).
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk7")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk8")
 }
 
 intellijPlatform {
