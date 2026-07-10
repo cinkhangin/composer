@@ -19,3 +19,15 @@ fun setCanvasCursor(cursor: String) {
     val canvas = host.querySelector("canvas") as? HTMLElement
     (canvas ?: host).style.cursor = cursor
 }
+
+
+/**
+ * Give the app's canvas element BROWSER focus. On a fresh page load nothing has
+ * DOM focus, so Compose-side FocusRequester calls can't take effect and the
+ * first click only grabs focus (caret lands at the stale selection instead of
+ * the click point). Called before requesting Compose focus programmatically.
+ */
+fun focusComposeCanvas() {
+    val host = document.getElementById("composer") as? HTMLElement ?: return
+    (host.querySelector("canvas") as? HTMLElement)?.focus()
+}

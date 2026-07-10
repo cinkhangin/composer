@@ -138,10 +138,17 @@ fun CodePanel(state: EditorState, sync: CodeSyncState, modifier: Modifier = Modi
             .collect { text -> parseAndApply(state, sync, text) }
     }
 
-    // Entering the code view focuses the editor — type immediately, no click needed.
+    // Entering the code view focuses the editor — type immediately, no click
+    // needed. On a fresh page load the canvas has no DOM focus yet and the first
+    // request can fizzle, so grab browser focus and retry briefly until it sticks.
     val fieldFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
-        runCatching { fieldFocus.requestFocus() }
+        repeat(10) {
+            focusComposeCanvas()
+            runCatching { fieldFocus.requestFocus() }
+            if (state.codeEditorFocused) return@LaunchedEffect
+            delay(50)
+        }
     }
 
     // Leaving the code view within the debounce window still lands the edit.
