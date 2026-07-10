@@ -86,3 +86,13 @@ fun loadPanelOpen(panel: String): Boolean = localStorage.getItem(PANEL_KEY_PREFI
 fun savePanelOpen(panel: String, open: Boolean) {
     localStorage.setItem(PANEL_KEY_PREFIX + panel, if (open) "open" else "closed")
 }
+
+
+// Center-pane view mode (Design | Code) — persists across reloads.
+private const val VIEW_KEY = "composer.view"
+
+fun loadCodeView(): Boolean = localStorage.getItem(VIEW_KEY) == "code"
+
+fun saveCodeView(showCode: Boolean) {
+    localStorage.setItem(VIEW_KEY, if (showCode) "code" else "design")
+}

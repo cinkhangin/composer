@@ -52,11 +52,14 @@ class EditorState(initial: Node) {
         private set
 
     /** When true, the center pane shows the generated code instead of the canvas. */
-    var showCode by mutableStateOf(false)
+    var showCode by mutableStateOf(loadCodeView())
         private set
 
-    fun setCodeView(value: Boolean) {
+    /** [persist] = false for the embedded (IDE) editor: it never shows the code
+     *  view and must not clobber the web app's stored preference. */
+    fun setCodeView(value: Boolean, persist: Boolean = true) {
         showCode = value
+        if (persist) saveCodeView(value)
     }
 
     // Side panels collapse to slim strips (IntelliJ tool-window style) so the

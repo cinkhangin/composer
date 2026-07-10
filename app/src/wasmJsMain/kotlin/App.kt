@@ -143,7 +143,9 @@ import androidx.compose.ui.text.rememberTextMeasurer
 @OptIn(FlowPreview::class)
 @Composable
 fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
-    val state = remember { EditorState(ws.initialDesign) }
+    // Embedded (IDE): the code view is hidden (the IDE shows the real code), so
+    // ignore a persisted "code" preference without overwriting it.
+    val state = remember { EditorState(ws.initialDesign).also { if (embedded) it.setCodeView(false, persist = false) } }
     // Hoisted next to the state so typed code formatting survives Design↔Code
     // toggles; a file open rebuilds everything via key(openToken) in Root().
     val codeSync = remember { CodeSyncState() }
