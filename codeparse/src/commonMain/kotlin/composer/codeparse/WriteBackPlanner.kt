@@ -38,7 +38,15 @@ data class WriteBackPlan(
  */
 object WriteBackPlanner {
 
-    fun plan(text: String, previous: ParsedDesign, edited: Node.Artboard): WriteBackPlan {
+    fun plan(
+        text: String,
+        previous: ParsedDesign,
+        edited: Node.Artboard,
+        /** Stable callable names for composables parsed from other module files. */
+        externalFunctionNames: Map<String, String> = emptyMap(),
+        /** Cross-file composables referenced as instances in this file. */
+        externalComponentIds: Set<String> = emptySet(),
+    ): WriteBackPlan {
         val prevById = previous.functions.associateBy { it.screenId }
         val editedScreens = edited.composables.filterIsInstance<Node.Composable>()
         val editedIds = editedScreens.map { it.id }.toSet()
@@ -71,7 +79,11 @@ object WriteBackPlanner {
         }
 
         // ---- change detection ------------------------------------------------
-        val componentFns = edited.validComponentIds().mapNotNull { id -> names[id]?.let { id to it } }.toMap()
+        val allNames = externalFunctionNames + names
+        val componentFns = (edited.validComponentIds() + externalComponentIds)
+            .distinct()
+            .mapNotNull { id -> allNames[id]?.let { id to it } }
+            .toMap()
         val renamedIds = editedScreens.mapNotNull { s ->
             prevById[s.id]?.takeIf { it.functionName != names[s.id] }?.screenId
         }.toSet()
@@ -112,7 +124,7 @@ object WriteBackPlanner {
             if (verbatimParams != null && hasNavActions(screen)) {
                 warnings += "\"${names.getValue(screen.id)}\" has navigation actions but a custom signature — callbacks that aren't declared in it were not wired."
             }
-            val code = CodeGen.screenFunction(screen, names.getValue(screen.id), componentFns, params = verbatimParams, navFns = names)
+            val code = CodeGen.screenFunction(screen, names.getValue(screen.id), componentFns, params = verbatimParams, navFns = allNames)
             newImports += code.imports
             if (prev == null) {
                 // Append at EOF, separated by exactly one blank line.

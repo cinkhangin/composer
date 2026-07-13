@@ -184,7 +184,13 @@ internal fun EditorScreen(session: DesignerSession) {
             .background(Tk.appBg)
             .padding(Tk.gap)
             .focusRequester(focusRequester)
-            .onKeyEvent { handleShortcut(it, state) }
+            .onKeyEvent {
+                handleShortcut(
+                    event = it,
+                    state = state,
+                    lockComposableStructure = session.appMode,
+                )
+            }
             .focusable(),
         verticalArrangement = Arrangement.spacedBy(Tk.gap),
     ) {
@@ -214,7 +220,13 @@ internal fun EditorScreen(session: DesignerSession) {
                 Canvas(state, appMode = session.appMode)
             }
             if (state.rightPanelOpen) {
-                Island(Modifier.width(240.dp).fillMaxHeight()) { Inspector(state, onCollapse = state::toggleRightPanel) }
+                Island(Modifier.width(240.dp).fillMaxHeight()) {
+                    Inspector(
+                        state,
+                        onCollapse = state::toggleRightPanel,
+                        lockComposableStructure = session.appMode,
+                    )
+                }
             } else {
                 CollapsedPanelStrip(AppIconKind.ExpandRight, tip = "Show inspector", onExpand = state::toggleRightPanel)
             }
@@ -619,8 +631,8 @@ private fun ZoomBadge(zoom: Float, onZoom: (Float) -> Unit, onReset: () -> Unit,
 }
 
 /**
- * "+ Composable" plus one insert-button per reusable component — the component
- * library lives up here, next to where composables are created.
+ * Standalone mode can create composables here. Module discovery instead shows
+ * the discovered count; function creation waits for stable annotation identity.
  */
 @Composable
 private fun SizeBadge(state: EditorState, appMode: Boolean, modifier: Modifier = Modifier) {
@@ -630,8 +642,14 @@ private fun SizeBadge(state: EditorState, appMode: Boolean, modifier: Modifier =
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            // App mode: a composable here IS a screen (3 generated files + a route).
-            ToolButton(if (appMode) "Screen" else "Composable", icon = AppIconKind.Plus) { state.addComposable() }
+            if (appMode) {
+                BasicText(
+                    "${state.composables.size} composables",
+                    style = TextStyle(color = Tk.textSecondary, fontSize = 12.sp),
+                )
+            } else {
+                ToolButton("Composable", icon = AppIconKind.Plus) { state.addComposable() }
+            }
             val comps = state.componentDefs()
             if (comps.isNotEmpty()) {
                 Box(Modifier.width(1.dp).height(20.dp).padding(horizontal = 2.dp).background(Tk.border))
@@ -1219,9 +1237,14 @@ private fun Modifier.pixelGrid(scale: Float): Modifier = drawWithContent {
  * consume non-editing keys (⌘D, ⌘Y, Escape) and those firing design actions
  * mid-typing would be destructive.
  */
-private fun handleShortcut(event: KeyEvent, state: EditorState): Boolean {
+private fun handleShortcut(
+    event: KeyEvent,
+    state: EditorState,
+    lockComposableStructure: Boolean = false,
+): Boolean {
     if (event.type != KeyEventType.KeyDown) return false
     val cmd = event.isMetaPressed || event.isCtrlPressed
+    val selectedFunctionIsLocked = lockComposableStructure && state.selected is Node.Composable
     return when {
         cmd && event.key == Key.Z && event.isShiftPressed -> {
             state.redo(); true
@@ -1244,11 +1267,13 @@ private fun handleShortcut(event: KeyEvent, state: EditorState): Boolean {
         }
 
         cmd && event.key == Key.D -> {
-            state.duplicate(); true
+            if (!selectedFunctionIsLocked) state.duplicate()
+            true
         }
 
         event.key == Key.Delete || event.key == Key.Backspace -> {
-            state.selectedId?.let { state.delete(it) } != null
+            if (selectedFunctionIsLocked) true
+            else state.selectedId?.let { state.delete(it) } != null
         }
 
         event.key == Key.Escape -> {

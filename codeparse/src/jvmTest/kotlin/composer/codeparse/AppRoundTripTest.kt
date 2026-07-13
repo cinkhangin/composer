@@ -45,6 +45,11 @@ class AppRoundTripTest {
             ),
         )
         assertTrue(!AppParser.isAdoptableMainActivity("fun NavDisplay() = Unit"))
+        assertTrue(
+            AppParser.isComponentActivityMain(
+                "class MainActivity : ComponentActivity() { fun plainComposeApp() = Unit }",
+            ),
+        )
     }
 
     /** Roughly half the seeds get customized themes (names may need sanitizing). */

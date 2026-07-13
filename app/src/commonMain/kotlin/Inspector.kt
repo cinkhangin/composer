@@ -95,7 +95,12 @@ import composer.ui.ToolButton
  * back into [EditorState], so the canvas and code panel update live.
  */
 @Composable
-fun Inspector(state: EditorState, modifier: Modifier = Modifier, onCollapse: (() -> Unit)? = null) {
+fun Inspector(
+    state: EditorState,
+    modifier: Modifier = Modifier,
+    onCollapse: (() -> Unit)? = null,
+    lockComposableStructure: Boolean = false,
+) {
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().height(46.dp).padding(start = 16.dp, end = 9.dp),
@@ -116,7 +121,12 @@ fun Inspector(state: EditorState, modifier: Modifier = Modifier, onCollapse: (()
             modifier = Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            NodeBadge(state, selected, isRoot = selected.id == state.root.id)
+            NodeBadge(
+                state,
+                selected,
+                isRoot = selected.id == state.root.id,
+                lockComposableStructure = lockComposableStructure,
+            )
 
             if (selected is Node.Artboard) {
                 BasicText(
@@ -124,30 +134,46 @@ fun Inspector(state: EditorState, modifier: Modifier = Modifier, onCollapse: (()
                     style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
                 )
                 HDivider()
-                ThemeEditor(state)
+                if (lockComposableStructure) {
+                    BasicText(
+                        "Theme declarations stay source-owned until Composer annotations define their identity.",
+                        style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
+                    )
+                } else {
+                    ThemeEditor(state)
+                }
             } else if (selected is Node.Composable) {
                 ComposableEditor(state, selected)
-                InspectorSection("Component") {
-                    if (state.isComponent(selected.id)) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            BasicText(
-                                "Reusable component \"${state.componentName(selected.id)}\" — insert instances from the palette; edits here apply to every instance.",
-                                style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
-                            )
-                            ToolButton("Remove from components") { state.removeComponent(selected.id) }
-                        }
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            BasicText(
-                                "Make this composable reusable — instances of it can be placed inside other composables.",
-                                style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
-                            )
-                            ToolButton("Create component") { state.createComponent(selected.id) }
+                if (lockComposableStructure) {
+                    InspectorSection("Source function") {
+                        BasicText(
+                            "Body edits are synchronized. Creating, deleting, renaming, or changing function ownership waits for stable Composer annotations.",
+                            style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
+                        )
+                    }
+                } else {
+                    InspectorSection("Component") {
+                        if (state.isComponent(selected.id)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                BasicText(
+                                    "Reusable component \"${state.componentName(selected.id)}\" — insert instances from the palette; edits here apply to every instance.",
+                                    style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
+                                )
+                                ToolButton("Remove from components") { state.removeComponent(selected.id) }
+                            }
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                BasicText(
+                                    "Make this composable reusable — instances of it can be placed inside other composables.",
+                                    style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
+                                )
+                                ToolButton("Create component") { state.createComponent(selected.id) }
+                            }
                         }
                     }
                 }
                 InspectorSection("Arrange") {
-                    Arrange(state, selected)
+                    Arrange(state, selected, lockComposableStructure)
                 }
             } else if (selected is Node.Slot) {
                 // A permanent Compose slot argument (e.g. Scaffold's topBar). It holds
@@ -937,7 +963,7 @@ private fun SliderField(value: Float, onChange: (Float) -> Unit) {
 }
 
 @Composable
-private fun NodeBadge(state: EditorState, node: Node, isRoot: Boolean) {
+private fun NodeBadge(state: EditorState, node: Node, isRoot: Boolean, lockComposableStructure: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(
             Modifier.size(34.dp).clip(RoundedCornerShape(Tk.rSm)).background(Tk.accentSoft),
@@ -949,6 +975,12 @@ private fun NodeBadge(state: EditorState, node: Node, isRoot: Boolean) {
             if (isRoot) {
                 BasicText("Artboard", style = TextStyle(color = Tk.textPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold))
                 BasicText("Design root", style = TextStyle(color = Tk.textMuted, fontSize = 11.sp))
+            } else if (lockComposableStructure && node is Node.Composable) {
+                BasicText(
+                    state.layerName(node.id) ?: node.typeName(),
+                    style = TextStyle(color = Tk.textPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
+                )
+                BasicText("Source composable", style = TextStyle(color = Tk.textMuted, fontSize = 11.sp))
             } else {
                 BasicTextField(
                     value = state.layerName(node.id) ?: node.typeName(),
@@ -975,15 +1007,16 @@ private fun EmptyState() {
 }
 
 @Composable
-private fun Arrange(state: EditorState, selected: Node) {
+private fun Arrange(state: EditorState, selected: Node, lockComposableStructure: Boolean = false) {
     val isRoot = selected.id == state.root.id
+    val lockedFunction = lockComposableStructure && selected is Node.Composable
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SquareIconButton(AppIconKind.ArrowUp, enabled = state.canMove(selected.id, -1), tip = "Move up") { state.move(selected.id, -1) }
-            SquareIconButton(AppIconKind.ArrowDown, enabled = state.canMove(selected.id, +1), tip = "Move down") { state.move(selected.id, +1) }
+            SquareIconButton(AppIconKind.ArrowUp, enabled = !lockedFunction && state.canMove(selected.id, -1), tip = "Move up") { state.move(selected.id, -1) }
+            SquareIconButton(AppIconKind.ArrowDown, enabled = !lockedFunction && state.canMove(selected.id, +1), tip = "Move down") { state.move(selected.id, +1) }
             Box(Modifier.weight(1f))
-            SquareIconButton(AppIconKind.Duplicate, tip = "Duplicate (⌘D)") { state.duplicate() }
-            SquareIconButton(AppIconKind.Trash, enabled = !isRoot, danger = true, tip = "Delete") { state.delete(selected.id) }
+            SquareIconButton(AppIconKind.Duplicate, enabled = !lockedFunction, tip = "Duplicate (⌘D)") { state.duplicate() }
+            SquareIconButton(AppIconKind.Trash, enabled = !isRoot && !lockedFunction, danger = true, tip = "Delete") { state.delete(selected.id) }
         }
     }
 }

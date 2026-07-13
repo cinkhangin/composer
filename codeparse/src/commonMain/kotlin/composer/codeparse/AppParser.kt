@@ -41,18 +41,20 @@ data class ParsedApp(
  */
 object AppParser {
 
+    /** True for an actual top-level `MainActivity : ComponentActivity`. */
+    fun isComponentActivityMain(text: String): Boolean =
+        scanSource(text).declarations.any {
+            it is KOtherDecl && it.kind == OtherKind.Class &&
+                it.name == "MainActivity" && "ComponentActivity" in it.superTypes
+        }
+
     /**
      * True only for an actual `MainActivity : ComponentActivity` containing a
      * `NavDisplay(...)` call. Imports, comments, and string literals mentioning
      * NavDisplay do not make a file adoptable.
      */
     fun isAdoptableMainActivity(text: String): Boolean {
-        val source = scanSource(text)
-        val isMainActivity = source.declarations.any {
-            it is KOtherDecl && it.kind == OtherKind.Class &&
-                it.name == "MainActivity" && "ComponentActivity" in it.superTypes
-        }
-        if (!isMainActivity) return false
+        if (!isComponentActivityMain(text)) return false
         val tokens = lex(text).tokens
         return tokens.indices.any { i ->
             tokens[i].kind == TokKind.IDENT && tokens[i].text == "NavDisplay" &&

@@ -19,6 +19,9 @@ import composer.model.Node
  */
 object DesignParser {
 
+    /** A parseable top-level `@Composable` declaration discovered in source order. */
+    data class ComposableFunctionRef(val name: String, val startOffset: Int)
+
     /** Names the parser recognizes → the FQN codegen imports them from. */
     private val EXPECTED_FQNS: Map<String, Set<String>> = buildMap<String, Set<String>> {
         fun put(fqn: String, vararg names: String) {
@@ -51,10 +54,22 @@ object DesignParser {
         /** Nav base name → screen id (`onNavigateToHome` → s2). */
         val navBaseToScreenId: Map<String, String>,
         /** THIS file's function name → its fixed screen id; other fns aren't screens. */
-        val fixedScreenIds: Map<String, String>,
+        val fixedScreenIds: Map<String, String> = emptyMap(),
+        /**
+         * Declaration start offset → fixed id. Module discovery uses offsets so
+         * overloads with the same name can still be rendered independently.
+         */
+        val fixedScreenIdsByOffset: Map<Int, String> = emptyMap(),
         /** Node-id prefix keeping ids unique across the app's separately parsed files. */
         val idPrefix: String = "",
     )
+
+    /** Discover every function shape [parse] can render, excluding AppTheme. */
+    fun composableFunctions(text: String): List<ComposableFunctionRef> =
+        scanSource(text).declarations
+            .filterIsInstance<KFunctionDecl>()
+            .filter { isScreenFunction(it) && !isAppThemeWrapper(it) }
+            .mapNotNull { fn -> fn.name?.let { ComposableFunctionRef(it, fn.range.first) } }
 
     /**
      * Parse [text], or null when it has no screen-shaped `@Composable` function.
@@ -64,7 +79,11 @@ object DesignParser {
         val functions = file.declarations
             .filterIsInstance<KFunctionDecl>()
             .filter { isScreenFunction(it) && !isAppThemeWrapper(it) }
-            .filter { external == null || it.name in external.fixedScreenIds }
+            .filter {
+                external == null ||
+                    it.range.first in external.fixedScreenIdsByOffset ||
+                    it.name in external.fixedScreenIds
+            }
         if (functions.isEmpty()) return null
 
         val ctx = ParseCtx(
@@ -85,7 +104,9 @@ object DesignParser {
         val layerNames = mutableMapOf<String, String>()
         functions.forEachIndexed { i, fn ->
             val name = fn.name ?: return@forEachIndexed
-            val screenId = fixedIds?.getValue(name) ?: ctx.screenIdsByName.getValue(name)
+            val screenId = external?.fixedScreenIdsByOffset?.get(fn.range.first)
+                ?: fixedIds?.getValue(name)
+                ?: ctx.screenIdsByName.getValue(name)
             val body = fn.bodyBlock ?: return@forEachIndexed
             val navParams = parseNavParamList(fn.paramListText, navNames)
             ctx.navParams = navParams ?: emptyMap()
@@ -127,7 +148,9 @@ object DesignParser {
             hasNonScreenDeclarations = file.declarations.any {
                 isForeignDeclaration(it) ||
                     (external != null && it is KFunctionDecl && isScreenFunction(it) &&
-                        !isAppThemeWrapper(it) && it.name !in external.fixedScreenIds)
+                        !isAppThemeWrapper(it) &&
+                        it.range.first !in external.fixedScreenIdsByOffset &&
+                        it.name !in external.fixedScreenIds)
             },
         )
     }

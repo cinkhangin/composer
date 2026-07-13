@@ -125,27 +125,26 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
     }
 
     /**
-     * Adopt silently when the project already has a NavDisplay MainActivity —
-     * the designer should just appear; the button stays for the scaffold path.
+     * Adopt silently when the project already has an Android app module anchor.
+     * Navigation 3 is not required for module-wide composable discovery.
      */
     private fun autoAdopt() {
-        findAdoptableMainActivity { vf ->
+        findModuleMainActivity { vf ->
             if (vf != null && host == null) {
                 log.info("Composer auto-adopting ${vf.path}")
                 settings.state.enabled = true
                 settings.state.mainActivityUrl = vf.url
-                ComposerAppScaffold.notifyDepsIfMissing(project)
                 startWith(vf)
             }
         }
     }
 
-    private fun findAdoptableMainActivity(onDone: (VirtualFile?) -> Unit) {
+    private fun findModuleMainActivity(onDone: (VirtualFile?) -> Unit) {
         ReadAction.nonBlocking<VirtualFile?> {
             FilenameIndex.getVirtualFilesByName("MainActivity.kt", GlobalSearchScope.projectScope(project))
                 .firstOrNull { vf ->
                     runCatching {
-                        composer.codeparse.AppParser.isAdoptableMainActivity(
+                        composer.codeparse.AppParser.isComponentActivityMain(
                             com.intellij.openapi.fileEditor.impl.LoadTextUtil.loadText(vf).toString(),
                         )
                     }.getOrDefault(false)
@@ -164,11 +163,11 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
         (cards.layout as CardLayout).show(cards, CARD_STATUS)
     }
 
-    /** Find a MainActivity with a NavDisplay and adopt it, else offer to scaffold. */
+    /** Find an Android app module anchor and adopt it, else offer to scaffold. */
     private fun enableAppDesigner() {
         log.info("Composer enable clicked")
-        showStatus("Looking for MainActivity.kt…")
-        findAdoptableMainActivity { vf ->
+        showStatus("Looking for an Android app module…")
+        findModuleMainActivity { vf ->
             log.info("Composer adoption search finished: ${vf?.path ?: "none found"}")
             if (vf == null) {
                 // Nothing to adopt — offer to scaffold a fresh app skeleton.
@@ -183,7 +182,6 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
             } else {
                 settings.state.enabled = true
                 settings.state.mainActivityUrl = vf.url
-                ComposerAppScaffold.notifyDepsIfMissing(project)
                 startWith(vf)
             }
         }

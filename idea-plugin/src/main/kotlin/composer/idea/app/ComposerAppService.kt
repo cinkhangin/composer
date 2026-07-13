@@ -14,19 +14,22 @@ import com.intellij.openapi.editor.event.DocumentListener
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.impl.LoadTextUtil
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.vfs.VfsUtil
+import com.intellij.openapi.roots.ModuleRootManager
+import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
+import com.intellij.openapi.vfs.VfsUtilCore
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
 import com.intellij.psi.PsiManager
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.ui.update.MergingUpdateQueue
 import com.intellij.util.ui.update.Update
-import composer.codeparse.AppParser
-import composer.codeparse.AppWriteBackPlan
-import composer.codeparse.AppWriteBackPlanner
-import composer.codeparse.ParsedApp
+import composer.codeparse.ModuleDesignParser
+import composer.codeparse.ModuleWriteBackPlan
+import composer.codeparse.ModuleWriteBackPlanner
+import composer.codeparse.ParsedModuleDesign
 import composer.codeparse.SourceFile
 import composer.idea.ComposerNotifications
 import composer.model.DesignJson
@@ -34,11 +37,12 @@ import composer.model.Node
 import org.jetbrains.concurrency.CancellablePromise
 
 /**
- * Project-scoped whole-app designer coordinator: discovers the app's files
- * around the configured MainActivity, aggregates them into one design
- * ([AppParser]) off the EDT, and pushes it to the tool-window designer.
+ * Project-scoped whole-app designer coordinator: uses MainActivity only as the
+ * module anchor, discovers every production Kotlin source file in that module,
+ * aggregates its top-level composables via [ModuleDesignParser] off the EDT,
+ * and pushes them to the tool-window designer.
  * Re-parses on any owned-document edit (one application-level listener,
- * filtered) and on VFS changes under the app directory.
+ * filtered) and on VFS changes under the module's source roots.
  *
  * Designer edits are planned off the EDT and written as one undoable command.
  */
@@ -54,7 +58,7 @@ class ComposerAppService(private val project: Project) : Disposable {
     var onStatus: ((String?) -> Unit)? = null
 
     @Volatile
-    var lastParsed: ParsedApp? = null
+    var lastParsed: ParsedModuleDesign? = null
         private set
 
     @Volatile
@@ -65,6 +69,8 @@ class ComposerAppService(private val project: Project) : Disposable {
     private var lastParsedStamps: Map<String, Long> = emptyMap()
 
     private var mainActivity: VirtualFile? = null
+    @Volatile
+    private var sourceRoots: List<VirtualFile> = emptyList()
     private var listenersInstalled = false
 
     @Volatile
@@ -78,6 +84,12 @@ class ComposerAppService(private val project: Project) : Disposable {
     fun start(main: VirtualFile) {
         if (mainActivity == main) return
         mainActivity = main
+        val fileIndex = ProjectRootManager.getInstance(project).fileIndex
+        val module = fileIndex.getModuleForFile(main)
+        sourceRoots = module?.let { ModuleRootManager.getInstance(it).sourceRoots.toList() }
+            ?.filter { it.isDirectory && !fileIndex.isInTestSourceContent(it) }
+            ?.ifEmpty { null }
+            ?: listOfNotNull(main.parent)
         lastPushed = null
         installListeners()
         scheduleParse()
@@ -88,6 +100,7 @@ class ComposerAppService(private val project: Project) : Disposable {
         pendingEdit = null
         queue.cancelAllUpdates()
         mainActivity = null
+        sourceRoots = emptyList()
         lastParsed = null
         lastPushed = null
         lastParsedStamps = emptyMap()
@@ -97,10 +110,8 @@ class ComposerAppService(private val project: Project) : Disposable {
     fun sourceRangeOf(nodeId: String): Pair<VirtualFile, IntRange>? {
         val parsed = lastParsed ?: return null
         for (f in parsed.files) {
-            val range = f.design?.sourceRanges?.get(nodeId) ?: continue
-            val vf = VirtualFileManager.getInstance().findFileByUrl("file://${f.path}")
-                ?: candidateFiles().firstOrNull { it.path == f.path }
-                ?: continue
+            val range = f.design.sourceRanges[nodeId] ?: continue
+            val vf = LocalFileSystem.getInstance().findFileByPath(f.path) ?: continue
             return vf to range
         }
         return null
@@ -133,7 +144,7 @@ class ComposerAppService(private val project: Project) : Disposable {
     private sealed interface EditOutcome
     private data object Drop : EditOutcome
     private class Planned(
-        val plan: AppWriteBackPlan,
+        val plan: ModuleWriteBackPlan,
         val stamps: Map<String, Long>,
     ) : EditOutcome
 
@@ -171,7 +182,13 @@ class ComposerAppService(private val project: Project) : Disposable {
         val byPath = mutableMapOf<String, VirtualFile>()
         for (vf in candidateFiles()) {
             val doc = FileDocumentManager.getInstance().getCachedDocument(vf)
-            sources += SourceFile(vf.path, doc?.text ?: LoadTextUtil.loadText(vf).toString())
+            val text = doc?.text ?: LoadTextUtil.loadText(vf).toString()
+            // Every supported declaration necessarily spells Composable in its
+            // annotation or import. Avoid parsing/stamping unrelated module files
+            // on every keystroke while document/VFS listeners still detect when a
+            // file gains its first composable.
+            if ("Composable" !in text) continue
+            sources += SourceFile(vf.path, text)
             stamps[vf.path] = doc?.modificationStamp ?: vf.modificationStamp
             byPath[vf.path] = vf
         }
@@ -179,11 +196,13 @@ class ComposerAppService(private val project: Project) : Disposable {
     }
 
     private fun stampsMatch(expected: Map<String, Long>): Boolean {
-        val (_, now, _) = snapshot()
-        // Exact key equality matters: a newly-created screen file can collide
-        // with a planned create even though every previously-seen stamp still
-        // matches. Applying that stale plan would overwrite the new file.
-        return now == expected
+        // Module discovery can cover hundreds of files. Check only the relevant
+        // parsed files here—without rescanning/loading the whole module on the EDT.
+        return expected.all { (path, stamp) ->
+            val vf = LocalFileSystem.getInstance().findFileByPath(path) ?: return@all false
+            val doc = FileDocumentManager.getInstance().getCachedDocument(vf)
+            (doc?.modificationStamp ?: vf.modificationStamp) == stamp
+        }
     }
 
     private fun planEdit(designJson: String): EditOutcome {
@@ -200,14 +219,14 @@ class ComposerAppService(private val project: Project) : Disposable {
         if (sources.isEmpty()) return Drop
         // Reuse the read path's parse when nothing moved underneath it.
         val previous = lastParsed?.takeIf { lastParsedStamps == stamps }
-            ?: AppParser.parse(sources)
+            ?: ModuleDesignParser.parse(sources)
             ?: return Drop
-        val plan = AppWriteBackPlanner.plan(previous, sources.associate { it.path to it.text }, edited)
+        val plan = ModuleWriteBackPlanner.plan(previous, sources.associate { it.path to it.text }, edited)
         if (plan.files.isEmpty() && plan.warnings.isEmpty() && plan.blockedReason == null) return Drop // geometry-only or true no-op
         return Planned(plan, stamps)
     }
 
-    private fun applyPlan(plan: AppWriteBackPlan) {
+    private fun applyPlan(plan: ModuleWriteBackPlan) {
         plan.blockedReason?.let { reason ->
             ComposerNotifications.warnOnce(
                 project,
@@ -217,46 +236,14 @@ class ComposerAppService(private val project: Project) : Disposable {
             repushForNewDesigner()
             return
         }
-        val (_, _, byPath) = snapshot()
-        val dir = mainActivity?.parent ?: return
-        val conflicts = plan.files.mapNotNull { filePlan ->
-            if (filePlan.createText == null) return@mapNotNull null
-            val targetName = filePlan.path.substringAfterLast('/')
-            val target = dir.findChild(targetName)
-            val moveFrom = filePlan.moveFrom
-            val source = moveFrom?.let(byPath::get)
-            when {
-                moveFrom != null && source == null -> moveFrom.substringAfterLast('/')
-                target != null && target != source -> targetName
-                else -> null
-            }
-        }.distinct()
-        if (conflicts.isNotEmpty()) {
-            val names = conflicts.joinToString(", ")
-            ComposerNotifications.warnOnce(
-                project,
-                "composer.app.file-conflict:${conflicts.sorted().joinToString("|")}",
-                "Composer didn't apply the design edit because it would overwrite existing files: $names",
-            )
-            // The designer has already accepted the edit. Force the canonical
-            // source design back into it instead of leaving UI and code divergent.
-            repushForNewDesigner()
-            return
-        }
-
-        val editedFiles = plan.files.mapNotNull { filePlan ->
-            val moveFrom = filePlan.moveFrom
-            when {
-                moveFrom != null -> byPath[moveFrom]
-                filePlan.edits.isNotEmpty() -> byPath[filePlan.path]
-                else -> null
-            }
-        }.distinct()
+        val byPath = plan.files.mapNotNull { filePlan ->
+            LocalFileSystem.getInstance().findFileByPath(filePlan.path)?.let { filePlan.path to it }
+        }.toMap()
+        val editedFiles = plan.files.mapNotNull { byPath[it.path] }.distinct()
         val psiFiles = editedFiles.mapNotNull { PsiManager.getInstance(project).findFile(it) }
-        val writePlans = plan.files.filter { it.edits.isNotEmpty() || it.createText != null }
+        val writePlans = plan.files.filter { it.edits.isNotEmpty() }
         val hasWrites = writePlans.isNotEmpty()
         val multiFile = writePlans.size > 1
-        val skippedDeletions = plan.files.filter { it.delete }
         if (hasWrites) {
             suppressDocEvents = true
             try {
@@ -267,29 +254,10 @@ class ComposerAppService(private val project: Project) : Disposable {
                     {
                         if (multiFile) CommandProcessor.getInstance().markCurrentCommandAsGlobal(project)
                         for (filePlan in plan.files) {
-                            when {
-                                filePlan.delete -> Unit // conservative: files stay, notified below
-                                filePlan.createText != null -> {
-                                    val name = filePlan.path.substringAfterLast('/')
-                                    val moveFrom = filePlan.moveFrom
-                                    val vf = if (moveFrom != null) {
-                                        val source = byPath.getValue(moveFrom)
-                                        if (source.name != name) source.rename(this, name)
-                                        source
-                                    } else {
-                                        // Preflight above guarantees this is a true create,
-                                        // never a silent overwrite of user source.
-                                        dir.createChildData(this, name)
-                                    }
-                                    VfsUtil.saveText(vf, filePlan.createText ?: error("createText disappeared"))
-                                }
-                                else -> {
-                                    val vf = byPath[filePlan.path] ?: continue
-                                    val doc = FileDocumentManager.getInstance().getDocument(vf) ?: continue
-                                    for (e in filePlan.edits.sortedByDescending { it.start }) {
-                                        doc.replaceString(e.start, e.end, e.replacement)
-                                    }
-                                }
+                            val vf = byPath[filePlan.path] ?: continue
+                            val doc = FileDocumentManager.getInstance().getDocument(vf) ?: continue
+                            for (e in filePlan.edits.sortedByDescending { it.start }) {
+                                doc.replaceString(e.start, e.end, e.replacement)
                             }
                         }
                     },
@@ -301,21 +269,6 @@ class ComposerAppService(private val project: Project) : Disposable {
         }
         for (w in plan.warnings) {
             ComposerNotifications.infoOnce(project, "composer.app.warn:${w.hashCode()}", w)
-        }
-        if (skippedDeletions.isNotEmpty()) {
-            ComposerNotifications.infoOnce(
-                project,
-                "composer.app.deleted:${skippedDeletions.hashCode()}",
-                skippedDeletions.joinToString(", ") { it.path.substringAfterLast('/') } +
-                    " were left in place; delete them manually after confirming the navigation change.",
-            )
-        }
-        for (rename in plan.renames) {
-            ComposerNotifications.infoOnce(
-                project,
-                "composer.app.rename:${rename.from}->${rename.to}",
-                "Composer renamed ${rename.from} to ${rename.to} — call sites in hand-written code were not updated.",
-            )
         }
         // Canonical re-push keeps designer ids in sync. If preservation rules
         // rejected every write, force the old source design back into the UI.
@@ -340,47 +293,57 @@ class ComposerAppService(private val project: Project) : Disposable {
             object : BulkFileListener {
                 override fun after(events: List<VFileEvent>) {
                     if (suppressDocEvents) return
-                    val dir = mainActivity?.parent?.path ?: return
-                    val prefix = "$dir/"
-                    if (events.any { it.path.startsWith(prefix) && it.path.endsWith(".kt") }) scheduleParse()
+                    val prefixes = sourceRoots.map { "${it.path}/" }
+                    if (events.any { event ->
+                            event.path.endsWith(".kt") && prefixes.any(event.path::startsWith)
+                        }
+                    ) scheduleParse()
                 }
             },
         )
     }
 
     private fun isOwnedCandidate(file: VirtualFile): Boolean {
-        val dir = mainActivity?.parent ?: return false
-        if (file.parent != dir || file.extension != "kt") return false
-        val name = file.nameWithoutExtension
-        return name == "MainActivity" || name.endsWith("ScreenUI") ||
-            name.endsWith("Screen") || name.endsWith("ViewModel")
+        if (file.extension != "kt") return false
+        return sourceRoots.any { VfsUtilCore.isAncestor(it, file, false) }
     }
 
-    /** The candidate file set: MainActivity + triplet-named .kt files beside it. */
+    /** Every production Kotlin source file in the anchored Android module. */
     private fun candidateFiles(): List<VirtualFile> {
-        val main = mainActivity ?: return emptyList()
-        val dir = main.parent ?: return emptyList()
-        return dir.children.filter { it == main || (!it.isDirectory && isOwnedCandidate(it)) }
+        val files = linkedMapOf<String, VirtualFile>()
+        fun collect(file: VirtualFile) {
+            if (file.isDirectory) {
+                file.children.forEach(::collect)
+            } else if (file.extension == "kt") {
+                files[file.path] = file
+            }
+        }
+        sourceRoots.forEach(::collect)
+        return files.values.sortedBy { it.path }
     }
 
     private fun parseAndPush() {
         if (project.isDisposed || mainActivity?.isValid != true) return
-        ReadAction.nonBlocking<Triple<String, ParsedApp, Map<String, Long>>?> {
+        ReadAction.nonBlocking<Triple<String, ParsedModuleDesign, Map<String, Long>>?> {
             val (sources, stamps, _) = snapshot()
             if (sources.isEmpty()) return@nonBlocking null
-            val parsed = AppParser.parse(sources) ?: return@nonBlocking null
+            val parsed = ModuleDesignParser.parse(sources) ?: return@nonBlocking null
             Triple(DesignJson.encode(parsed.artboard), parsed, stamps)
         }
             .expireWith(this)
             .coalesceBy(this)
             .finishOnUiThread(ModalityState.defaultModalityState()) { result ->
                 if (result == null) {
-                    onStatus?.invoke("Couldn't assemble the app design — check MainActivity and the screen files.")
+                    onStatus?.invoke("No parseable top-level @Composable functions were found in this module.")
                     return@finishOnUiThread
                 }
                 val (json, parsed, stamps) = result
                 lastParsed = parsed
                 lastParsedStamps = stamps
+                log.info(
+                    "Composer discovered ${parsed.artboard.composables.size} composables " +
+                        "across ${parsed.files.size} module files",
+                )
                 onStatus?.invoke(parsed.warnings.firstOrNull())
                 if (json != lastPushed) {
                     lastPushed = json
