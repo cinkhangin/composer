@@ -1,6 +1,6 @@
 <idea-plugin>
     <id>com.ckgin.composer</id>
-    <name>Composer Designer</name>
+    <name>Composer</name>
     <vendor>cinkhangin</vendor>
     <description><![CDATA[
         Visual app designer for Compose Multiplatform code. The Composer App

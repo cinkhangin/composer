@@ -61,7 +61,7 @@ intellijPlatform {
     buildSearchableOptions = false
     pluginConfiguration {
         id = "com.ckgin.composer"
-        name = "Composer Designer"
+        name = "Composer"
         version = "0.1.0"
         vendor {
             name = "cinkhangin"
