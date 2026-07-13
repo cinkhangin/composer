@@ -13,8 +13,8 @@ import javax.swing.filechooser.FileNameExtensionFilter
 import org.jetbrains.skia.Image as SkiaImage
 
 /**
- * Image loading on the JVM: http(s) URLs stream over the network, `data:` URLs
- * decode inline; both decode with Skiko exactly like the web actual.
+ * Image loading on the JVM: http(s) URLs stream over the network and `data:`
+ * URLs decode inline; both decode with Skiko.
  */
 actual object LocalImages {
     actual val loaded: SnapshotStateMap<String, ImageBitmap> = mutableStateMapOf()

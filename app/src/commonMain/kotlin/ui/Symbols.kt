@@ -45,7 +45,7 @@ object Symbols {
 
     @OptIn(ExperimentalResourceApi::class)
     suspend fun load() {
-        if (started) return // single-threaded (wasm): safe check-then-set, no suspension between
+        if (started) return
         started = true
         val text = Res.readBytes("files/material_symbols.txt").decodeToString()
         for (line in text.splitToSequence('\n')) {

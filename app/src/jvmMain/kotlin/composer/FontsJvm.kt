@@ -12,8 +12,7 @@ import org.jetbrains.skia.FontStyle
 
 /**
  * Device-installed fonts on the JVM: enumerate via AWT, resolve typefaces via
- * skiko's [FontMgr] (same registration as the web actual — a Compose
- * [FontFamily] per family name for the canvas preview).
+ * Skiko's [FontMgr] as a Compose [FontFamily] per family name.
  */
 actual object LocalFonts {
     actual val available: SnapshotStateList<String> = mutableStateListOf()

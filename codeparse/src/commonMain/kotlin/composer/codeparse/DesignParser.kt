@@ -7,8 +7,8 @@ import composer.model.Node
  * Kotlin source → Composer design tree: one [Node.Composable] screen per parseable
  * top-level `@Composable` function; everything the model can't represent inside a
  * body becomes a locked [Node.RawCode]. Purely syntactic (no resolve, no PSI —
- * the hand-rolled scanner in Lexer/FileScanner/StatementParser runs on any
- * Kotlin target, including Wasm) — fast, dumb-mode-safe, and honest: the failure
+ * the hand-rolled scanner in Lexer/FileScanner/StatementParser is plain
+ * Kotlin/JVM) — fast, dumb-mode-safe, and honest: the failure
  * mode of the accepted ambiguities is a standard-Compose regeneration of a
  * function the user explicitly edited.
  *

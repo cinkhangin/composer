@@ -2,7 +2,7 @@ package composer
 
 /**
  * Editor preferences (NOT design data) over the [prefGet]/[prefSet] seam:
- * frame size, side-panel collapse, and the Design|Code view mode.
+ * legacy frame size and side-panel collapse.
  */
 
 private const val FRAME_KEY = "composer.frame"
@@ -27,13 +27,4 @@ fun loadPanelOpen(panel: String): Boolean = prefGet(PANEL_KEY_PREFIX + panel) !=
 
 fun savePanelOpen(panel: String, open: Boolean) {
     prefSet(PANEL_KEY_PREFIX + panel, if (open) "open" else "closed")
-}
-
-// Center-pane view mode (Design | Code) — persists across reloads.
-private const val VIEW_KEY = "composer.view"
-
-fun loadCodeView(): Boolean = prefGet(VIEW_KEY) == "code"
-
-fun saveCodeView(showCode: Boolean) {
-    prefSet(VIEW_KEY, if (showCode) "code" else "design")
 }

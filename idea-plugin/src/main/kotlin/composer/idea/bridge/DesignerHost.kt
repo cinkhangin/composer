@@ -2,29 +2,14 @@ package composer.idea.bridge
 
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.components.service
 import com.intellij.openapi.util.Disposer
-import com.intellij.ui.jcef.JBCefApp
-import com.intellij.ui.jcef.JBCefBrowser
-import com.intellij.ui.jcef.JBCefBrowserBase
-import composer.idea.web.ComposerWebServer
-import composer.idea.web.ComposerWebServerStartException
 import java.awt.BorderLayout
 import javax.swing.JComponent
 import javax.swing.JPanel
 
 /**
- * Where the designer actually runs. Two implementations of the SAME
- * [BridgeMsg] protocol:
- *
- * - [DirectDesignerHost] (default): the editor as Compose for Desktop inside a
- *   ComposePanel — no JCEF, no web server, no wasm boot. Messages cross an
- *   in-process function call.
- * - [JcefDesignerHost] (fallback, `-Dcomposer.designer.jcef=true`): the bundled
- *   wasm web app in a JCEF browser, exactly the pre-J3 path.
- *
- * Consumers drive both identically: set [onMessage], call [load], [send]
- * envelopes, dispose. `ready` still arrives first either way.
+ * In-process Compose designer host. Consumers set [onMessage], call [load] and
+ * exchange [BridgeMsg] envelopes through direct in-process calls.
  */
 interface DesignerHost : Disposable {
     val component: JComponent
@@ -35,10 +20,7 @@ interface DesignerHost : Disposable {
     /** A designer message that failed to decode (already logged), on the EDT. */
     var onUndecodable: (() -> Unit)?
 
-    /** True when boot is slow enough to need a watchdog timer (JCEF wasm boot). */
-    val needsBootTimeout: Boolean
-
-    /** Start the designer (compose the panel / load the URL). Idempotent. */
+    /** Start composing the panel. Idempotent. */
     fun load()
 
     fun send(msg: BridgeMsg)
@@ -51,8 +33,6 @@ object DesignerHosts {
         /** No host could start; [retryable] = a Retry button makes sense (vs. a hard runtime gap). */
         class Failed(val message: String, val retryable: Boolean) : Result
     }
-
-    private val forceJcef: Boolean get() = java.lang.Boolean.getBoolean("composer.designer.jcef")
 
     /**
      * True when the IDE ships Compose for Desktop and exposes it to this plugin
@@ -69,23 +49,14 @@ object DesignerHosts {
     }
 
     fun create(parent: Disposable): Result {
-        if (platformComposeAvailable && !forceJcef) {
+        if (platformComposeAvailable) {
             return Result.Ok(DirectDesignerHost().also { Disposer.register(parent, it) })
         }
-        if (!JBCefApp.isSupported()) {
-            return Result.Failed(
-                "<html>This IDE has neither bundled Compose (2025.1+/AS Narwhal+) nor a JCEF runtime,<br>" +
-                    "so no designer can run. Fix: Search Everywhere (Shift Shift) → " +
-                    "\"Choose Boot Java Runtime for the IDE\" → pick a runtime with JCEF → restart.</html>",
-                retryable = false,
-            )
-        }
-        val url = try {
-            service<ComposerWebServer>().baseUrl
-        } catch (e: ComposerWebServerStartException) {
-            return Result.Failed(e.message ?: "Composer's local web server failed to start.", retryable = true)
-        }
-        return Result.Ok(JcefDesignerHost(url).also { Disposer.register(parent, it) })
+        return Result.Failed(
+            "<html>Composer requires an Android Studio runtime that exposes " +
+                "<code>intellij.platform.compose</code>.</html>",
+            retryable = false,
+        )
     }
 }
 
@@ -97,8 +68,6 @@ class DirectDesignerHost : DesignerHost {
     override val component: JComponent get() = container
     override var onMessage: ((BridgeMsg) -> Unit)? = null
     override var onUndecodable: (() -> Unit)? = null
-    override val needsBootTimeout: Boolean get() = false
-
     override fun load() {
         if (connection != null) return
         val c = composer.createDesignerPanel { raw ->
@@ -119,40 +88,5 @@ class DirectDesignerHost : DesignerHost {
     override fun dispose() {
         connection?.dispose()
         connection = null
-    }
-}
-
-/** The pre-J3 path: the bundled wasm web app in a JCEF browser. */
-class JcefDesignerHost(private val url: String) : DesignerHost {
-    private val browser: JBCefBrowser = JBCefBrowser.createBuilder().setOffScreenRendering(false).build().apply {
-        setErrorPage(JBCefBrowserBase.ErrorPage.DEFAULT)
-    }
-    private val bridge = DesignerBridge(browser)
-    private var loaded = false
-
-    override val component: JComponent get() = browser.component
-    override var onMessage: ((BridgeMsg) -> Unit)?
-        get() = bridge.onMessage
-        set(value) {
-            bridge.onMessage = value
-        }
-    override var onUndecodable: (() -> Unit)?
-        get() = bridge.onUndecodable
-        set(value) {
-            bridge.onUndecodable = value
-        }
-    override val needsBootTimeout: Boolean get() = true
-
-    override fun load() {
-        if (loaded) return
-        loaded = true
-        browser.loadURL("$url?embedded=1")
-    }
-
-    override fun send(msg: BridgeMsg) = bridge.send(msg)
-
-    override fun dispose() {
-        Disposer.dispose(bridge)
-        Disposer.dispose(browser)
     }
 }

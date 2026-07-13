@@ -13,16 +13,8 @@
 
     <depends>com.intellij.modules.platform</depends>
     <depends>org.jetbrains.kotlin</depends>
-
-    <!-- Replaced at build time (see processResources in build.gradle.kts):
-         -Pcomposer.platformCompose=true inserts a module dependency on
-         intellij.platform.compose here — on IDEs that ship Compose (AS 261+/
-         IDEA 251+) the plugin must use the PLATFORM's compose+skiko (two skiko
-         native libs cannot coexist in one process: objc class collisions +
-         UnsatisfiedLinkError on Metal init). Default builds (242 baseline)
-         bundle the full Compose Desktop runtime instead and leave this empty
-         (the module doesn't exist there). -->
-    <!--PLATFORM_COMPOSE-->
+    <!-- The designer runs in-process on Android Studio's Compose runtime. -->
+    <dependencies><module name="intellij.platform.compose"/></dependencies>
 
     <extensions defaultExtensionNs="com.intellij">
         <fileEditorProvider implementation="composer.idea.editor.ComposerSplitEditorProvider"/>

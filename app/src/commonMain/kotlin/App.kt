@@ -49,10 +49,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.onEach
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -103,7 +101,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import composer.codegen.CodeGen
 import composer.model.DesignJson
 import composer.model.DesignTheme
 import composer.model.ThemeColorRef
@@ -125,28 +122,20 @@ import composer.ui.LocalThemeSwatches
 import composer.ui.ThemeSwatch
 import composer.ui.Theme
 import composer.ui.Tip
-import composer.ui.BrandLogo
 import composer.ui.Tk
-import composer.ui.TkMenu
-import composer.ui.TkMenuItem
 import composer.ui.ToolButton
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 
 /**
- * Composer editor shell: toolbar on top; palette · canvas · inspector · code
- * panel below. All panes are projections of one [EditorState.root].
+ * Android Studio designer shell. All panes are projections of one
+ * [EditorState.root], while [session] owns synchronization with the IDE.
  */
 @OptIn(FlowPreview::class)
 @Composable
-fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
-    // Embedded (IDE): the code view is hidden (the IDE shows the real code), so
-    // ignore a persisted "code" preference without overwriting it.
-    val state = remember { EditorState(ws.initialDesign).also { if (embedded) it.setCodeView(false, persist = false) } }
-    // Hoisted next to the state so typed code formatting survives Design↔Code
-    // toggles; a file open rebuilds everything via key(openToken) in Root().
-    val codeSync = remember { CodeSyncState() }
+internal fun EditorScreen(session: DesignerSession) {
+    val state = remember(session) { EditorState(emptyDesign) }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
     // Reclaim keyboard focus for the editor whenever the selection changes (e.g. after
@@ -156,60 +145,31 @@ fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
         if (state.selectedId != null) runCatching { focusRequester.requestFocus() }
     }
 
-    if (embedded) {
-        // Embedded (IDE plugin): the bridge replaces persistence — the host owns
-        // the file. Designs arrive via loadDesign; edits post back designChanged.
-        DisposableEffect(state) {
-            EmbeddedBridge.onLoadDesign = { tree ->
-                state.loadExternal(tree)
-                // Record what was ACTUALLY applied (migrated/deduped) so the echo
-                // guard compares canonical-to-canonical.
-                EmbeddedBridge.noteLoaded(DesignJson.encode(state.root))
-            }
-            // Editor caret → designer selection (ignore ids the current tree doesn't have).
-            EmbeddedBridge.onSelectNode = { id ->
-                if (state.root.findById(id) != null) state.select(id)
-            }
-            onDispose {
-                EmbeddedBridge.onLoadDesign = null
-                EmbeddedBridge.onSelectNode = null
-            }
+    DisposableEffect(session, state) {
+        session.onLoadDesign = { tree ->
+            state.loadExternal(tree)
+            session.noteLoaded(DesignJson.encode(state.root))
         }
-        LaunchedEffect(Unit) {
-            EmbeddedBridge.start()
-            // The host's bridge object can appear after wasm boot — pump until
-            // the ready handshake (and anything queued behind it) is delivered.
-            while (!EmbeddedBridge.flush()) delay(100)
+        session.onSelectNode = { id ->
+            if (state.root.findById(id) != null) state.select(id)
         }
-        LaunchedEffect(state) {
-            snapshotFlow { state.root }
-                .drop(1) // the initial (empty) design isn't an edit
-                .debounce(300) // tighter than web auto-save — this drives live code
-                .collect { EmbeddedBridge.postDesign(DesignJson.encode(state.root)) }
+        onDispose {
+            session.onLoadDesign = null
+            session.onSelectNode = null
         }
-        // Designer selection → host (IDE moves the editor caret to the node's code).
-        LaunchedEffect(state) {
-            snapshotFlow { state.selectedId }
-                .drop(1)
-                .debounce(100)
-                .collect { EmbeddedBridge.postSelection(it) }
-        }
-    } else {
-        // Auto-save: persist to the current file shortly after the design (or name) changes.
-        LaunchedEffect(state, ws) {
-            snapshotFlow { state.root to ws.currentName }
-                .drop(1) // skip the initial state — don't create a file for an untouched design
-                .onEach { ws.markDirty() } // show "Saving…" immediately; the save below settles it
-                .debounce(700)
-                .collect { ws.save(state.root) }
-        }
-
-        // Flush on tab close: the 700ms debounce would otherwise drop the last edit.
-        // Only save if the design actually diverged, so closing an untouched new design creates no file.
-        DisposableEffect(state, ws) {
-            val unregister = registerUnloadFlush { if (state.root != ws.initialDesign) ws.save(state.root) }
-            onDispose { unregister() }
-        }
+    }
+    LaunchedEffect(session) { session.start() }
+    LaunchedEffect(session, state) {
+        snapshotFlow { state.root }
+            .drop(1)
+            .debounce(300)
+            .collect { session.postDesign(DesignJson.encode(state.root)) }
+    }
+    LaunchedEffect(session, state) {
+        snapshotFlow { state.selectedId }
+            .drop(1)
+            .debounce(100)
+            .collect { session.postSelection(it) }
     }
 
     // Every ColorPicker in the editor offers the ACTIVE theme's tokens as picks
@@ -228,17 +188,7 @@ fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
             .focusable(),
         verticalArrangement = Arrangement.spacedBy(Tk.gap),
     ) {
-        Toolbar(state, ws, embedded)
-        if (!embedded) {
-            ws.saveError?.let { SaveErrorBanner(it, onAction = ws::dismissSaveError) }
-            if (ws.loadFailed) SaveErrorBanner(
-                "Couldn't read this file's saved design — showing an empty canvas. " +
-                    "Auto-save is paused so the stored data stays intact; Save anyway overwrites it.",
-                actionLabel = "Save anyway",
-                onAction = { ws.saveOverwriting(state.root) },
-            )
-            ws.importError?.let { SaveErrorBanner(it, onAction = { ws.importError = null }) }
-        }
+        Toolbar(state)
         Row(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Tk.gap),
@@ -252,16 +202,16 @@ fun EditorScreen(ws: Workspace, embedded: Boolean = false) {
                 Modifier.weight(1f).fillMaxHeight().then(
                     // On any canvas press, reclaim editor focus (Initial pass, no consume) so
                     // keyboard shortcuts work even after clicking the same already-selected node.
-                    if (state.showCode) Modifier else Modifier.pointerInput(Unit) {
+                    Modifier.pointerInput(Unit) {
                         awaitEachGesture {
                             awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                             runCatching { focusRequester.requestFocus() }
                         }
                     }
                 ),
-                color = if (state.showCode) Tk.codeBg else Tk.canvasBg,
+                color = Tk.canvasBg,
             ) {
-                if (state.showCode) CodePanel(state, codeSync) else Canvas(state)
+                Canvas(state, appMode = session.appMode)
             }
             if (state.rightPanelOpen) {
                 Island(Modifier.width(240.dp).fillMaxHeight()) { Inspector(state, onCollapse = state::toggleRightPanel) }
@@ -287,35 +237,14 @@ private fun CollapsedPanelStrip(icon: AppIconKind, tip: String, onExpand: () -> 
 }
 
 /**
- * Three-zone top bar (left: brand menu · editable title · save status; center: view
- * switch; right: history, theme, export, account) — the layout professional design tools
- * use. The center segmented control is absolutely centered regardless of side widths.
+ * Plugin toolbar: local design history and preview theme. Android Studio owns
+ * files, source code, export, and project identity.
  */
 @Composable
-private fun Toolbar(state: EditorState, ws: Workspace, embedded: Boolean = false) {
+private fun Toolbar(state: EditorState) {
     // 40dp: the tallest controls are 32dp, so this leaves 4dp of air above/below —
     // a slim, Figma-like bar instead of the airy 52dp it started with.
     Box(modifier = Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 12.dp)) {
-        // Embedded (IDE plugin): the host owns files, export, and account — and the
-        // IDE shows the real code next to the panel, so the view switch goes too.
-        // What's left is design-surface chrome: history and the preview theme.
-        if (!embedded) {
-            // LEFT — brand/main menu, editable project title, live save status
-            Row(
-                modifier = Modifier.align(Alignment.CenterStart),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                LogoMenu(state, ws)
-                ProjectTitle(ws)
-                SaveStatusChip(ws)
-            }
-
-            // CENTER — primary view switch
-            Box(Modifier.align(Alignment.Center)) { ViewSwitch(state) }
-        }
-
-        // RIGHT — history, theme, export CTA, account
         Row(
             modifier = Modifier.align(Alignment.CenterEnd),
             verticalAlignment = Alignment.CenterVertically,
@@ -329,81 +258,7 @@ private fun Toolbar(state: EditorState, ws: Workspace, embedded: Boolean = false
                 tip = if (Theme.isDark) "Light mode" else "Dark mode",
                 onClick = Theme::toggle,
             )
-            if (!embedded) {
-                ExportMenu(state)
-                AccountChip()
-            }
         }
-    }
-}
-
-/** Accent brand mark that opens the main (document) menu — Figma-style. */
-@Composable
-private fun LogoMenu(state: EditorState, ws: Workspace) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .clickable { open = true },
-            contentAlignment = Alignment.Center,
-        ) {
-            BrandLogo(Modifier.size(28.dp))
-        }
-        TkMenu(expanded = open, onDismissRequest = { open = false }) {
-            MenuItem("New design") { ws.newDesign(); open = false }
-            MenuItem("Save") { ws.saveOverwriting(state.root); open = false }
-            MenuItem("Import JSON…") {
-                importTextFile(".json,application/json") { text ->
-                    runCatching { DesignJson.decode(text) }
-                        .onSuccess { ws.importError = null; state.load(it) }
-                        .onFailure { ws.importError = "Couldn't import — that file isn't a valid Composer design JSON." }
-                }
-                open = false
-            }
-            HorizontalDivider()
-            MenuItem("Back to home") { ws.home(); open = false }
-            // Passive footer — the app version, not a menu action.
-            BasicText(
-                "Composer v$APP_VERSION",
-                style = TextStyle(color = Tk.textMuted, fontSize = 11.sp),
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            )
-        }
-    }
-}
-
-/** Segmented Design | Code switch (one pill, active segment filled accent). */
-@Composable
-private fun ViewSwitch(state: EditorState) {
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(Tk.rSm))
-            .background(Tk.panelAlt)
-            .border(1.dp, Tk.border, RoundedCornerShape(Tk.rSm))
-            .padding(2.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        ViewSegment("Design", AppIconKind.Design, active = !state.showCode) { state.setCodeView(false) }
-        ViewSegment("Code", AppIconKind.Code, active = state.showCode) { state.setCodeView(true) }
-    }
-}
-
-@Composable
-private fun ViewSegment(label: String, icon: AppIconKind, active: Boolean, onClick: () -> Unit) {
-    val fg = if (active) Color.White else Tk.textSecondary
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(Tk.rXs))
-            .background(if (active) Tk.accent else Color.Transparent)
-            .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        AppIcon(icon, Modifier.size(13.dp), tint = fg)
-        BasicText(label, style = TextStyle(color = fg, fontSize = 12.5.sp, fontWeight = FontWeight.Medium))
     }
 }
 
@@ -435,48 +290,6 @@ private fun TopIconButton(icon: AppIconKind, tip: String, enabled: Boolean = tru
     }
 }
 
-/** Primary Export CTA with a share icon; opens export/import options. */
-@Composable
-private fun ExportMenu(state: EditorState) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        ToolButton("Export", primary = true, icon = AppIconKind.Share) { open = true }
-        TkMenu(expanded = open, onDismissRequest = { open = false }) {
-            MenuItem("Export .kt") {
-                downloadText("Screens.kt", CodeGen.generate(state.root), "text/plain"); open = false
-            }
-            MenuItem("Export JSON") {
-                downloadText("composer-design.json", DesignJson.encode(state.root), "application/json"); open = false
-            }
-        }
-    }
-}
-
-/** Mock account avatar (Guest / local workspace — matches the home page placeholder). */
-@Composable
-private fun AccountChip() {
-    Box(
-        modifier = Modifier
-            .size(30.dp)
-            .clip(CircleShape)
-            .background(Tk.accentSoft)
-            .border(1.dp, Tk.border, CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        BasicText("G", style = TextStyle(color = Tk.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold))
-    }
-}
-
-/** Live persistence status, like Figma's "Saved"/"Saving…". */
-@Composable
-private fun SaveStatusChip(ws: Workspace) {
-    val (label, color) = when (ws.saveStatus) {
-        SaveStatus.Saved -> "Saved" to Tk.textMuted
-        SaveStatus.Saving -> "Saving…" to Tk.textSecondary
-        SaveStatus.Error -> "Save failed" to Tk.danger
-    }
-    BasicText(label, style = TextStyle(color = color, fontSize = 11.5.sp))
-}
 
 @Composable
 private fun TopDivider() {
@@ -485,65 +298,6 @@ private fun TopDivider() {
     }
 }
 
-/** A full-width warning shown when a save/load/import fails, so data loss is never silent. */
-@Composable
-private fun SaveErrorBanner(message: String, actionLabel: String = "Dismiss", onAction: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(Tk.dangerSoft)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        BasicText(
-            message,
-            modifier = Modifier.weight(1f),
-            style = TextStyle(color = Tk.danger, fontSize = 13.sp),
-        )
-        ToolButton(actionLabel, onClick = onAction)
-    }
-}
-
-/** Inline, borderless editable project title (hover reveals a subtle field). */
-@Composable
-private fun ProjectTitle(ws: Workspace) {
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    val focused by interaction.collectIsFocusedAsState()
-    val lit = hovered || focused
-    Box(
-        modifier = Modifier
-            .widthIn(min = 60.dp, max = 240.dp)
-            .clip(RoundedCornerShape(Tk.rSm))
-            .background(if (lit) Tk.panelAlt else Color.Transparent)
-            .border(1.dp, if (focused) Tk.accent else if (hovered) Tk.border else Color.Transparent, RoundedCornerShape(Tk.rSm))
-            .hoverable(interaction)
-            .padding(horizontal = 8.dp, vertical = 5.dp),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        BasicTextField(
-            value = ws.currentName,
-            onValueChange = { ws.currentName = it },
-            singleLine = true,
-            textStyle = TextStyle(color = Tk.textPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium),
-            cursorBrush = SolidColor(Tk.accent),
-            interactionSource = interaction,
-            decorationBox = { inner ->
-                if (ws.currentName.isEmpty()) {
-                    BasicText("Untitled", style = TextStyle(color = Tk.textMuted, fontSize = 14.sp))
-                }
-                inner()
-            },
-        )
-    }
-}
-
-@Composable
-private fun MenuItem(label: String, onClick: () -> Unit) {
-    TkMenuItem(label, onClick = onClick)
-}
 
 /** Bounding box (dp, artboard space) of a set of screens. */
 private class ContentBox(val minX: Int, val minY: Int, val w: Int, val h: Int)
@@ -558,7 +312,7 @@ private fun contentBoxOf(screens: List<Node.Composable>): ContentBox {
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
+private fun Canvas(state: EditorState, appMode: Boolean, modifier: Modifier = Modifier) {
     // User zoom (multiplier on the fitted view) + pan offset (px), like Figma.
     // The EFFECTIVE scale is fit * zoom — that's what the badge shows and what
     // the limits below apply to, so "500x" is the same true magnification
@@ -818,7 +572,7 @@ private fun Canvas(state: EditorState, modifier: Modifier = Modifier) {
                 }
             }
         }
-        SizeBadge(state, Modifier.align(Alignment.TopStart).padding(12.dp))
+        SizeBadge(state, appMode, Modifier.align(Alignment.TopStart).padding(12.dp))
         // The badge shows/steps the EFFECTIVE scale; applyZoom takes the relative zoom.
         ZoomBadge(fitScale * zoom, onZoom = { applyZoom(it / fitScale) }, onReset = ::resetView, Modifier.align(Alignment.TopEnd).padding(12.dp))
         FloatingPalette(state, Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp))
@@ -869,7 +623,7 @@ private fun ZoomBadge(zoom: Float, onZoom: (Float) -> Unit, onReset: () -> Unit,
  * library lives up here, next to where composables are created.
  */
 @Composable
-private fun SizeBadge(state: EditorState, modifier: Modifier = Modifier) {
+private fun SizeBadge(state: EditorState, appMode: Boolean, modifier: Modifier = Modifier) {
     Island(modifier) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
@@ -877,7 +631,7 @@ private fun SizeBadge(state: EditorState, modifier: Modifier = Modifier) {
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             // App mode: a composable here IS a screen (3 generated files + a route).
-            ToolButton(if (EmbeddedBridge.appMode) "Screen" else "Composable", icon = AppIconKind.Plus) { state.addComposable() }
+            ToolButton(if (appMode) "Screen" else "Composable", icon = AppIconKind.Plus) { state.addComposable() }
             val comps = state.componentDefs()
             if (comps.isNotEmpty()) {
                 Box(Modifier.width(1.dp).height(20.dp).padding(horizontal = 2.dp).background(Tk.border))
@@ -1182,7 +936,7 @@ private fun SelectionOverlay(
         }
 
         // Figma-style resize chrome: invisible EDGE zones (straddling the outline,
-        // browser resize cursor on hover) + four white corner squares — each placed
+        // native resize cursor on hover) + four white corner squares — each placed
         // only along its edge's VISIBLE segment. Composables are NOT resizable
         // (they hug content; their preset is picked in the inspector) — [resizable]
         // skips all of this for them.
@@ -1342,7 +1096,7 @@ private fun Modifier.windowAnchoredDrag(
 
 /**
  * Invisible resize zone along one edge of the selection. Shows the matching
- * browser resize [cursor] on hover (locked while dragging), and drags via
+ * native resize [cursor] on hover (locked while dragging), and drags via
  * [windowAnchoredDrag] so tracking stays cursor-exact.
  */
 @OptIn(ExperimentalComposeUiApi::class)
@@ -1467,7 +1221,6 @@ private fun Modifier.pixelGrid(scale: Float): Modifier = drawWithContent {
  */
 private fun handleShortcut(event: KeyEvent, state: EditorState): Boolean {
     if (event.type != KeyEventType.KeyDown) return false
-    if (state.codeEditorFocused) return false
     val cmd = event.isMetaPressed || event.isCtrlPressed
     return when {
         cmd && event.key == Key.Z && event.isShiftPressed -> {

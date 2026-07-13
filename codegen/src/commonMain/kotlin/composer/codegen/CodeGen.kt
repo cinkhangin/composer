@@ -31,8 +31,7 @@ import composer.model.VArrangement
  * Deterministic Compose Multiplatform code generation from a design tree.
  *
  * Pure function of the [Node] tree (see GOAL.md). Depends only on
- * the model and the Kotlin stdlib, so it runs both on Wasm (for the live code
- * panel) and on the JVM (for golden-file tests in M2).
+ * the model and the Kotlin stdlib, so it stays deterministic and JVM-testable.
  */
 object CodeGen {
 
@@ -40,8 +39,8 @@ object CodeGen {
      * Component-function registry for the CURRENT [generate] run: main-node id →
      * generated function name. A field rather than a parameter purely to avoid
      * threading context through ~40 recursive emit call sites — [generate] sets
-     * it up-front and the object is used single-threaded (wasm app, sequential
-     * JVM tests), so generate remains a pure function of its input.
+     * it up-front and the object is used sequentially by tests and IDE writes,
+     * so generate remains a pure function of its input.
      */
     private var componentFns: Map<String, String> = emptyMap()
 

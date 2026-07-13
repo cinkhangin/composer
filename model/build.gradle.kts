@@ -1,7 +1,5 @@
-import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
-
-// Pure model: no Compose plugin, no Compose deps. Targets JVM (for tests) and
-// Wasm (for the app). Must stay common-safe Kotlin only.
+// Pure model: no Compose plugin and no Compose dependencies. The Android
+// Studio plugin and its in-process designer consume the JVM target.
 plugins {
     kotlin("multiplatform")
     kotlin("plugin.serialization")
@@ -9,11 +7,6 @@ plugins {
 
 kotlin {
     jvm()
-
-    @OptIn(ExperimentalWasmDsl::class)
-    wasmJs {
-        browser()
-    }
 
     sourceSets {
         val commonMain by getting {

@@ -41,14 +41,12 @@ import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.SwingConstants
-import javax.swing.Timer
 
 /**
  * The whole-app designer tool window: one designer per project showing the
  * aggregated design assembled by [ComposerAppService]. The empty state offers
- * enablement (adopt an existing MainActivity); the designer is the in-process
- * Compose panel by default ([DesignerHosts]), or the JCEF web app behind
- * `-Dcomposer.designer.jcef=true`.
+ * enablement (adopt an existing MainActivity); the designer is an in-process
+ * Compose panel provided by [DesignerHosts].
  */
 class ComposerAppToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
@@ -88,9 +86,8 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
         border = JBUI.Borders.empty(6)
         isVisible = false
     }
-    private val browserContainer = JPanel(BorderLayout())
+    private val designerContainer = JPanel(BorderLayout())
     private var host: DesignerHost? = null
-    private var bootTimer: Timer? = null
     private var rev = 0
     private var lastIncomingRev = 0
     private var lastSelectionId: String? = null
@@ -116,9 +113,9 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
             add(retryButton)
         }
         statusPanel.add(column, GridBagConstraints())
-        browserContainer.add(warningBanner, BorderLayout.NORTH)
+        designerContainer.add(warningBanner, BorderLayout.NORTH)
         cards.add(statusPanel, CARD_STATUS)
-        cards.add(browserContainer, CARD_BROWSER)
+        cards.add(designerContainer, CARD_DESIGNER)
         component.add(cards, BorderLayout.CENTER)
 
         service.onStatus = { msg ->
@@ -270,28 +267,16 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
         }
         ApplicationManager.getApplication().messageBus.connect(this)
             .subscribe(LafManagerListener.TOPIC, LafManagerListener { pushTheme() })
-        browserContainer.add(h.component, BorderLayout.CENTER)
+        designerContainer.add(h.component, BorderLayout.CENTER)
         component.revalidate()
-        if (h.needsBootTimeout) {
-            showStatus("Loading designer…")
-            bootTimer = Timer(BOOT_TIMEOUT_MS) { onBootTimeout() }.apply {
-                isRepeats = false
-                start()
-            }
-        } else {
-            // In-process host: composes synchronously with the Swing hierarchy —
-            // show it immediately (`ready` still arrives and repushes the design).
-            (cards.layout as CardLayout).show(cards, CARD_BROWSER)
-        }
+        (cards.layout as CardLayout).show(cards, CARD_DESIGNER)
         h.load()
     }
 
     private fun teardownDesigner() {
-        bootTimer?.stop()
-        bootTimer = null
         service.pushDesign = null
         host?.let {
-            browserContainer.remove(it.component)
+            designerContainer.remove(it.component)
             Disposer.dispose(it)
         }
         host = null
@@ -303,12 +288,6 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
         ensureDesigner()
     }
 
-    private fun onBootTimeout() {
-        if (host == null) return
-        teardownDesigner()
-        showStatus("The Composer designer failed to load.", retry = true)
-    }
-
     private fun pushTheme() {
         host?.send(BridgeMsg(type = "setTheme", dark = !JBColor.isBright()))
     }
@@ -317,9 +296,7 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
         log.info("Composer bridge message: ${msg.type}")
         if (msg.type == "ready") {
             lastIncomingRev = 0
-            bootTimer?.stop()
-            bootTimer = null
-            (cards.layout as CardLayout).show(cards, CARD_BROWSER)
+            (cards.layout as CardLayout).show(cards, CARD_DESIGNER)
             pushTheme()
             service.repushForNewDesigner()
             return
@@ -340,7 +317,6 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
 
     private companion object {
         const val CARD_STATUS = "status"
-        const val CARD_BROWSER = "browser"
-        const val BOOT_TIMEOUT_MS = 15_000
+        const val CARD_DESIGNER = "designer"
     }
 }

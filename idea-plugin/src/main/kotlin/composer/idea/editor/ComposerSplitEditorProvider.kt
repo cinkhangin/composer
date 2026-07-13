@@ -17,7 +17,7 @@ import com.intellij.openapi.fileEditor.impl.LoadTextUtil
  * Replaces the plain text editor for Kotlin files containing `@Composable` with
  * a [TextEditorWithPreview] (Code | Split | Design — the Compose-Preview shape):
  * the real Kotlin editor plus [ComposerPreviewEditor]. Defaults to the code
- * layout; the designer (JCEF + wasm) only boots when its pane is first shown.
+ * layout; the in-process Compose designer only starts when its pane is shown.
  */
 class ComposerSplitEditorProvider : FileEditorProvider, DumbAware {
 
