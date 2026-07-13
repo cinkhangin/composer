@@ -371,8 +371,12 @@ private fun Canvas(state: EditorState, appMode: Boolean, modifier: Modifier = Mo
                 .onPointerEvent(PointerEventType.Scroll) { event ->
                     val delta = event.changes.firstOrNull()?.scrollDelta ?: Offset.Zero
                     val mods = event.keyboardModifiers
-                    if (mods.isCtrlPressed || mods.isMetaPressed) {
-                        // pinch / ctrl+scroll → zoom toward the cursor
+                    if (appMode || mods.isCtrlPressed || mods.isMetaPressed) {
+                        // Compose Desktop does not expose macOS trackpad magnification
+                        // as a distinct pointer event. In the IDE-hosted designer,
+                        // wheel/trackpad scroll is therefore the native zoom gesture;
+                        // middle-button drag remains available for panning. The web
+                        // editor keeps Figma-style scroll-to-pan and pinch/Cmd-to-zoom.
                         if (delta.y != 0f) {
                             val pos = event.changes.firstOrNull()?.position
                             val ax = (pos?.x ?: size.width / 2f) - size.width / 2f

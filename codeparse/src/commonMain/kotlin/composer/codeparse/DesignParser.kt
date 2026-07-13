@@ -190,6 +190,7 @@ object DesignParser {
     private fun isScreenFunction(fn: KFunctionDecl): Boolean =
         fn.name != null &&
             "Composable" in fn.annotationNames &&
+            "Preview" !in fn.annotationNames &&
             !fn.hasReceiver &&
             !fn.hasTypeParams &&
             !fn.hasReturnType &&

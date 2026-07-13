@@ -206,6 +206,30 @@ class ParserCasesTest {
     }
 
     @Test
+    fun preview_composables_are_not_design_screens() {
+        val parsed = DesignParser.parse(
+            """
+            import androidx.compose.runtime.Composable
+            import androidx.compose.ui.tooling.preview.Preview
+
+            @Preview
+            @Composable
+            fun HomePreview() {
+                Home()
+            }
+
+            @Composable
+            fun Home() {
+                Text("home")
+            }
+            """.trimIndent(),
+        )!!
+
+        assertEquals(listOf("Home"), parsed.artboard.composables.map { parsed.artboard.layerNames[it.id] })
+        assertTrue(parsed.hasNonScreenDeclarations)
+    }
+
+    @Test
     fun same_file_instance_calls_become_instances() {
         val file =
             """

@@ -21,6 +21,10 @@ class ModuleDesignParserTest {
             SharedCard()
         }
 
+        @Preview
+        @Composable
+        fun HomePreview() { Home() }
+
         class Holder {
             @Composable fun MemberOnly() { Text("member") }
         }
@@ -47,6 +51,7 @@ class ModuleDesignParserTest {
         assertEquals(listOf("Home", "SharedCard", "WithParameter"), parsed.artboard.composables.map {
             parsed.artboard.layerNames[it.id]
         })
+        assertTrue(parsed.artboard.layerNames.values.none { it == "HomePreview" })
         assertTrue(parsed.artboard.layerNames.values.none { it == "MemberOnly" })
         val home = parsed.artboard.composables.first() as Node.Composable
         assertTrue(home.children.any { it is Node.Instance })
