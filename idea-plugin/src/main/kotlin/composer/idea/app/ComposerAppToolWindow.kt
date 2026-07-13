@@ -63,24 +63,12 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
     val component = JPanel(BorderLayout())
     private val cards = JPanel(CardLayout())
     private val statusLabel = JBLabel("", SwingConstants.CENTER)
-    // NOTE: triggered from mousePressed, not an ActionListener — inside this
-    // tool window the button's action event never fires (press delivered,
-    // release/action swallowed; keyboard activation dead too). Root cause
-    // untracked; the raw press is reliable.
     private val enableButton = JButton("Enable App Designer").apply {
-        addMouseListener(object : java.awt.event.MouseAdapter() {
-            override fun mousePressed(e: java.awt.event.MouseEvent) {
-                if (isVisible) enable()
-            }
-        })
+        addActionListener { this@ComposerAppPanel.enableAppDesigner() }
     }
     private val retryButton = JButton("Retry").apply {
         isVisible = false
-        addMouseListener(object : java.awt.event.MouseAdapter() {
-            override fun mousePressed(e: java.awt.event.MouseEvent) {
-                if (isVisible) retry()
-            }
-        })
+        addActionListener { this@ComposerAppPanel.retry() }
     }
     private val warningBanner = JBLabel("", SwingConstants.CENTER).apply {
         border = JBUI.Borders.empty(6)
@@ -175,7 +163,7 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
     }
 
     /** Find a MainActivity with a NavDisplay and adopt it, else offer to scaffold. */
-    private fun enable() {
+    private fun enableAppDesigner() {
         log.info("Composer enable clicked")
         showStatus("Looking for MainActivity.kt…")
         findAdoptableMainActivity { vf ->
