@@ -24,6 +24,9 @@ class DesignerConnection internal constructor(
     /** Deliver one host→designer envelope. */
     fun deliver(json: String) = session.deliver(json)
 
+    /** Deliver one native IDE trackpad pinch delta to the canvas. */
+    fun magnifyCanvas(delta: Float) = session.magnifyCanvas(delta)
+
     /** Detach the host wiring; the panel itself dies with its Swing hierarchy. */
     fun dispose() {
         session.dispose()

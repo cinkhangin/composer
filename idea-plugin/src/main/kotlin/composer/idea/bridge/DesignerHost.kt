@@ -3,7 +3,10 @@ package composer.idea.bridge
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.util.Disposer
+import com.intellij.ui.components.Magnificator
+import com.intellij.ui.components.ZoomableViewport
 import java.awt.BorderLayout
+import java.awt.Point
 import javax.swing.JComponent
 import javax.swing.JPanel
 
@@ -62,8 +65,26 @@ object DesignerHosts {
 
 /** The in-process Compose for Desktop designer ([composer.createDesignerPanel]). */
 class DirectDesignerHost : DesignerHost {
-    private val container = JPanel(BorderLayout())
     private var connection: composer.DesignerConnection? = null
+    private var lastMagnification = 0.0
+    private val identityMagnificator = Magnificator { _, at -> at }
+    private val container = object : JPanel(BorderLayout()), ZoomableViewport {
+        override fun getMagnificator(): Magnificator = identityMagnificator
+
+        override fun magnificationStarted(at: Point) {
+            lastMagnification = 0.0
+        }
+
+        override fun magnify(magnification: Double) {
+            val delta = magnification - lastMagnification
+            lastMagnification = magnification
+            connection?.magnifyCanvas(delta.toFloat())
+        }
+
+        override fun magnificationFinished(magnification: Double) {
+            lastMagnification = 0.0
+        }
+    }
 
     override val component: JComponent get() = container
     override var onMessage: ((BridgeMsg) -> Unit)? = null

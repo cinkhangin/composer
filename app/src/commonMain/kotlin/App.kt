@@ -86,6 +86,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
+import kotlin.math.exp
 import kotlin.math.roundToInt
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
@@ -217,7 +218,11 @@ internal fun EditorScreen(session: DesignerSession) {
                 ),
                 color = Tk.canvasBg,
             ) {
-                Canvas(state, appMode = session.appMode)
+                Canvas(
+                    state = state,
+                    appMode = session.appMode,
+                    magnification = session.canvasMagnification,
+                )
             }
             if (state.rightPanelOpen) {
                 Island(Modifier.width(240.dp).fillMaxHeight()) {
@@ -324,7 +329,12 @@ private fun contentBoxOf(screens: List<Node.Composable>): ContentBox {
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun Canvas(state: EditorState, appMode: Boolean, modifier: Modifier = Modifier) {
+private fun Canvas(
+    state: EditorState,
+    appMode: Boolean,
+    magnification: CanvasMagnification?,
+    modifier: Modifier = Modifier,
+) {
     // User zoom (multiplier on the fitted view) + pan offset (px), like Figma.
     // The EFFECTIVE scale is fit * zoom — that's what the badge shows and what
     // the limits below apply to, so "500x" is the same true magnification
@@ -338,6 +348,8 @@ private fun Canvas(state: EditorState, appMode: Boolean, modifier: Modifier = Mo
     // Cursor position over the island (px), for the Figma-style hover outline.
     // Null while a button is down (mid-drag/click) or the pointer is outside.
     var hoverPos by remember { mutableStateOf<Offset?>(null) }
+    var viewportSize by remember { mutableStateOf(Size.Zero) }
+    var appliedMagnificationLog by remember { mutableStateOf(magnification?.logScale ?: 0.0) }
 
     /**
      * Anchored zoom: the content point under the anchor stays FIXED on screen, so
@@ -364,19 +376,34 @@ private fun Canvas(state: EditorState, appMode: Boolean, modifier: Modifier = Mo
         zoom = 1f; panX = 0f; panY = 0f
     }
 
+    // ComposePanel's JVM host forwards the native macOS magnification gesture.
+    // It is separate from wheel/trackpad scrolling, so Figma-style two-finger
+    // pan and pinch-to-zoom can coexist without a wheel-delta heuristic.
+    LaunchedEffect(magnification?.sequence) {
+        val gesture = magnification ?: return@LaunchedEffect
+        val anchor = hoverPos
+        val ax = (anchor?.x ?: viewportSize.width / 2f) - viewportSize.width / 2f
+        val ay = (anchor?.y ?: viewportSize.height / 2f) - viewportSize.height / 2f
+        // The session accumulates in log space, so no magnification is lost when
+        // several native events arrive before Compose can recompose this effect.
+        val factor = exp(gesture.logScale - appliedMagnificationLog).toFloat().coerceIn(0.1f, 10f)
+        appliedMagnificationLog = gesture.logScale
+        applyZoom(zoom * factor, ax, ay)
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         BoxWithConstraints(
             Modifier
                 .fillMaxSize()
+                .onGloballyPositioned {
+                    viewportSize = Size(it.size.width.toFloat(), it.size.height.toFloat())
+                }
                 .onPointerEvent(PointerEventType.Scroll) { event ->
                     val delta = event.changes.firstOrNull()?.scrollDelta ?: Offset.Zero
                     val mods = event.keyboardModifiers
-                    if (appMode || mods.isCtrlPressed || mods.isMetaPressed) {
-                        // Compose Desktop does not expose macOS trackpad magnification
-                        // as a distinct pointer event. In the IDE-hosted designer,
-                        // wheel/trackpad scroll is therefore the native zoom gesture;
-                        // middle-button drag remains available for panning. The web
-                        // editor keeps Figma-style scroll-to-pan and pinch/Cmd-to-zoom.
+                    if (mods.isCtrlPressed || mods.isMetaPressed) {
+                        // Explicit Ctrl/Cmd + wheel remains a zoom fallback. Native
+                        // plugin pinch is delivered through [magnification] instead.
                         if (delta.y != 0f) {
                             val pos = event.changes.firstOrNull()?.position
                             val ax = (pos?.x ?: size.width / 2f) - size.width / 2f

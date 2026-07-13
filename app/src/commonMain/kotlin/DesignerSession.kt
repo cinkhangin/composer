@@ -7,6 +7,7 @@ import composer.model.DesignJson
 import composer.model.Node
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlin.math.ln
 
 /** JSON envelope shared with the Android Studio plugin host. */
 @Serializable
@@ -19,6 +20,9 @@ internal data class DesignerMessage(
     val appMode: Boolean? = null,
 )
 
+/** Cumulative native trackpad magnification from the JVM ComposePanel host. */
+internal data class CanvasMagnification(val sequence: Long, val logScale: Double)
+
 /**
  * One in-process bridge session per ComposePanel.
  *
@@ -30,6 +34,9 @@ internal class DesignerSession(private val hostSink: (String) -> Unit) {
     var appMode by mutableStateOf(false)
         private set
 
+    var canvasMagnification by mutableStateOf<CanvasMagnification?>(null)
+        private set
+
     var onLoadDesign: ((Node) -> Unit)? = null
     var onSelectNode: ((String) -> Unit)? = null
 
@@ -39,6 +46,7 @@ internal class DesignerSession(private val hostSink: (String) -> Unit) {
     private var lastInRev = 0
     private var lastSelection: String? = null
     private var lastLoaded: String? = null
+    private var canvasMagnificationLog = 0.0
 
     fun noteLoaded(designJson: String) {
         lastLoaded = designJson
@@ -60,6 +68,13 @@ internal class DesignerSession(private val hostSink: (String) -> Unit) {
         if (nodeId == lastSelection) return
         lastSelection = nodeId
         post(DesignerMessage(type = "selectionChanged", rev = ++outRev, nodeId = nodeId))
+    }
+
+    /** Called by the JVM host's native macOS magnification listener. */
+    fun magnifyCanvas(delta: Float) {
+        val next = (canvasMagnification?.sequence ?: 0L) + 1L
+        canvasMagnificationLog += ln((1.0 + delta).coerceIn(0.1, 10.0))
+        canvasMagnification = CanvasMagnification(next, canvasMagnificationLog)
     }
 
     fun deliver(raw: String) {

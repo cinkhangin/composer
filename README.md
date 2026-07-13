@@ -1,34 +1,43 @@
 # Composer
 
-Composer is an Android Studio plugin for visually designing Compose Multiplatform
-interfaces. It renders real Compose components in an in-process `ComposePanel`,
-parses Kotlin source into a design tree, and writes visual edits back as clean,
-deterministic Compose code.
+Composer is an Android Studio visual app designer for Compose. It discovers
+composable functions across an Android module, renders them together on a
+Figma-like canvas, and writes visual edits back to Kotlin source.
 
-> Design real Compose components on a canvas; get clean, idiomatic Compose
-> Multiplatform code back.
+> Design the app visually while Kotlin remains the source of truth.
+
+Composer runs entirely in-process through a `ComposePanel`. Source parsing and
+generation are deterministic; the product contains no AI or model-assisted
+code generation.
 
 ## Features
 
-- Infinite artboard with multiple screens, zoom, pan, selection, resize handles,
-  snap guides, and keyboard nudging.
+- Module-wide discovery of supported top-level `@Composable` functions in
+  production Kotlin source roots. Functions annotated with `@Preview` are
+  intentionally excluded.
+- Infinite artboard with multiple composables, selection, resize handles, snap
+  guides, keyboard nudging, trackpad pinch-to-zoom, and two-finger pan.
 - Material 3 component palette and a modifier-first inspector.
-- Reusable composables and live instances.
-- Drag-and-drop layer tree with renaming and reparenting.
+- Cross-file composable calls rendered as live instances when the callable name
+  is unambiguous.
+- Layer tree editing and reparenting inside composable function bodies.
 - Named Material themes and theme-token color references.
-- Whole-app tool window with screen, ViewModel, and Navigation 3 generation.
-- Two-way source synchronization with conservative `RawCode` preservation for
-  syntax the design model does not understand.
+- Two-way source synchronization that edits only the owning function and
+  conservatively preserves unsupported syntax as `RawCode`.
+- One global undoable Android Studio write command, including edits that span
+  multiple source files.
 
-Code generation is a pure function of the design tree. Composer contains no AI
-or model-assisted generation.
+The current parser renders top-level block-body composables without receivers,
+type parameters, or explicit return types. Function creation, deletion,
+renaming, and ownership changes remain source-controlled until stable Composer
+annotations are introduced.
 
 ## Android Studio plugin
 
 The designer uses Android Studio's platform Compose runtime directly. Each
 project tool window owns an independent in-process session, so several projects
 can remain open without sharing bridge state. Android Studio's native Compose
-Preview remains responsible for per-file split previews.
+Preview remains responsible for preview-only functions and split previews.
 
 The current plugin target is Android Studio 2026.1+ (`261`, platform Compose).
 Use JDK 17 for Gradle:
@@ -67,6 +76,14 @@ tests and compile the designer/plugin with:
 
 The parser is anchored by round-trip property tests and PSI-conformance tests;
 code generation is covered by golden files.
+
+## Direction
+
+Composer's goal is whole-app visual design: UI, logic, state, and navigation in
+one model while preserving idiomatic Kotlin. The next identity layer will group
+related screen, UI, and ViewModel declarations with stable Composer annotations;
+until then, module discovery uses deterministic source-based identities and
+keeps structural function operations locked.
 
 ## Stack
 
