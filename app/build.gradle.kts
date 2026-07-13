@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
+
 plugins {
     kotlin("multiplatform")
     kotlin("plugin.serialization")
@@ -11,10 +13,23 @@ kotlin {
     // The in-process Android Studio designer (ComposePanel host).
     jvm()
 
+    // Standalone website. This is a separate host for the same common editor;
+    // it is never embedded into or packaged with the Android Studio plugin.
+    @OptIn(ExperimentalWasmDsl::class)
+    wasmJs {
+        outputModuleName.set("composer")
+        browser {
+            commonWebpackConfig { outputFileName = "composer.js" }
+        }
+        binaries.executable()
+    }
+
     sourceSets {
         val commonMain by getting {
             dependencies {
                 implementation(project(":model"))
+                implementation(project(":codegen"))
+                implementation(project(":codeparse"))
                 // Direct coordinates: the compose.* DSL aliases are deprecated since CMP 1.10.
                 implementation("org.jetbrains.compose.runtime:runtime:1.11.1")
                 implementation("org.jetbrains.compose.foundation:foundation:1.11.1")
@@ -26,6 +41,12 @@ kotlin {
                 implementation("org.jetbrains.compose.components:components-resources:1.11.1")
                 implementation("org.jetbrains.compose.ui:ui:1.11.1")
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+            }
+        }
+        val wasmJsMain by getting {
+            languageSettings.optIn("kotlin.js.ExperimentalWasmJsInterop")
+            dependencies {
+                implementation("org.jetbrains.kotlinx:kotlinx-browser:0.3")
             }
         }
         val jvmMain by getting {

@@ -1,8 +1,8 @@
 package composer
 
 /**
- * Screen color sampling. The JVM designer does not support this yet, so the
- * picker button hides itself.
+ * Screen color sampling. Supported browsers use the EyeDropper API; unsupported
+ * browsers and the JVM designer hide the picker button.
  */
 expect object ScreenEyeDropper {
     val supported: Boolean

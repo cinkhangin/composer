@@ -5,8 +5,8 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.text.font.FontFamily
 
 /**
- * Device-installed fonts for the canvas preview, backed by the AWT font list
- * and Skiko typeface lookup. Loaded fonts are registered as Compose
+ * Device-installed fonts for the canvas preview. Browser and JVM hosts provide
+ * their own discovery/loading mechanisms. Loaded fonts are registered as Compose
  * [FontFamily]s keyed by family name.
  */
 expect object LocalFonts {
@@ -18,7 +18,7 @@ expect object LocalFonts {
 
     val supported: Boolean
 
-    /** Enumerate installed font families. */
+    /** Enumerate installed font families (permission-gated where required). */
     suspend fun query()
 
     /** Load [family] and register a FontFamily for the canvas preview. */

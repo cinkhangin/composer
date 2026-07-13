@@ -821,7 +821,7 @@ private fun DeviceFontPicker(current: String, onPick: (String) -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val label = when {
-                    !LocalFonts.supported -> "Not available in this IDE"
+                    !LocalFonts.supported -> "Installed fonts unavailable"
                     busy -> "Loading…"
                     current.isNotEmpty() -> current
                     else -> "Browse installed fonts…"

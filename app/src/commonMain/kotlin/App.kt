@@ -51,6 +51,7 @@ import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.onEach
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -237,6 +238,99 @@ internal fun EditorScreen(session: DesignerSession) {
             }
         }
     }
+    }
+}
+
+/** Standalone website editor. Browser routing, files, and code view live here. */
+@OptIn(FlowPreview::class)
+@Composable
+internal fun WebEditorScreen(ws: Workspace) {
+    val state = remember(ws.openToken) { EditorState(ws.initialDesign) }
+    val codeSync = remember(ws.openToken) { CodeSyncState() }
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
+    LaunchedEffect(state.selectedId) {
+        if (state.selectedId != null && !state.showCode) runCatching { focusRequester.requestFocus() }
+    }
+    LaunchedEffect(state, ws) {
+        snapshotFlow { state.root to ws.currentName }
+            .drop(1)
+            .onEach { ws.markDirty() }
+            .debounce(700)
+            .collect { ws.save(state.root) }
+    }
+    DisposableEffect(state, ws) {
+        val unregister = registerUnloadFlush {
+            if (state.root != ws.initialDesign) ws.save(state.root)
+        }
+        onDispose { unregister() }
+    }
+
+    val themeSwatches = DesignTheme.TOKENS.map { token ->
+        ThemeSwatch(token, ThemeColorRef.token(token)!!, state.theme.effective(token))
+    }
+    CompositionLocalProvider(LocalThemeSwatches provides themeSwatches) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Tk.appBg)
+                .padding(Tk.gap)
+                .focusRequester(focusRequester)
+                .onKeyEvent { handleShortcut(it, state) }
+                .focusable(),
+            verticalArrangement = Arrangement.spacedBy(Tk.gap),
+        ) {
+            WebToolbar(state, ws)
+            ws.saveError?.let { message ->
+                WebErrorBanner(message, onAction = ws::dismissSaveError)
+            }
+            if (ws.loadFailed) {
+                WebErrorBanner(
+                    "Couldn't read this saved design. Auto-save is paused so its data stays intact.",
+                    actionLabel = "Save anyway",
+                    onAction = { ws.saveOverwriting(state.root) },
+                )
+            }
+            ws.importError?.let { message ->
+                WebErrorBanner(message, onAction = { ws.importError = null })
+            }
+            Row(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Tk.gap),
+            ) {
+                if (state.leftPanelOpen) {
+                    Island(Modifier.width(240.dp).fillMaxHeight()) {
+                        TreeView(state, onCollapse = state::toggleLeftPanel)
+                    }
+                } else {
+                    CollapsedPanelStrip(AppIconKind.ExpandLeft, "Show layers", state::toggleLeftPanel)
+                }
+                Island(
+                    modifier = Modifier.weight(1f).fillMaxHeight().then(
+                        if (state.showCode) Modifier else Modifier.pointerInput(Unit) {
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                runCatching { focusRequester.requestFocus() }
+                            }
+                        },
+                    ),
+                    color = if (state.showCode) Tk.codeBg else Tk.canvasBg,
+                ) {
+                    if (state.showCode) {
+                        CodePanel(state, codeSync)
+                    } else {
+                        Canvas(state = state, appMode = false, magnification = null)
+                    }
+                }
+                if (state.rightPanelOpen) {
+                    Island(Modifier.width(240.dp).fillMaxHeight()) {
+                        Inspector(state, onCollapse = state::toggleRightPanel)
+                    }
+                } else {
+                    CollapsedPanelStrip(AppIconKind.ExpandRight, "Show inspector", state::toggleRightPanel)
+                }
+            }
+        }
     }
 }
 
@@ -1274,6 +1368,7 @@ private fun handleShortcut(
     lockComposableStructure: Boolean = false,
 ): Boolean {
     if (event.type != KeyEventType.KeyDown) return false
+    if (state.codeEditorFocused) return false
     val cmd = event.isMetaPressed || event.isCtrlPressed
     val selectedFunctionIsLocked = lockComposableStructure && state.selected is Node.Composable
     return when {

@@ -37,7 +37,7 @@ import composer.model.withModifier
 /**
  * Hoisted editor state: the design tree, current selection, and undo/redo
  * history. The tree is immutable; every edit replaces it, so the canvas,
- * inspector, and plugin bridge — all projections of [root] — update automatically.
+ * inspector, code panel, and plugin bridge — all projections of [root] — update automatically.
  */
 class EditorState(initial: Node) {
     // Old saves have a single Frame root; migrate lifts it into an Artboard,
@@ -50,6 +50,15 @@ class EditorState(initial: Node) {
 
     var clipboard by mutableStateOf<Node?>(null)
         private set
+
+    /** Website center-pane mode. The Android Studio host always uses the canvas. */
+    var showCode by mutableStateOf(loadCodeView())
+        private set
+
+    fun setCodeView(value: Boolean, persist: Boolean = true) {
+        showCode = value
+        if (persist) saveCodeView(value)
+    }
 
     // Side panels collapse to slim strips (IntelliJ tool-window style) so the
     // canvas/code gets the room; the preference persists across sessions.
@@ -540,6 +549,18 @@ class EditorState(initial: Node) {
         idCounter = maxOf(idCounter, maxGeneratedId(root))
         if (selectedId?.let { root.findById(it) } == null) selectedId = null
         lastCommitKey = null
+    }
+
+    /** True while the website's code editor owns keyboard input. */
+    var codeEditorFocused by mutableStateOf(false)
+
+    /** Apply a website code edit as one coalesced, undoable design change. */
+    fun applyCodeEdit(tree: Node) {
+        val newRoot = tree.migrated().dedupeIds()
+        if (newRoot == root) return
+        commit(newRoot, coalesceKey = "code-edit")
+        idCounter = maxOf(idCounter, maxGeneratedId(root))
+        if (selectedId?.let { root.findById(it) } == null) selectedId = null
     }
 
     /** Reset to a fresh "Hello world" design. Undoable. */

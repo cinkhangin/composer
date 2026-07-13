@@ -2,7 +2,7 @@ package composer
 
 /**
  * Editor preferences (NOT design data) over the [prefGet]/[prefSet] seam:
- * legacy frame size and side-panel collapse.
+ * legacy frame size, side-panel collapse, and website Design|Code view.
  */
 
 private const val FRAME_KEY = "composer.frame"
@@ -27,4 +27,12 @@ fun loadPanelOpen(panel: String): Boolean = prefGet(PANEL_KEY_PREFIX + panel) !=
 
 fun savePanelOpen(panel: String, open: Boolean) {
     prefSet(PANEL_KEY_PREFIX + panel, if (open) "open" else "closed")
+}
+
+private const val VIEW_KEY = "composer.view"
+
+fun loadCodeView(): Boolean = prefGet(VIEW_KEY) == "code"
+
+fun saveCodeView(showCode: Boolean) {
+    prefSet(VIEW_KEY, if (showCode) "code" else "design")
 }

@@ -31,7 +31,8 @@ import composer.model.VArrangement
  * Deterministic Compose Multiplatform code generation from a design tree.
  *
  * Pure function of the [Node] tree (see GOAL.md). Depends only on
- * the model and the Kotlin stdlib, so it stays deterministic and JVM-testable.
+ * the model and the Kotlin stdlib, so it runs in the Wasm website and remains
+ * deterministic and JVM-testable.
  */
 object CodeGen {
 
