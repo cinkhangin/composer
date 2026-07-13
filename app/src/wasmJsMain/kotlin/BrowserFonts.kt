@@ -2,6 +2,8 @@ package composer
 
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.platform.Typeface
 import kotlinx.coroutines.await
@@ -15,8 +17,8 @@ import kotlin.js.Promise
 /**
  * Device-installed fonts via the browser's **Local Font Access API**
  * (`window.queryLocalFonts()`). Chromium-only and permission-gated; on other
- * browsers [supported] is false and the picker is disabled. Loaded fonts are
- * registered as Compose [FontFamily]s so the canvas can preview them.
+ * browsers [LocalFonts.supported] is false and the picker is disabled. Loaded
+ * fonts are registered as Compose [FontFamily]s so the canvas can preview them.
  */
 private external interface JsFontData : JsAny {
     val family: JsString
@@ -33,14 +35,14 @@ private fun localFontsSupported(): Boolean =
 private fun queryLocalFontsJs(): Promise<JsArray<JsFontData>> =
     js("window.queryLocalFonts()")
 
-object LocalFonts {
+actual object LocalFonts {
     /** Installed font family names, populated by [query]. Snapshot-backed for UI. */
-    val available = mutableStateListOf<String>()
+    actual val available: SnapshotStateList<String> = mutableStateListOf()
 
     /** family name → loaded FontFamily, populated by [load]. */
-    val loaded = mutableStateMapOf<String, FontFamily>()
+    actual val loaded: SnapshotStateMap<String, FontFamily> = mutableStateMapOf()
 
-    val supported: Boolean get() = localFontsSupported()
+    actual val supported: Boolean get() = localFontsSupported()
 
     /** Cached enumeration — one `queryLocalFonts()` reused by [query] and every [load]. */
     private var handles: JsArray<JsFontData>? = null
@@ -49,7 +51,7 @@ object LocalFonts {
         handles ?: queryLocalFontsJs().await<JsArray<JsFontData>>().also { handles = it }
 
     /** Enumerate installed font families (prompts for permission on first use). */
-    suspend fun query() {
+    actual suspend fun query() {
         if (!supported) return
         val arr = fonts()
         val seen = LinkedHashSet<String>()
@@ -62,7 +64,7 @@ object LocalFonts {
     }
 
     /** Load [family]'s bytes and register a FontFamily for the canvas preview. */
-    suspend fun load(family: String) {
+    actual suspend fun load(family: String) {
         if (family.isEmpty() || loaded.containsKey(family) || !supported) return
         val arr = fonts()
         for (i in 0 until arr.length) {

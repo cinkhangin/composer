@@ -1,22 +1,25 @@
 <idea-plugin>
     <id>com.ckgin.composer</id>
-    <name>Composer Designer</name>
+    <name>Composer</name>
     <vendor>cinkhangin</vendor>
     <description><![CDATA[
-        Visual designer for Compose Multiplatform code. Opens Kotlin files
-        containing @Composable functions in a split editor (like Compose
-        Preview) whose Design pane is the Composer canvas: edit the UI
-        visually and the plugin regenerates the Kotlin code deterministically.
+        Visual app designer for Compose Multiplatform code. The Composer App
+        tool window edits screens, ViewModels, and navigation visually while
+        regenerating Kotlin source deterministically.
         Code the designer can't represent is preserved verbatim as locked
         blocks — it never destroys code it doesn't understand.
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>org.jetbrains.kotlin</depends>
+    <!-- The designer runs in-process on Android Studio's Compose runtime. -->
+    <dependencies><module name="intellij.platform.compose"/></dependencies>
 
     <extensions defaultExtensionNs="com.intellij">
-        <fileEditorProvider implementation="composer.idea.editor.ComposerSplitEditorProvider"/>
         <notificationGroup id="Composer" displayType="BALLOON"/>
+        <toolWindow id="Composer App" anchor="right" secondary="false"
+                    factoryClass="composer.idea.app.ComposerAppToolWindowFactory"
+                    icon="AllIcons.Toolwindows.ToolWindowHierarchy"/>
     </extensions>
 
     <!-- PSI use is syntax-level only, so both Kotlin plugin modes work. -->

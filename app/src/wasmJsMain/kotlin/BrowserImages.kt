@@ -1,6 +1,7 @@
 package composer
 
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import kotlinx.coroutines.await
@@ -37,19 +38,19 @@ private fun pickImageDataUrl(): Promise<JsString?> = js(
     """
 )
 
-object LocalImages {
+actual object LocalImages {
     /** url (or data: URL) → decoded bitmap. Snapshot-backed so the canvas updates on load. */
-    val loaded = mutableStateMapOf<String, ImageBitmap>()
+    actual val loaded: SnapshotStateMap<String, ImageBitmap> = mutableStateMapOf()
 
     /** urls that failed to fetch/decode (CORS, 404, bad data). Snapshot-backed so the
      *  canvas/inspector can show a distinct "couldn't load" state instead of an eternal
      *  loading placeholder. */
     private val failedUrls = mutableStateMapOf<String, Unit>()
 
-    fun isFailed(url: String): Boolean = failedUrls.containsKey(url)
+    actual fun isFailed(url: String): Boolean = failedUrls.containsKey(url)
 
     /** Decode [url] (http(s) or data:) into a Compose bitmap, cached by url. */
-    suspend fun load(url: String) {
+    actual suspend fun load(url: String) {
         if (url.isEmpty() || loaded.containsKey(url) || isFailed(url)) return
         try {
             val bytes = fetchArrayBuffer(url).await<ArrayBuffer>().toByteArray()
@@ -61,7 +62,7 @@ object LocalImages {
 }
 
 /** Open a file picker and return the chosen image as a `data:` URL, or null if cancelled. */
-suspend fun pickImageFile(): String? = pickImageDataUrl().await<JsString?>()?.toString()
+actual suspend fun pickImageFile(): String? = pickImageDataUrl().await<JsString?>()?.toString()
 
 private fun ArrayBuffer.toByteArray(): ByteArray {
     val view = Int8Array(this)

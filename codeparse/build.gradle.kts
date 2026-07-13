@@ -1,30 +1,37 @@
-// Code ↔ design-tree mapping for the IntelliJ plugin: DesignParser (Kotlin PSI →
-// Node tree, unknowns preserved as RawCode) and, later, WriteBackPlanner.
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
+
+// Code ↔ design-tree mapping: DesignParser (Kotlin source → Node tree, unknowns
+// preserved as RawCode) and WriteBackPlanner. The parsing front-end is a
+// hand-rolled lexer/scanner (Lexer/FileScanner/StatementParser) — pure Kotlin,
+// no production PSI — shared by the Android Studio plugin and website.
 //
-// PSI comes from org.jetbrains.kotlin:kotlin-compiler — the NON-embeddable
-// artifact, deliberately: the embeddable jar shades IntelliJ core classes
-// (com.intellij.psi → org.jetbrains.kotlin.com.intellij.psi), and bytecode
-// compiled against it would not link inside the IDE, where the bundled Kotlin
-// plugin exposes the UNSHADED names. compileOnly keeps the jar out of the
-// plugin zip — at IDE runtime the platform + Kotlin plugin provide the classes.
-//
-// API-surface discipline: touch only org.jetbrains.kotlin.psi(.psiUtil) plus
-// com.intellij.psi.{PsiElement,PsiComment} basics — the decade-stable subset.
-// Public API exposes only model types / strings / ints, never PSI.
+// kotlin-compiler remains a TEST-ONLY dependency: PsiConformanceTest asserts the
+// scanner agrees byte-for-byte with real PSI on every offset write-back relies on.
 plugins {
-    kotlin("jvm")
+    kotlin("multiplatform")
 }
 
 kotlin {
     jvmToolchain(17)
-}
 
-dependencies {
-    api(project(":model"))
-    implementation(project(":codegen"))
-    compileOnly("org.jetbrains.kotlin:kotlin-compiler:2.4.0")
+    jvm()
 
-    // Tests run standalone PSI via KotlinCoreEnvironment — no IDE needed.
-    testImplementation("org.jetbrains.kotlin:kotlin-compiler:2.4.0")
-    testImplementation(kotlin("test"))
+    @OptIn(ExperimentalWasmDsl::class)
+    wasmJs { browser() }
+
+    sourceSets {
+        val commonMain by getting {
+            dependencies {
+                api(project(":model"))
+                implementation(project(":codegen"))
+            }
+        }
+        val jvmTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+                // Standalone PSI via KotlinCoreEnvironment — the conformance oracle.
+                implementation("org.jetbrains.kotlin:kotlin-compiler:2.4.0")
+            }
+        }
+    }
 }

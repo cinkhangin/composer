@@ -19,14 +19,14 @@ private fun eyeDropperSupported(): Boolean =
 private fun openEyeDropperJs(): Promise<JsEyeDropResult> =
     js("new EyeDropper().open()")
 
-object ScreenEyeDropper {
-    val supported: Boolean get() = eyeDropperSupported()
+actual object ScreenEyeDropper {
+    actual val supported: Boolean get() = eyeDropperSupported()
 
     /**
      * Open the eyedropper and return the sampled color as opaque `0xFFRRGGBB`,
      * or null when unsupported or the user cancels (Esc rejects the promise).
      */
-    suspend fun pick(): Long? {
+    actual suspend fun pick(): Long? {
         if (!supported) return null
         return try {
             val hex = openEyeDropperJs().await<JsEyeDropResult>().sRGBHex.toString()

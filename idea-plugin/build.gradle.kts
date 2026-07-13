@@ -1,8 +1,5 @@
-import org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask
-
-// IntelliJ IDEA / Android Studio plugin: hosts the web designer (bundled Wasm
-// build of :app) in a JCEF preview beside the Kotlin editor, and reuses the
-// pure :model/:codegen JVM variants for design JSON + code generation.
+// Android Studio plugin: hosts the Compose designer in-process and reuses the
+// pure :model/:codegen/:codeparse JVM variants.
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
@@ -13,59 +10,79 @@ kotlin {
     jvmToolchain(17)
 }
 
-// The production web bundle from :app, packaged into the plugin's resources
-// under composer-web/ (served by ComposerWebServer). Resolved by explicit
-// configuration name — no variant matching against the KMP variant set.
-val webDist: Configuration by configurations.creating {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-}
-
 dependencies {
     intellijPlatform {
-        // 242 = 2024.2: first baseline whose JCEF Chromium has WasmGC (the
-        // Kotlin/Wasm hard floor) and runs on JBR 21. Covers AS Ladybug+.
+        // Compile against the stable IntelliJ API baseline; runtime support is
+        // Android Studio versions that expose intellij.platform.compose.
         intellijIdeaCommunity("2024.2.5")
         bundledPlugin("org.jetbrains.kotlin") // Kotlin PSI for the code parser
     }
     implementation(project(":model"))
     implementation(project(":codegen"))
-    implementation(project(":codeparse")) // its kotlin-compiler dep is compileOnly — never bundled
-    webDist(project(mapOf("path" to ":app", "configuration" to "webDist")))
+    implementation(project(":codeparse")) // pure common-Kotlin parser — no compiler/PSI dependency
+    // The in-process designer: :app's jvm variant carries the
+    // Compose Desktop runtime; all @Composable code stays in :app — this
+    // module only consumes plain JComponents.
+    implementation(project(":app"))
     // NEVER add kotlinx-coroutines here — the platform bundles a patched build.
+}
+
+configurations.runtimeClasspath {
+    // The platform's patched kotlinx-coroutines must win at runtime.
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jdk8")
+    // NEVER bundle compose/skiko: on Compose-shipping IDEs (AS 261+/IDEA 251+)
+    // the platform's copies are used via the plugin.xml module dependency on
+    // intellij.platform.compose (two skiko dylibs in one process fail with objc
+    // class collisions + UnsatisfiedLinkError), and on older IDEs a bundled
+    // runtime would die: the plugin classloader force-loads signature classes
+    // like kotlin.time.Duration from the PLATFORM's older stdlib, splitting the
+    // stdlib under skiko (NoSuchMethodError in the Metal redrawer). Older IDEs
+    // The plugin therefore targets Android Studio's platform Compose runtime
+    // and bundles only what that runtime lacks: material3 + material
+    // (ripple/icons) + components-resources.
+    exclude(group = "org.jetbrains.compose.desktop")
+    exclude(group = "org.jetbrains.compose.runtime")
+    exclude(group = "org.jetbrains.compose.foundation")
+    exclude(group = "org.jetbrains.compose.ui")
+    exclude(group = "org.jetbrains.compose.animation")
+    exclude(group = "org.jetbrains.skiko")
+    // Nor kotlin-stdlib: two stdlib copies across the plugin and the platform's
+    // compose module loader hit JVM loader-constraint violations on any call
+    // that crosses the boundary (LinkageError on kotlin.jvm.internal.* during
+    // recomposition — froze whole compose subtrees).
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk7")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk8")
 }
 
 intellijPlatform {
     buildSearchableOptions = false
     pluginConfiguration {
         id = "com.ckgin.composer"
-        name = "Composer Designer"
+        name = "Composer"
         version = "0.1.0"
         vendor {
             name = "cinkhangin"
         }
         ideaVersion {
-            sinceBuild = "242"
+            sinceBuild = "261"
             untilBuild = provider { null }
         }
     }
 }
 
-// Building the wasm dist takes ~1 min; skip bundling for plugin-code-only
-// iteration with -Pcomposer.bundleWeb=false (runIde serves the dev dist dir
-// via the system property below anyway; a distributable zip MUST bundle it).
-if (providers.gradleProperty("composer.bundleWeb").orNull != "false") {
-    tasks.processResources {
-        from(webDist) { into("composer-web") }
+// Run the plugin in a locally installed Android Studio instead of the IDEA
+// sandbox: ./gradlew :idea-plugin:runAndroidStudio
+// (override the install path with -Pcomposer.androidStudio.path=/path/to/Android Studio.app)
+val androidStudioPath = providers.gradleProperty("composer.androidStudio.path").orNull
+    ?: "${System.getProperty("user.home")}/Applications/Android Studio.app"
+if (file(androidStudioPath).exists()) {
+    intellijPlatformTesting.runIde.register("runAndroidStudio") {
+        localPath = file(androidStudioPath)
+        task {
+            composeHotReload = false
+        }
     }
-}
-
-tasks.named<RunIdeTask>("runIde") {
-    // Dev loop: serve the web app straight from :app's dist dir so web-side
-    // changes need only :app:wasmJsBrowserDistribution + a preview reload,
-    // not a plugin rebuild.
-    systemProperty(
-        "composer.web.dist.dir",
-        rootProject.layout.projectDirectory.dir("app/build/dist/wasmJs/productionExecutable").asFile.absolutePath,
-    )
 }

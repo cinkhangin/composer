@@ -27,6 +27,10 @@ sealed interface Node {
         val lineHeight: Int = 0, // sp; 0 = auto (fontSize × 1.2)
         val customFont: String = "", // device font family name (Local Font Access); overrides fontFamily
         val textAlign: TextAlignment = TextAlignment.Start,
+        // Exact Kotlin expression for parameter-backed/dynamic text (for example
+        // `"Hello $name!"` or `title`). Empty means [text] is a literal. The
+        // renderer uses [text] as a safe preview; codegen preserves this expression.
+        val textExpression: String = "",
     ) : Node
 
     @Serializable
@@ -47,6 +51,7 @@ sealed interface Node {
         override val modifier: List<ModifierSpec> = emptyList(),
         val variant: ButtonVariant = ButtonVariant.Filled,
         val children: List<Node> = emptyList(),
+        val navAction: NavAction = NavAction.None,
     ) : Node
 
     @Serializable
@@ -126,6 +131,7 @@ sealed interface Node {
         val icon: IconKind = IconKind.Menu,
         override val modifier: List<ModifierSpec> = emptyList(),
         val symbol: String = "", // same contract as [Icon.symbol]
+        val navAction: NavAction = NavAction.None,
     ) : Node
 
     /** Material3 TabRow: children are [Tab] leaves; [selectedIndex] drives the indicator and the generated initial state. */
@@ -177,6 +183,7 @@ sealed interface Node {
         val selected: Boolean = false,
         val symbol: String = "",
         override val modifier: List<ModifierSpec> = emptyList(),
+        val navAction: NavAction = NavAction.None,
     ) : Node
 
     /** Material3 BadgedBox: [badge] text over the content children (empty = dot badge). */
@@ -336,6 +343,7 @@ sealed interface Node {
         override val id: String,
         val children: List<Node> = emptyList(),
         override val modifier: List<ModifierSpec> = emptyList(),
+        val navAction: NavAction = NavAction.None,
     ) : Node
 
     /** Material3 FloatingActionButton — a container so its content can be anything (icon, text, …). */
@@ -345,6 +353,7 @@ sealed interface Node {
         override val id: String,
         val children: List<Node> = emptyList(),
         override val modifier: List<ModifierSpec> = emptyList(),
+        val navAction: NavAction = NavAction.None,
     ) : Node
 
     /** A modal `Dialog` (Surface content). Previewed inline as a card; codegen wraps in `Dialog { Surface { … } }`. */

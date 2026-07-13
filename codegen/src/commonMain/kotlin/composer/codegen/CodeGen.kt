@@ -9,7 +9,10 @@ import composer.model.GradientDirection
 import composer.model.HAlignment
 import composer.model.HArrangement
 import composer.model.ModifierSpec
+import composer.model.NavAction
+import composer.model.childNodes
 import composer.model.Node
+import composer.model.navAction
 import composer.model.PaddingMode
 import composer.model.TextAlignment
 import composer.model.TextFontFamily
@@ -28,8 +31,8 @@ import composer.model.VArrangement
  * Deterministic Compose Multiplatform code generation from a design tree.
  *
  * Pure function of the [Node] tree (see GOAL.md). Depends only on
- * the model and the Kotlin stdlib, so it runs both on Wasm (for the live code
- * panel) and on the JVM (for golden-file tests in M2).
+ * the model and the Kotlin stdlib, so it runs in the Wasm website and remains
+ * deterministic and JVM-testable.
  */
 object CodeGen {
 
@@ -37,10 +40,58 @@ object CodeGen {
      * Component-function registry for the CURRENT [generate] run: main-node id →
      * generated function name. A field rather than a parameter purely to avoid
      * threading context through ~40 recursive emit call sites — [generate] sets
-     * it up-front and the object is used single-threaded (wasm app, sequential
-     * JVM tests), so generate remains a pure function of its input.
+     * it up-front and the object is used sequentially by tests and IDE writes,
+     * so generate remains a pure function of its input.
      */
     private var componentFns: Map<String, String> = emptyMap()
+
+    /**
+     * Nav environment of the screen being emitted (same run-scoped pattern as
+     * [componentFns]): target screen id → the synthesized callback param name,
+     * plus the `onBack` param when the screen has a Back action. Click sites
+     * consult it; anything unresolved degrades to the empty lambda.
+     */
+    private var navEnv: Map<String, String> = emptyMap()
+    private var backParam: String? = null
+
+    /** A screen's synthesized nav callbacks: signature text + emission environment. */
+    private class NavParams(val paramsText: String, val byTarget: Map<String, String>, val back: String?)
+
+    /**
+     * Collect [screen]'s nav callbacks in preorder first-use order (Back last).
+     * [fnNames] doubles as the liveness set: a Navigate target without a
+     * function name (deleted screen) contributes nothing and emits as None.
+     */
+    private fun navParams(screen: Node.Composable, fnNames: Map<String, String>): NavParams {
+        val byTarget = LinkedHashMap<String, String>()
+        var back = false
+        fun walk(n: Node) {
+            when (val a = n.navAction()) {
+                is NavAction.Navigate -> fnNames[a.screenId]?.let { byTarget.getOrPut(a.screenId) { "onNavigateTo$it" } }
+                NavAction.Back -> back = true
+                else -> {}
+            }
+            n.childNodes().forEach(::walk)
+        }
+        walk(screen)
+        val names = byTarget.values + listOfNotNull(if (back) "onBack" else null)
+        val text = if (names.isEmpty()) "()" else names.joinToString(", ", "(", ")") { "$it: () -> Unit = {}" }
+        return NavParams(text, byTarget, if (back) "onBack" else null)
+    }
+
+    /**
+     * The onClick argument when the node's action resolves to a live callback
+     * param, else null — a dangling Navigate target emits exactly like None,
+     * so canonical forms (plain Card, stateful Chip) stay canonical.
+     */
+    private fun resolvedNavArg(node: Node): String? = when (val a = node.navAction()) {
+        is NavAction.Navigate -> navEnv[a.screenId]?.let { "onClick = $it" }
+        NavAction.Back -> backParam?.let { "onClick = $it" }
+        else -> null
+    }
+
+    /** The canonical onClick argument: a resolved nav callback, else the empty lambda. */
+    private fun onClickArg(node: Node): String = resolvedNavArg(node) ?: "onClick = {}"
 
     /**
      * Generate a complete Kotlin source file for [root]: one `@Composable fun` per
@@ -55,46 +106,34 @@ object CodeGen {
      */
     fun generate(root: Node): String {
         val artboard = root.migrateToArtboard()
-        // Emit the theme block when there are several themes or the single one is
-        // customized — an untouched default stays invisible, as before.
+        val (themed, schemeVals, screenNames) = namePlan(artboard)
         val themes = artboard.themes
-        val themed = themes.size > 1 || themes.any { it.theme.isCustomized() }
         val imports = mutableSetOf("androidx.compose.runtime.Composable")
-
-        val used = mutableSetOf<String>()
-        val schemeVals = if (themed) {
-            used += "AppTheme" // reserve — a screen named "App Theme" must not collide
-            themes.mapIndexed { i, named ->
-                val base = (sanitizeIdentifier(named.name) ?: "Theme${i + 1}") + "Colors"
-                var candidate = base
-                var n = 2
-                while (!used.add(candidate)) {
-                    candidate = "$base$n"
-                    n++
-                }
-                candidate
-            }
-        } else emptyList()
 
         // Reusable components ARE composables: every Node.Composable generates a
         // function, and a registered one can be instantiated from other composables
         // (instances emit calls to its function). Names must exist BEFORE bodies —
         // an instance in composable A may call composable B.
         val screens = artboard.composables.filterIsInstance<Node.Composable>()
-        val screenNames = screens.mapIndexed { i, screen -> functionName(artboard.layerNames[screen.id], i, used) }
         val compIds = artboard.validComponentIds().toSet()
         componentFns = screens.indices
             .filter { screens[it].id in compIds }
             .associate { screens[it].id to screenNames[it] }
+        val fnNameById = screens.indices.associate { screens[it].id to screenNames[it] }
         val fns = screens.mapIndexed { i, screen ->
+            val nav = navParams(screen, fnNameById)
+            navEnv = nav.byTarget
+            backParam = nav.back
             val body = StringBuilder()
             // Per-FUNCTION state counter (state1 restarts in each fun): stateN vars
             // are function-local, and the IDE plugin's write-back regenerates
             // functions in isolation — their text must match full-file output.
             emit(screen, indent = 1, out = body, imports = imports, seq = intArrayOf(0))
-            screenNames[i] to body.toString()
+            Triple(screenNames[i], nav.paramsText, body.toString())
         }
         componentFns = emptyMap()
+        navEnv = emptyMap()
+        backParam = null
         val themeBlock = if (themed) themeBlock(themes, schemeVals, artboard.activeTheme, imports) else null
 
         // Some Material3 components (any TopAppBar variant) are experimental — opt in if used.
@@ -108,10 +147,10 @@ object CodeGen {
                 append(themeBlock)
                 if (fns.isNotEmpty()) appendLine()
             }
-            fns.forEachIndexed { i, (name, body) ->
+            fns.forEachIndexed { i, (name, params, body) ->
                 if (needsM3OptIn) appendLine("@OptIn(ExperimentalMaterial3Api::class)")
                 appendLine("@Composable")
-                appendLine("fun $name() {")
+                appendLine("fun $name$params {")
                 append(body)
                 appendLine("}")
                 if (i != fns.lastIndex) appendLine()
@@ -133,26 +172,100 @@ object CodeGen {
      * for this screen inside a full file, including a per-function
      * `@OptIn(ExperimentalMaterial3Api::class)` when its own body needs it.
      */
-    fun screenFunction(screen: Node.Composable, name: String, componentFns: Map<String, String> = emptyMap(), params: String = "()"): ScreenCode {
+    fun screenFunction(
+        screen: Node.Composable,
+        name: String,
+        componentFns: Map<String, String> = emptyMap(),
+        /** null = synthesize the canonical nav-callback signature; non-null = splice VERBATIM (preserved user signature). */
+        params: String? = null,
+        /** Nav target screen id → its function name (liveness set for Navigate actions). */
+        navFns: Map<String, String> = emptyMap(),
+    ): ScreenCode {
         val imports = mutableSetOf("androidx.compose.runtime.Composable")
         this.componentFns = componentFns
+        val nav = navParams(screen, navFns)
+        val paramsText: String
+        if (params == null) {
+            paramsText = nav.paramsText
+            navEnv = nav.byTarget
+            backParam = nav.back
+        } else {
+            // A preserved user signature can't receive new callbacks: wire only
+            // the nav params whose names already appear in it; the rest emit {}.
+            paramsText = params
+            val declared = identifiersIn(params)
+            navEnv = nav.byTarget.filterValues { it in declared }
+            backParam = nav.back?.takeIf { it in declared }
+        }
         val body = StringBuilder()
         emit(screen, indent = 1, out = body, imports = imports, seq = intArrayOf(0))
         this.componentFns = emptyMap()
+        navEnv = emptyMap()
+        backParam = null
         val needsOptIn = imports.any { it.removePrefix("androidx.compose.material3.") in M3_EXPERIMENTAL }
         if (needsOptIn) imports += "androidx.compose.material3.ExperimentalMaterial3Api"
         val text = buildString {
             if (needsOptIn) appendLine("@OptIn(ExperimentalMaterial3Api::class)")
             appendLine("@Composable")
-            appendLine("fun $name$params {")
+            appendLine("fun $name$paramsText {")
             append(body)
             append("}")
         }
         return ScreenCode(text, imports)
     }
 
+    /** All identifier-shaped tokens in a signature text (cheap lexical scan). */
+    private fun identifiersIn(text: String): Set<String> {
+        val out = mutableSetOf<String>()
+        val sb = StringBuilder()
+        for (c in text + " ") {
+            if (c.isLetterOrDigit() || c == '_') sb.append(c) else {
+                if (sb.isNotEmpty() && !sb[0].isDigit()) out += sb.toString()
+                sb.clear()
+            }
+        }
+        return out
+    }
+
     /** [sanitizeIdentifier] for callers outside codegen (write-back naming). */
     fun sanitizeName(raw: String): String? = sanitizeIdentifier(raw)
+
+    /**
+     * The function names [generate] would emit, parallel to the artboard's
+     * screens — including the dedupe suffixes and the `AppTheme`/scheme-val
+     * reservations of a themed design. Lets callers (the web code editor's
+     * merge step) match screens in emitted code back to model screens exactly.
+     */
+    fun screenFunctionNames(root: Node): List<String> = namePlan(root.migrateToArtboard()).third
+
+    /**
+     * Names shared by one generated file: whether a theme block is emitted, the
+     * scheme val names, and the per-screen function names — all drawn from one
+     * dedupe set so nothing in the file can collide.
+     */
+    private fun namePlan(artboard: Node.Artboard): Triple<Boolean, List<String>, List<String>> {
+        // Emit the theme block when there are several themes or the single one is
+        // customized — an untouched default stays invisible, as before.
+        val themes = artboard.themes
+        val themed = themes.size > 1 || themes.any { it.theme.isCustomized() }
+        val used = mutableSetOf<String>()
+        val schemeVals = if (themed) {
+            used += "AppTheme" // reserve — a screen named "App Theme" must not collide
+            themes.mapIndexed { i, named ->
+                val base = (sanitizeIdentifier(named.name) ?: "Theme${i + 1}") + "Colors"
+                var candidate = base
+                var n = 2
+                while (!used.add(candidate)) {
+                    candidate = "$base$n"
+                    n++
+                }
+                candidate
+            }
+        } else emptyList()
+        val screens = artboard.composables.filterIsInstance<Node.Composable>()
+        val screenNames = screens.mapIndexed { i, screen -> functionName(artboard.layerNames[screen.id], i, used) }
+        return Triple(themed, schemeVals, screenNames)
+    }
 
     /**
      * A generated function name for one screen: the layer name sanitized to a
@@ -187,7 +300,7 @@ object CodeGen {
      * wrapper defaulting to the ACTIVE theme — switch themes by passing another
      * scheme (e.g. `AppTheme(DarkColors) { … }`).
      */
-    private fun themeBlock(
+    internal fun themeBlock(
         themes: List<NamedTheme>,
         schemeVals: List<String>,
         activeTheme: Int,
@@ -293,7 +406,7 @@ object CodeGen {
             is Node.Text -> {
                 imports += "androidx.compose.material3.Text"
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
-                val args = mutableListOf("\"${esc(node.text)}\"")
+                val args = mutableListOf(node.textExpression.ifEmpty { "\"${esc(node.text)}\"" })
                 mod?.let { args += "modifier = $it" }
                 node.color?.let { args += "color = ${colorExpr(it, imports)}" }
                 if (node.fontSize > 0) {
@@ -330,7 +443,7 @@ object CodeGen {
                 val name = buttonComposable(node.variant)
                 imports += "androidx.compose.material3.$name"
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
-                val args = listOfNotNull("onClick = {}", mod?.let { "modifier = $it" })
+                val args = listOfNotNull(onClickArg(node), mod?.let { "modifier = $it" })
                 appendCall(out, indent, name, args, open = true)
                 emitSiblings(node.children, indent + 1, out, imports, seq, ChildScope.ROW)
                 out.appendLine("$pad}")
@@ -411,7 +524,7 @@ object CodeGen {
                     imports += "androidx.compose.material.icons.filled.${node.icon.name}"
                 }
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
-                val args = listOfNotNull("onClick = {}", mod?.let { "modifier = $it" })
+                val args = listOfNotNull(onClickArg(node), mod?.let { "modifier = $it" })
                 appendCall(out, indent, "IconButton", args, open = true)
                 if (symbol != null) {
                     out.appendLine("$pad    ${symbolComment(symbol)}")
@@ -509,7 +622,10 @@ object CodeGen {
                 val name = chipComposable(node.variant)
                 imports += "androidx.compose.material3.$name"
                 imports += "androidx.compose.material3.Text"
-                val stateful = node.variant == ChipVariant.Filter || node.variant == ChipVariant.Input
+                // A chip that navigates doesn't toggle: state hoisting is suppressed
+                // and `selected` emits as the literal (the standalone-Tab precedent).
+                val selectable = node.variant == ChipVariant.Filter || node.variant == ChipVariant.Input
+                val stateful = selectable && resolvedNavArg(node) == null
                 val state = if (stateful) "state${++seq[0]}" else null
                 if (state != null) {
                     stateImports(imports)
@@ -519,8 +635,8 @@ object CodeGen {
                 val symbol = safeSymbol(node.symbol)
                 val iconParam = if (node.variant == ChipVariant.Suggestion) "icon" else "leadingIcon"
                 val head = listOfNotNull(
-                    state?.let { "selected = $it" },
-                    if (state != null) "onClick = { $state = !$state }" else "onClick = {}",
+                    state?.let { "selected = $it" } ?: if (selectable) "selected = ${node.selected}" else null,
+                    if (state != null) "onClick = { $state = !$state }" else onClickArg(node),
                     "label = { Text(\"${esc(node.label)}\") }",
                 )
                 if (symbol == null) {
@@ -643,16 +759,26 @@ object CodeGen {
                 appendCall(out, indent, "LinearProgressIndicator", args)
             }
 
-            is Node.Card -> emitContainer(
-                "Card", "androidx.compose.material3.Card",
-                mods, node.children, indent, out, imports, seq = seq, childScope = ChildScope.NONE,
-                scopeModifier = scopeModifier,
-            )
+            is Node.Card -> if (resolvedNavArg(node) == null) {
+                emitContainer(
+                    "Card", "androidx.compose.material3.Card",
+                    mods, node.children, indent, out, imports, seq = seq, childScope = ChildScope.NONE,
+                    scopeModifier = scopeModifier,
+                )
+            } else {
+                // The M3 clickable overload; onClick leads like Button/Fab.
+                imports += "androidx.compose.material3.Card"
+                val mod = modifierExpr(mods, imports, scopeModifier, indent)
+                val args = listOfNotNull(onClickArg(node), mod?.let { "modifier = $it" })
+                appendCall(out, indent, "Card", args, open = true)
+                emitSiblings(node.children, indent + 1, out, imports, seq)
+                out.appendLine("$pad}")
+            }
 
             is Node.Fab -> {
                 imports += "androidx.compose.material3.FloatingActionButton"
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
-                val args = listOfNotNull("onClick = {}", mod?.let { "modifier = $it" })
+                val args = listOfNotNull(onClickArg(node), mod?.let { "modifier = $it" })
                 appendCall(out, indent, "FloatingActionButton", args, open = true)
                 emitSiblings(node.children, indent + 1, out, imports, seq)
                 out.appendLine("$pad}")
@@ -981,9 +1107,12 @@ object CodeGen {
      */
     private fun modifierExpr(specs: List<ModifierSpec>, imports: MutableSet<String>, leading: String? = null, indent: Int = 0): String? {
         if (specs.isEmpty() && leading == null) return null
-        imports += "androidx.compose.ui.Modifier"
-        val specParts = specs.map { spec ->
+        val external = specs.filterIsInstance<ModifierSpec.External>().firstOrNull()
+        val base = external?.expression ?: "Modifier"
+        if (external == null) imports += "androidx.compose.ui.Modifier"
+        val specParts = specs.filterNot { it is ModifierSpec.External }.map { spec ->
             when (spec) {
+                is ModifierSpec.External -> error("External modifier roots were filtered")
                 is ModifierSpec.Padding -> {
                     imports += "androidx.compose.foundation.layout.padding"
                     imports += "androidx.compose.ui.unit.dp"
@@ -1134,7 +1263,7 @@ object CodeGen {
         }
         // [leading] is a scope-imposed prefix (e.g. a Scaffold's "padding(innerPadding)").
         val parts = listOfNotNull(leading) + specParts
-        return joinChain(parts, indent)
+        return joinChain(base, parts, indent)
     }
 
     /**
@@ -1194,13 +1323,13 @@ object CodeGen {
         }
     }
 
-    private fun joinChain(parts: List<String>, indent: Int): String? {
-        if (parts.isEmpty()) return null
+    private fun joinChain(base: String, parts: List<String>, indent: Int): String {
+        if (parts.isEmpty()) return base
         return if (parts.size <= 1) {
-            "Modifier." + parts.joinToString(".")
+            "$base." + parts.joinToString(".")
         } else {
             val cont = "    ".repeat(indent + 2)
-            "Modifier\n" + parts.joinToString("\n") { "$cont.$it" }
+            "$base\n" + parts.joinToString("\n") { "$cont.$it" }
         }
     }
 

@@ -5,34 +5,20 @@ import kotlinx.browser.window
 import kotlinx.browser.localStorage
 import org.w3c.dom.HTMLAnchorElement
 import org.w3c.dom.HTMLInputElement
+import org.w3c.dom.events.Event
 import org.w3c.files.FileReader
 
 /**
- * Thin browser-platform IO for persistence (M6): localStorage, file download,
- * and file import. Kept isolated so the rest of the app stays platform-neutral.
+ * Browser actuals for the [Platform.kt] seams: localStorage preferences, file
+ * download/import, clipboard, URL routing, and boot-loader chrome.
  */
 
-private const val STORAGE_KEY = "composer.design"
+actual fun prefGet(key: String): String? = localStorage.getItem(key)
 
-fun saveToLocalStorage(json: String) = localStorage.setItem(STORAGE_KEY, json)
-
-fun loadFromLocalStorage(): String? = localStorage.getItem(STORAGE_KEY)
-
-private const val FRAME_KEY = "composer.frame"
-
-/** Persist the editor's frame/preview size globally (it's a preference, not per-design). */
-fun saveFrameSize(width: Int, height: Int) = localStorage.setItem(FRAME_KEY, "$width,$height")
-
-fun loadFrameSize(): Pair<Int, Int>? {
-    val parts = localStorage.getItem(FRAME_KEY)?.split(",") ?: return null
-    if (parts.size != 2) return null
-    val w = parts[0].toIntOrNull() ?: return null
-    val h = parts[1].toIntOrNull() ?: return null
-    return w to h
-}
+actual fun prefSet(key: String, value: String) = localStorage.setItem(key, value)
 
 /** Trigger a browser download of [content] as [filename] via a data URL. */
-fun downloadText(filename: String, content: String, mime: String) {
+actual fun downloadText(filename: String, content: String, mime: String) {
     val anchor = document.createElement("a") as HTMLAnchorElement
     anchor.href = "data:$mime;charset=utf-8," + encodeURIComponent(content)
     anchor.download = filename
@@ -40,7 +26,7 @@ fun downloadText(filename: String, content: String, mime: String) {
 }
 
 /** Open a file picker and deliver the chosen file's text to [onText]. */
-fun importTextFile(accept: String, onText: (String) -> Unit) {
+actual fun importTextFile(accept: String, onText: (String) -> Unit) {
     val input = document.createElement("input") as HTMLInputElement
     input.type = "file"
     input.accept = accept
@@ -58,7 +44,7 @@ fun importTextFile(accept: String, onText: (String) -> Unit) {
 }
 
 /** Copy [text] to the system clipboard. */
-fun copyToClipboard(text: String): Unit = js("{ navigator.clipboard.writeText(text); }")
+actual fun copyToClipboard(text: String): Unit = js("{ navigator.clipboard.writeText(text); }")
 
 private fun encodeURIComponent(value: String): String = js("encodeURIComponent(value)")
 
@@ -67,11 +53,33 @@ private fun encodeURIComponent(value: String): String = js("encodeURIComponent(v
  * Called on [Root]'s first composition — the CSS transition handles the fade,
  * and pointer-events: none keeps the invisible overlay from eating clicks.
  */
-fun dismissBootLoader() {
+actual fun dismissBootLoader() {
     document.getElementById("loader")?.classList?.add("done")
 }
 
 /** Open [url] in a new browser tab. */
-fun openUrl(url: String) {
+actual fun openUrl(url: String) {
     window.open(url, "_blank")
+}
+
+/** Flush on tab close — the auto-save debounce would otherwise drop the last edit. */
+actual fun registerUnloadFlush(flush: () -> Unit): () -> Unit {
+    val listener: (Event) -> Unit = { flush() }
+    window.addEventListener("beforeunload", listener)
+    return { window.removeEventListener("beforeunload", listener) }
+}
+
+// ---- URL routing (History API; see Root's popstate listener) ----
+
+actual fun pathIsEdit(): Boolean =
+    window.location.pathname.removeSuffix("/").lowercase().endsWith("/edit")
+
+/** The id segment from a `/{id}/edit` path, or null for a bare `/edit`. */
+actual fun pathId(): String? {
+    val parts = window.location.pathname.trim('/').split('/').filter { it.isNotEmpty() }
+    return if (parts.size >= 2 && parts.last().lowercase() == "edit") parts[parts.size - 2] else null
+}
+
+actual fun pushPath(path: String) {
+    window.history.pushState(null, "", path)
 }

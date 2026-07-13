@@ -1,0 +1,161 @@
+package composer
+
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import composer.model.DesignJson
+import composer.model.Node
+
+enum class Route { Home, Edit }
+
+/**
+ * App-wide state above the editor: the current route (`/` home, `/{id}/edit`
+ * editor) and the file currently open. The open file's id lives in the URL path,
+ * so a reload restores it. Routing is synced with the browser URL via the History
+ * API (see [Root]).
+ */
+enum class SaveStatus { Saved, Saving, Error }
+
+class Workspace {
+    var route by mutableStateOf(Route.Home)
+        private set
+    var currentId by mutableStateOf<String?>(null)
+        private set
+    var currentName by mutableStateOf("Untitled")
+    var openToken by mutableStateOf(0)
+        private set
+
+    var initialDesign: Node = emptyDesign
+        private set
+
+    /** Non-null when the last save failed — shown in the toolbar so data loss isn't silent. */
+    var saveError by mutableStateOf<String?>(null)
+        private set
+
+    /** Live persistence state, surfaced as a status chip in the toolbar (like Figma/Docs). */
+    var saveStatus by mutableStateOf(SaveStatus.Saved)
+
+    /**
+     * True when the open file's stored JSON exists but couldn't be decoded. The editor
+     * shows an empty canvas and auto-save is PAUSED so the intact stored data isn't
+     * overwritten; an explicit save ([saveOverwriting]) opts into overwriting.
+     */
+    var loadFailed by mutableStateOf(false)
+        private set
+
+    /** Non-null after a failed Import JSON — shown as a banner (the import is otherwise a silent no-op). */
+    var importError by mutableStateOf<String?>(null)
+
+    fun markDirty() { if (saveStatus != SaveStatus.Error && !loadFailed) saveStatus = SaveStatus.Saving }
+
+    init {
+        // Restore the open file from the URL on first load / hard refresh.
+        if (pathIsEdit()) {
+            loadFromUrl()
+            route = Route.Edit
+        }
+    }
+
+    fun newDesign() {
+        // Allocate the id up front so the URL carries it immediately (survives refresh,
+        // even before the first auto-save). The file is created on the first edit.
+        currentId = FileStore.newId()
+        currentName = "Untitled"
+        initialDesign = emptyDesign
+        loadFailed = false
+        openToken++
+        go(Route.Edit)
+    }
+
+    /** Start a NEW design seeded from a template — the template itself is never mutated. */
+    fun newDesignFrom(name: String, design: Node) {
+        currentId = FileStore.newId()
+        currentName = name
+        initialDesign = design
+        loadFailed = false
+        openToken++
+        go(Route.Edit)
+    }
+
+    fun open(meta: FileMeta) {
+        currentId = meta.id
+        currentName = meta.name
+        initialDesign = loadDesignOrEmpty(meta.id)
+        openToken++
+        go(Route.Edit)
+    }
+
+    fun home() = go(Route.Home)
+
+    fun dismissSaveError() { saveError = null }
+
+    /** Persist the current editor tree to its file (creating one if needed). Records [saveError] on failure. */
+    fun save(root: Node): FileMeta? {
+        if (loadFailed) return null // paused — never auto-overwrite data we couldn't read
+        val id = currentId ?: FileStore.newId().also { currentId = it }
+        return when (val r = FileStore.save(id, currentName.ifBlank { "Untitled" }, DesignJson.encode(root))) {
+            is SaveResult.Ok -> { saveError = null; saveStatus = SaveStatus.Saved; r.meta }
+            SaveResult.QuotaExceeded -> {
+                saveError = "Storage full — latest changes not saved. Local storage is ~5 MB; embedded images are the usual cause. Export JSON (File ▸ Export JSON) to keep a copy."
+                saveStatus = SaveStatus.Error
+                null
+            }
+            is SaveResult.Error -> {
+                saveError = "Couldn't save (${r.name}) — export your design to avoid losing work."
+                saveStatus = SaveStatus.Error
+                null
+            }
+        }
+    }
+
+    /** Explicit user save: opts into overwriting a file whose stored data failed to load. */
+    fun saveOverwriting(root: Node): FileMeta? {
+        loadFailed = false
+        return save(root)
+    }
+
+    /** Re-sync route + open file from the URL (browser back/forward via popstate). */
+    fun syncFromUrl() {
+        if (pathIsEdit()) {
+            if (pathId() != currentId) {
+                loadFromUrl()
+                openToken++ // navigated to a different design — rebuild the editor
+            }
+            route = Route.Edit
+        } else {
+            route = Route.Home
+        }
+    }
+
+    /** Populate currentId/name/design from the id in the URL path. */
+    private fun loadFromUrl() {
+        val id = pathId()
+        currentId = id
+        if (id != null) {
+            currentName = FileStore.list().firstOrNull { it.id == id }?.name ?: "Untitled"
+            initialDesign = loadDesignOrEmpty(id)
+        } else {
+            currentName = "Untitled"
+            initialDesign = emptyDesign
+        }
+    }
+
+    private fun loadDesignOrEmpty(id: String): Node {
+        loadFailed = false
+        val json = FileStore.loadDesign(id) ?: return emptyDesign // no file yet — a fresh design
+        return runCatching { DesignJson.decode(json) }.getOrElse {
+            loadFailed = true
+            emptyDesign
+        }
+    }
+
+    private fun go(r: Route) {
+        route = r
+        val path = when {
+            r == Route.Edit && currentId != null -> "/$currentId/edit"
+            r == Route.Edit -> "/edit"
+            else -> "/"
+        }
+        pushPath(path)
+    }
+}

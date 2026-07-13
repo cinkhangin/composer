@@ -28,6 +28,15 @@ enum class CornerUnit { Dp, Percent }
 @Serializable
 sealed interface ModifierSpec {
     /**
+     * A composable parameter used as the root of a modifier chain, such as
+     * `modifier` in `modifier.padding(8.dp)`. The canvas cannot evaluate source
+     * parameters, so it treats this root as `Modifier`; codegen preserves it.
+     */
+    @Serializable
+    @SerialName("external")
+    data class External(val expression: String) : ModifierSpec
+
+    /**
      * `Modifier.padding(…)`. [mode] selects the form: [PaddingMode.All] → `padding(all.dp)`,
      * [PaddingMode.Symmetric] → `padding(horizontal, vertical)`, [PaddingMode.Sides] →
      * `padding(start, top, end, bottom)`. `all` is kept first so `Padding(16)` and old saved

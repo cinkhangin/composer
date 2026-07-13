@@ -4,19 +4,18 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
- * Envelope of the JS bridge protocol shared with the web app's EmbeddedBridge.
+ * Envelope shared by the plugin host and an in-process designer session.
  * The design payload is an OPAQUE DesignJson string — envelope parsing never
  * touches the Node schema, so the two sides can't drift on it.
  *
- * web → IDE: `ready` (editor booted), `designChanged` (rev + design),
+ * designer → IDE: `ready` (editor booted), `designChanged` (rev + design),
  *            `selectionChanged` (rev + nodeId, null = deselected).
- * IDE → web: `loadDesign` (rev + design), `setTheme` (dark),
+ * IDE → designer: `loadDesign` (rev + design), `setTheme` (dark),
  *            `selectNode` (rev + nodeId).
  *
  * Each side stamps a monotonically increasing `rev` on its own outgoing
  * messages; the receiver drops anything at or below the highest rev it has
- * seen, and resets that tracker on `ready` (a page reload restarts the web
- * side's counter).
+ * seen, and resets that tracker on `ready` (a new panel starts a new session).
  */
 @Serializable
 data class BridgeMsg(
@@ -25,6 +24,8 @@ data class BridgeMsg(
     val design: String? = null,
     val nodeId: String? = null,
     val dark: Boolean? = null,
+    /** Sent by the whole-app tool window to select screen-oriented editor copy. */
+    val appMode: Boolean? = null,
 )
 
 /** Forward-compatible envelope codec (unknown fields/types are ignored). */
