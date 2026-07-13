@@ -16,8 +16,6 @@ deterministic Compose code.
 - Reusable composables and live instances.
 - Drag-and-drop layer tree with renaming and reparenting.
 - Named Material themes and theme-token color references.
-- Code | Split | Design editor for Kotlin files containing `@Composable`
-  functions.
 - Whole-app tool window with screen, ViewModel, and Navigation 3 generation.
 - Two-way source synchronization with conservative `RawCode` preservation for
   syntax the design model does not understand.
@@ -27,9 +25,10 @@ or model-assisted generation.
 
 ## Android Studio plugin
 
-The designer uses Android Studio's platform Compose runtime directly. Each tool
-window or split-editor preview owns an independent in-process session, so several
-designers can remain open without sharing bridge state.
+The designer uses Android Studio's platform Compose runtime directly. Each
+project tool window owns an independent in-process session, so several projects
+can remain open without sharing bridge state. Android Studio's native Compose
+Preview remains responsible for per-file split previews.
 
 The current plugin target is Android Studio 2026.1+ (`261`, platform Compose).
 Use JDK 17 for Gradle:
@@ -55,7 +54,7 @@ model/        Pure Kotlin model, modifiers, tree operations, and serialization.
 codegen/      Deterministic design tree -> Compose Multiplatform source.
 codeparse/    Kotlin source -> design tree plus conservative write-back planning.
 app/          JVM Compose designer UI and per-panel in-process host session.
-idea-plugin/  Android Studio integration, source sync, split editor, and app tool window.
+idea-plugin/  Android Studio app tool window, project source sync, and generation.
 ```
 
 `model`, `codegen`, and `codeparse` have no Compose UI dependencies. Run their

@@ -11,7 +11,7 @@ import javax.swing.JComponent
  * designer→host ones (ready / designChanged / selectionChanged) via
  * [onMessage] — all existing plugin-side handlers and guards apply verbatim.
  *
- * Each panel owns its own session, so tool-window and split-editor designers can
+ * Each panel owns its own session, so tool windows from multiple projects can
  * run concurrently in one IDE process.
  */
 class DesignerConnection internal constructor(

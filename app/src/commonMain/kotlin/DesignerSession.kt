@@ -23,8 +23,8 @@ internal data class DesignerMessage(
  * One in-process bridge session per ComposePanel.
  *
  * Keeping all transport and echo-guard state on the panel instance allows the
- * whole-app tool window and any number of split-editor previews to coexist in
- * the same Android Studio process without stealing each other's messages.
+ * tool windows from multiple open projects to coexist in one Android Studio
+ * process without stealing each other's messages.
  */
 internal class DesignerSession(private val hostSink: (String) -> Unit) {
     var appMode by mutableStateOf(false)
