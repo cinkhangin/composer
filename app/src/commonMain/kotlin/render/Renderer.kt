@@ -603,8 +603,10 @@ fun RenderNode(
         // A Slot = a slot-argument scope; preview its children in a plain box (its
         // parent's slot lambda positions it). Selectable so users can target it.
         is Node.Slot -> Box(modifier = modifier) { node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) } }
-        // A Composable = function scope; preview its children in a fill-size box.
-        is Node.Composable -> Box(modifier = modifier.fillMaxSize()) { node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) } }
+        // A Composable = function scope; it hugs children unless one of them fills
+        // the bounded preview surface. ScreenFrame normally renders its children
+        // directly, but keep this defensive branch consistent with that behavior.
+        is Node.Composable -> Box(modifier = modifier) { node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) } }
         // The artboard is never rendered as a node — the canvas lays out each
         // screen's frame itself (App.kt). Render nothing defensively.
         is Node.Artboard -> Unit

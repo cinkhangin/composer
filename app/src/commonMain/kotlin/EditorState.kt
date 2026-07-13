@@ -83,6 +83,12 @@ class EditorState(initial: Node) {
     /** The artboard's screens, in order. */
     val composables: List<Node.Composable> get() = artboard.composables.filterIsInstance<Node.Composable>()
 
+    /** Designer-wide maximum screen size. Existing mixed-size files use the first composable until changed. */
+    val screenWidth: Int get() = composables.firstOrNull()?.width ?: DEFAULT_SCREEN_WIDTH
+    val screenHeight: Int get() = composables.firstOrNull()?.height ?: DEFAULT_SCREEN_HEIGHT
+    val hasMixedScreenSizes: Boolean
+        get() = composables.any { it.width != screenWidth || it.height != screenHeight }
+
     /** The screen containing [id] (or the screen itself), null for the artboard/absent ids. */
     fun screenOf(id: String): Node.Composable? {
         val topLevel = pathFromRoot(id).getOrNull(1) ?: return null
@@ -145,24 +151,14 @@ class EditorState(initial: Node) {
         }
     }
 
-    /** Resize screen [id] by (dw, dh) dp. Min 1dp — a Composable can be as small as 1×1. */
-    fun resizeComposable(id: String, dw: Int, dh: Int) {
-        update(id, coalesceKey = "csize:$id") { node ->
-            if (node is Node.Composable) node.copy(
-                width = (node.width + dw).coerceIn(1, 3840),
-                height = (node.height + dh).coerceIn(1, 3840),
-            ) else node
+    /** Set the shared maximum screen size for every composable as one undoable edit. */
+    fun setScreenSize(width: Int, height: Int) {
+        val w = width.coerceIn(1, MAX_SCREEN_SIZE)
+        val h = height.coerceIn(1, MAX_SCREEN_SIZE)
+        val resized = artboard.composables.map { node ->
+            if (node is Node.Composable) node.copy(width = w, height = h) else node
         }
-    }
-
-    /** Set screen [id]'s size (dp) — presets and the inspector W/H fields. */
-    fun setComposableSize(id: String, width: Int, height: Int) {
-        update(id, coalesceKey = "csize:$id") { node ->
-            if (node is Node.Composable) node.copy(
-                width = width.coerceIn(1, 3840),
-                height = height.coerceIn(1, 3840),
-            ) else node
-        }
+        commit(artboard.copy(composables = resized), coalesceKey = "screen-size")
     }
 
     /**
@@ -170,9 +166,15 @@ class EditorState(initial: Node) {
      * existing composable (Figma-style side-by-side flow). Named "Composable N" so the
      * generated function name is stable and readable. Selects it.
      */
-    fun addComposable(width: Int = 390, height: Int = 844) {
+    fun addComposable() {
         val id = nextId()
-        val screen = Node.Composable(id = id, x = nextScreenX(), y = 0, width = width, height = height)
+        val screen = Node.Composable(
+            id = id,
+            x = nextScreenX(),
+            y = 0,
+            width = screenWidth,
+            height = screenHeight,
+        )
         val name = "Composable ${composables.size + 1}"
         commit(
             root.insertChild(root.id, screen, Int.MAX_VALUE)
@@ -723,6 +725,9 @@ class EditorState(initial: Node) {
 
 /** Horizontal gap between side-by-side screens on the artboard canvas (dp). */
 private const val SCREEN_GAP = 60
+internal const val DEFAULT_SCREEN_WIDTH = 390
+internal const val DEFAULT_SCREEN_HEIGHT = 844
+private const val MAX_SCREEN_SIZE = 3840
 
 /**
  * Migrate any historical root shape to the Artboard model, seeding a migrated

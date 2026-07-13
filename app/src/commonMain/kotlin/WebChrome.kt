@@ -63,10 +63,15 @@ internal fun WebToolbar(state: EditorState, ws: Workspace) {
 
         Row(
             modifier = Modifier.align(Alignment.Center),
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            WebViewSegment("Design", AppIconKind.Design, !state.showCode) { state.setCodeView(false) }
-            WebViewSegment("Code", AppIconKind.Code, state.showCode) { state.setCodeView(true) }
+            ScreenSizeControl(state)
+            Box(Modifier.width(1.dp).height(20.dp).background(Tk.border))
+            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                WebViewSegment("Design", AppIconKind.Design, !state.showCode) { state.setCodeView(false) }
+                WebViewSegment("Code", AppIconKind.Code, state.showCode) { state.setCodeView(true) }
+            }
         }
 
         Row(

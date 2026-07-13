@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -356,6 +355,7 @@ private fun Toolbar(state: EditorState) {
     // 40dp: the tallest controls are 32dp, so this leaves 4dp of air above/below —
     // a slim, Figma-like bar instead of the airy 52dp it started with.
     Box(modifier = Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 12.dp)) {
+        ScreenSizeControl(state, Modifier.align(Alignment.Center))
         Row(
             modifier = Modifier.align(Alignment.CenterEnd),
             verticalAlignment = Alignment.CenterVertically,
@@ -543,10 +543,10 @@ private fun Canvas(
         ) {
             val density = LocalDensity.current
             val screens = state.composables
-            // The content bounding box is FROZEN while screens move/resize (only the
-            // screen count re-keys it) so dragging a screen never re-fits the view —
-            // Figma keeps the viewport still; you pan, it doesn't jump.
-            val content = remember(screens.size) { contentBoxOf(screens) }
+            // The content bounding box is frozen while screens MOVE, so dragging
+            // never re-fits the view. Shared screen-size changes do re-key it.
+            val screenSizeKey = screens.map { Triple(it.id, it.width, it.height) }
+            val content = remember(screenSizeKey) { contentBoxOf(screens) }
             // Auto-fit scale (never up past 1:1), then apply the user's zoom. The
             // vertical margin clears the FLOATING CHROME: the preset badge (top) and
             // the palette (bottom) overlay the canvas and eat clicks — a frame fitted
@@ -688,7 +688,6 @@ private fun Canvas(
                         onBodyMoveEnd = { if (isScreen) state.endScreenDrag() },
                         onResize = { dw, dh ->
                             when {
-                                isScreen -> state.resizeComposable(sel, dw, dh)
                                 isShape -> state.resizeShape(sel, dw, dh)
                                 else -> {
                                     val baseW = with(density) { b.width.toDp().value }.roundToInt()
@@ -880,8 +879,8 @@ private fun ArtboardCanvas(
  * One composable's frame at its artboard position, with a clickable name label.
  * The frame is TRANSPARENT and HUGS its content: width/height are MAX constraints
  * (the device preset) — a fillMaxSize child grows to them, smaller content wraps.
- * No fixed size, no background paint, no canvas resize (preset picked in the
- * inspector); the label shows the layer name = the generated function name.
+ * No fixed size, no background paint, no canvas resize (the shared maximum is
+ * picked in the toolbar); the label shows the generated function name.
  */
 @Composable
 private fun ScreenFrame(
@@ -912,8 +911,7 @@ private fun ScreenFrame(
                 val ox = ((constraints.maxWidth - content.w.dp.toPx()) / 2f + (screen.x - content.minX).dp.toPx()).roundToInt()
                 val oy = ((constraints.maxHeight - content.h.dp.toPx()) / 2f + (screen.y - content.minY).dp.toPx()).roundToInt()
                 layout(0, 0) { placeable.place(ox, oy) }
-            }
-            .onGloballyPositioned { register(screen.id, it) },
+            },
     ) {
         // The design's own theme wraps the preview (WYSIWYG with the generated
         // MaterialTheme). The frame paints NOTHING itself — a composable is
@@ -928,8 +926,11 @@ private fun ScreenFrame(
             ) {
                 Box(
                     modifier = Modifier
-                        // an EMPTY composable must stay visible/selectable
-                        .defaultMinSize(48.dp, 48.dp)
+                        // Register the measured surface, not the zero-sized
+                        // positioning wrapper. This is the selection outline:
+                        // full screen for fill/equal-size content, hug otherwise,
+                        // and exactly 0×0 when there is no renderable content.
+                        .onGloballyPositioned { register(screen.id, it) }
                         // Per-pixel grid overlay on the measured content area (the
                         // frame is transparent and hugs content, so this box IS the
                         // visible screen surface); fades in past 2x zoom.
@@ -937,7 +938,9 @@ private fun ScreenFrame(
                         // A tap on a gap (no child consumed it) selects the composable.
                         .pointerInput(screen.id) { detectTapGestures { state.select(screen.id) } },
                 ) {
-                    RenderNode(screen, state.selectedId, onSelect = state::selectAt, onBounds = ::register)
+                    screen.children.forEach { child ->
+                        RenderNode(child, state.selectedId, onSelect = state::selectAt, onBounds = ::register)
+                    }
                 }
             }
         }
