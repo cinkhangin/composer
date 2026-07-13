@@ -61,8 +61,13 @@ object ComposerAppScaffold {
 
     /** Show the dialog and scaffold; returns the created MainActivity, or null when cancelled. */
     fun scaffold(project: Project): VirtualFile? {
-        val roots = ProjectRootManager.getInstance(project).contentSourceRoots
-            .filter { it.isDirectory && !it.path.contains("/test") && !it.path.contains("/res") }
+        val rootManager = ProjectRootManager.getInstance(project)
+        val roots = rootManager.contentSourceRoots
+            .filter {
+                it.isDirectory &&
+                    !rootManager.fileIndex.isInTestSourceContent(it) &&
+                    it.name !in setOf("res", "resources")
+            }
         if (roots.isEmpty()) {
             ComposerNotifications.warnOnce(project, "composer.app.noroots", "No source roots found to scaffold into.")
             return null
@@ -80,12 +85,27 @@ object ComposerAppScaffold {
         )
         val files = AppCodeGen.generate(artboard, pkg)
 
+        val relativePackage = pkg.replace('.', '/')
+        val existingDir = root.findFileByRelativePath(relativePackage)
+        val conflicts = files.map { it.path }.filter { existingDir?.findChild(it) != null }
+        if (conflicts.isNotEmpty()) {
+            ComposerNotifications.warnOnce(
+                project,
+                "composer.app.scaffold-conflict:${conflicts.sorted().joinToString("|")}",
+                "Composer didn't scaffold the app because these files already exist: ${conflicts.joinToString(", ")}",
+            )
+            return null
+        }
+
         var main: VirtualFile? = null
         WriteCommandAction.runWriteCommandAction(project, "Enable Composer App", "composer.app.scaffold", {
             CommandProcessor.getInstance().markCurrentCommandAsGlobal(project)
-            val dir = VfsUtil.createDirectoryIfMissing(root, pkg.replace('.', '/')) ?: return@runWriteCommandAction
+            val dir = VfsUtil.createDirectoryIfMissing(root, relativePackage) ?: return@runWriteCommandAction
             for (f in files) {
-                val vf = dir.findChild(f.path) ?: dir.createChildData(this, f.path)
+                // The preflight happens immediately before this write command on
+                // the EDT. Use create-only semantics so a collision can never
+                // degrade into an implicit source overwrite.
+                val vf = dir.createChildData(this, f.path)
                 VfsUtil.saveText(vf, f.text)
                 if (f.path == "MainActivity.kt") main = vf
             }

@@ -112,8 +112,7 @@ object AppCodeGen {
         // navFns = target BASE names, so params read onNavigateToHome (not …ScreenUI).
         val code = CodeGen.screenFunction(screen, "${base}ScreenUI", componentFns, params = null, navFns = baseById)
         return buildString {
-            appendLine("package $packageName")
-            appendLine()
+            appendPackage(packageName)
             for (imp in code.imports.sorted()) appendLine("import $imp")
             appendLine()
             appendLine(code.text)
@@ -130,8 +129,7 @@ object AppCodeGen {
         val (targets, back) = navCallbacks(screen, artboard, baseById)
         val callbacks = targets.map { "onNavigateTo$it" } + (if (back) listOf("onBack") else emptyList())
         return buildString {
-            appendLine("package $packageName")
-            appendLine()
+            appendPackage(packageName)
             appendLine("import androidx.compose.runtime.Composable")
             appendLine("import androidx.compose.runtime.collectAsState")
             appendLine("import androidx.compose.runtime.getValue")
@@ -160,8 +158,7 @@ object AppCodeGen {
     }
 
     private fun viewModelFile(base: String, packageName: String): String = buildString {
-        appendLine("package $packageName")
-        appendLine()
+        appendPackage(packageName)
         appendLine("import androidx.lifecycle.ViewModel")
         appendLine("import kotlinx.coroutines.flow.MutableStateFlow")
         appendLine("import kotlinx.coroutines.flow.StateFlow")
@@ -187,8 +184,7 @@ object AppCodeGen {
         val imports = sortedImports(plan)
         val theme = if (plan.themed) CodeGen.themeBlock(artboard.themes, plan.schemeVals, artboard.activeTheme, imports) else null
         return buildString {
-            appendLine("package $packageName")
-            appendLine()
+            appendPackage(packageName)
             for (imp in imports.sorted()) appendLine("import $imp")
             appendLine()
             plan.bases.forEach { base ->
@@ -217,7 +213,8 @@ object AppCodeGen {
             appendLine()
             appendLine("@Composable")
             appendLine("fun App() {")
-            appendLine("    val backStack = rememberNavBackStack(${plan.bases.firstOrNull() ?: "TODO"})")
+            val initialRoute = plan.bases.firstOrNull()
+            appendLine(if (initialRoute == null) "    val backStack = rememberNavBackStack()" else "    val backStack = rememberNavBackStack($initialRoute)")
             appendLine("    NavDisplay(")
             appendLine("        backStack = backStack,")
             appendLine("        onBack = { backStack.removeLastOrNull() },")
@@ -241,6 +238,14 @@ object AppCodeGen {
             appendLine("        },")
             appendLine("    )")
             appendLine("}")
+        }
+    }
+
+    /** Kotlin's default package has no package directive. */
+    private fun StringBuilder.appendPackage(packageName: String) {
+        if (packageName.isNotBlank()) {
+            appendLine("package $packageName")
+            appendLine()
         }
     }
 

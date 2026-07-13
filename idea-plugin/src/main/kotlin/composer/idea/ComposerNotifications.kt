@@ -12,8 +12,9 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Balloon notifications in the "Composer" group (registered in plugin.xml),
- * rate-limited to once per [key] per IDE session — the sync loop can hit the
- * same failure on every keystroke, and one balloon is enough.
+ * rate-limited to once per project + [key] per IDE session — the sync loop can
+ * hit the same failure on every keystroke, while separate projects still need
+ * their own diagnostics.
  */
 object ComposerNotifications {
     private val shown = ConcurrentHashMap.newKeySet<String>()
@@ -26,7 +27,7 @@ object ComposerNotifications {
 
     /** Info balloon with a "copy" action putting [copyText] on the clipboard. */
     fun infoOnceWithCopy(project: Project?, key: String, content: String, copyLabel: String, copyText: String) {
-        if (!shown.add(key)) return
+        if (!shown.add(scopedKey(project, key))) return
         NotificationGroupManager.getInstance()
             .getNotificationGroup("Composer")
             .createNotification(content, NotificationType.INFORMATION)
@@ -40,10 +41,13 @@ object ComposerNotifications {
     }
 
     private fun once(project: Project?, key: String, content: String, type: NotificationType) {
-        if (!shown.add(key)) return
+        if (!shown.add(scopedKey(project, key))) return
         NotificationGroupManager.getInstance()
             .getNotificationGroup("Composer")
             .createNotification(content, type)
             .notify(project)
     }
+
+    private fun scopedKey(project: Project?, key: String): String =
+        "${project?.locationHash ?: "<application>"}:$key"
 }

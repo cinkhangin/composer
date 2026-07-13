@@ -112,22 +112,62 @@ class AppWriteBackTest {
     }
 
     @Test
-    fun renaming_a_screen_recreates_its_trio_and_updates_main() {
+    fun rename_is_blocked_when_cross_file_symbols_are_hand_edited() {
+        val f = fixture()
+        f.files["MainActivity.kt"] = f.files.getValue("MainActivity.kt") + "\n// custom routing\n"
+        val reparsed = AppParser.parse(f.files.map { SourceFile(it.key, it.value) })!!
+        val home = reparsed.artboard.composables[1] as Node.Composable
+        val edited = reparsed.artboard.copy(
+            layerNames = reparsed.artboard.layerNames + (home.id to "Dashboard"),
+        )
+        val plan = AppWriteBackPlanner.plan(reparsed, f.files, edited)
+        assertTrue(plan.files.isEmpty())
+        assertTrue(plan.blockedReason?.contains("MainActivity.kt") == true)
+    }
+
+    @Test
+    fun renaming_a_screen_moves_its_trio_and_updates_main() {
         val f = fixture()
         val home = f.parsed.artboard.composables[1] as Node.Composable
         val edited = f.parsed.artboard.copy(
             layerNames = f.parsed.artboard.layerNames + (home.id to "Dashboard"),
         )
         val plan = AppWriteBackPlanner.plan(f.parsed, f.files, edited)
-        val deletes = plan.files.filter { it.delete }.map { it.path }.toSet()
-        val creates = plan.files.filter { it.createText != null }.map { it.path }.toSet()
-        assertEquals(setOf("HomeScreenUI.kt", "HomeScreen.kt", "HomeViewModel.kt"), deletes)
-        assertEquals(setOf("DashboardScreenUI.kt", "DashboardScreen.kt", "DashboardViewModel.kt"), creates)
+        val moves = plan.files.filter { it.moveFrom != null }.associate { it.moveFrom!! to it.path }
+        assertEquals(
+            mapOf(
+                "HomeScreenUI.kt" to "DashboardScreenUI.kt",
+                "HomeScreen.kt" to "DashboardScreen.kt",
+                "HomeViewModel.kt" to "DashboardViewModel.kt",
+            ),
+            moves,
+        )
+        assertTrue(plan.files.none { it.delete })
         // Login navigates to the renamed screen — its UI regenerates, and MainActivity re-routes.
         assertTrue(plan.files.any { it.path == "LoginScreenUI.kt" && it.edits.isNotEmpty() })
         val main = plan.files.first { it.path == "MainActivity.kt" }
         assertTrue(main.edits.single().replacement.contains("data object Dashboard : NavKey"))
         assertEquals(listOf(ScreenRename("Home", "Dashboard")), plan.renames)
+
+        // Simulate the host's moves and edits. The old Home UI must not remain
+        // beside Dashboard or AppParser would append it as an orphan screen.
+        for (filePlan in plan.files) {
+            when {
+                filePlan.moveFrom != null -> {
+                    f.files.remove(filePlan.moveFrom)
+                    f.files[filePlan.path] = filePlan.createText!!
+                }
+                filePlan.createText != null -> f.files[filePlan.path] = filePlan.createText
+                filePlan.edits.isNotEmpty() -> {
+                    f.files[filePlan.path] = WriteBackPlanner.apply(
+                        f.files.getValue(filePlan.path),
+                        WriteBackPlan(filePlan.edits),
+                    )
+                }
+            }
+        }
+        val reparsed = AppParser.parse(f.files.map { SourceFile(it.key, it.value) })!!
+        assertEquals(listOf("Login", "Dashboard"), reparsed.artboard.composables.map { reparsed.artboard.layerNames[it.id] })
     }
 
     @Test

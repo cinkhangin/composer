@@ -145,7 +145,9 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
             FilenameIndex.getVirtualFilesByName("MainActivity.kt", GlobalSearchScope.projectScope(project))
                 .firstOrNull { vf ->
                     runCatching {
-                        com.intellij.openapi.fileEditor.impl.LoadTextUtil.loadText(vf).contains("NavDisplay")
+                        composer.codeparse.AppParser.isAdoptableMainActivity(
+                            com.intellij.openapi.fileEditor.impl.LoadTextUtil.loadText(vf).toString(),
+                        )
                     }.getOrDefault(false)
                 }
         }
@@ -301,6 +303,7 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
         teardownDesigner()
         service.pushDesign = null
         service.onStatus = null
+        service.stop()
     }
 
     private companion object {

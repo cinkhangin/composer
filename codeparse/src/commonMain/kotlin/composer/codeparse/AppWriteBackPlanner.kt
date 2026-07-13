@@ -10,10 +10,13 @@ import composer.model.validComponentIds
 
 /** The plan for one file: minimal edits, a whole new file, or a deletion. */
 data class AppFilePlan(
+    /** Target path for edits, creation, or a move. */
     val path: String,
     val edits: List<TextEdit> = emptyList(),
     /** Non-null = create this file with this content (path may not exist yet). */
     val createText: String? = null,
+    /** Non-null = move this existing file to [path] before writing [createText]. */
+    val moveFrom: String? = null,
     /** The screen owning this file was deleted — the caller decides how to present it. */
     val delete: Boolean = false,
 )
@@ -22,6 +25,8 @@ data class AppWriteBackPlan(
     val files: List<AppFilePlan>,
     val renames: List<ScreenRename> = emptyList(),
     val warnings: List<String> = emptyList(),
+    /** Non-null means applying only the safe subset would break cross-file symbols. */
+    val blockedReason: String? = null,
 )
 
 /**
@@ -59,6 +64,25 @@ object AppWriteBackPlanner {
         }.toSet()
         val deletedIds = prevBaseById.keys.filterNot { it in editedIds }.toSet()
         val changedTargets = renamedIds + deletedIds
+
+        // A rename changes symbols in all three screen files and MainActivity.
+        // If any derived file has left canonical ownership, applying only the
+        // remaining moves would leave references to declarations that no longer
+        // exist. Reject the whole designer edit instead of producing broken code.
+        if (renamedIds.isNotEmpty()) {
+            val blockers = buildList {
+                if (prevMain?.canonical == false) add(prevMain.path)
+                for (id in renamedIds) {
+                    prevWiringByScreen[id]?.takeUnless { it.canonical }?.let { add(it.path) }
+                    prevVmByScreen[id]?.takeUnless { it.canonical }?.let { add(it.path) }
+                }
+            }.distinct()
+            if (blockers.isNotEmpty()) {
+                val reason = "Composer couldn't rename the screen because these files are hand-edited: " +
+                    blockers.joinToString(", ") { it.substringAfterLast('/') }
+                return AppWriteBackPlan(emptyList(), warnings = listOf(reason), blockedReason = reason)
+            }
+        }
 
         fun referencesChanged(screen: Node.Composable): Boolean {
             fun walk(n: Node): Boolean =
@@ -118,12 +142,15 @@ object AppWriteBackPlanner {
                     if (original != code.text) edits += TextEdit(prevFn.fnRange.first, prevFn.fnRange.last + 1, code.text)
                     if (edits.isNotEmpty()) {
                         WriteBackPlanner.planImportMerge(design, code.imports)?.let { edits += it }
-                        // A renamed screen renames its file alongside the fn.
+                        // A renamed screen moves its file alongside the fn. Keeping
+                        // the move explicit prevents the host from leaving the old UI
+                        // file behind, where the next app parse would resurrect it as
+                        // an un-routed screen.
                         if (renamed) {
-                            plans += AppFilePlan(prevUi.path, delete = true)
                             plans += AppFilePlan(
                                 "$dirPrefix${base}ScreenUI.kt",
                                 createText = WriteBackPlanner.apply(text, WriteBackPlan(edits)),
+                                moveFrom = prevUi.path,
                             )
                         } else {
                             plans += AppFilePlan(prevUi.path, edits = edits)
@@ -145,8 +172,11 @@ object AppWriteBackPlanner {
                 val nowText = filesNow[prevFile.path] ?: continue
                 if (prevFile.canonical) {
                     if (renamed) {
-                        plans += AppFilePlan(prevFile.path, delete = true)
-                        plans += AppFilePlan("$dirPrefix$fileName", createText = newText)
+                        plans += AppFilePlan(
+                            "$dirPrefix$fileName",
+                            createText = newText,
+                            moveFrom = prevFile.path,
+                        )
                     } else if (newText != nowText) {
                         plans += AppFilePlan(prevFile.path, edits = listOf(TextEdit(0, nowText.length, newText)))
                     }

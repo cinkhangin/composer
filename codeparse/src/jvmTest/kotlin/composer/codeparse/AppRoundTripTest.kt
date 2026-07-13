@@ -20,6 +20,33 @@ import kotlin.test.assertTrue
  */
 class AppRoundTripTest {
 
+    @Test
+    fun adoptable_main_activity_requires_a_real_nav_display_call() {
+        assertTrue(
+            AppParser.isAdoptableMainActivity(
+                """
+                import androidx.activity.ComponentActivity
+                class MainActivity : ComponentActivity() {
+                    fun Content() { NavDisplay(backStack = stack, entryProvider = provider) }
+                }
+                """.trimIndent(),
+            ),
+        )
+        assertTrue(
+            !AppParser.isAdoptableMainActivity(
+                """
+                import androidx.activity.ComponentActivity
+                import androidx.navigation3.ui.NavDisplay
+                class MainActivity : ComponentActivity() {
+                    // NavDisplay(fake)
+                    val note = "NavDisplay(fake)"
+                }
+                """.trimIndent(),
+            ),
+        )
+        assertTrue(!AppParser.isAdoptableMainActivity("fun NavDisplay() = Unit"))
+    }
+
     /** Roughly half the seeds get customized themes (names may need sanitizing). */
     private fun Node.Artboard.withAppThemes(seed: Int): Node.Artboard {
         val rnd = Random(seed + 1000)

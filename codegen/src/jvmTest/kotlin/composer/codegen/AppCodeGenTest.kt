@@ -71,6 +71,17 @@ class AppCodeGenTest {
     }
 
     @Test
+    fun empty_app_and_default_package_generate_valid_source() {
+        val files = AppCodeGen.generate(Node.Artboard("a"), "")
+        assertEquals(listOf("MainActivity.kt"), files.map { it.path })
+        val main = files.single().text
+        assertTrue(!main.startsWith("package "))
+        assertTrue("rememberNavBackStack()" in main)
+        assertTrue("TODO" !in main)
+        CodeGenTest().assertLexicallyValid(main)
+    }
+
+    @Test
     fun matches_the_golden_file_set() {
         val files = AppCodeGen.generate(sampleApp(), "com.example.app")
         val missing = files.filter { javaClass.getResource("/golden/app_sample/${it.path}") == null }

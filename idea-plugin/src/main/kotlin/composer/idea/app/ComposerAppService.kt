@@ -40,8 +40,7 @@ import org.jetbrains.concurrency.CancellablePromise
  * Re-parses on any owned-document edit (one application-level listener,
  * filtered) and on VFS changes under the app directory.
  *
- * P-A scope: read-only — designer edits are acknowledged with a status note;
- * the multi-file write path lands next.
+ * Designer edits are planned off the EDT and written as one undoable command.
  */
 @Service(Service.Level.PROJECT)
 class ComposerAppService(private val project: Project) : Disposable {
@@ -85,9 +84,13 @@ class ComposerAppService(private val project: Project) : Disposable {
     }
 
     fun stop() {
+        pendingEdit?.cancel()
+        pendingEdit = null
+        queue.cancelAllUpdates()
         mainActivity = null
         lastParsed = null
         lastPushed = null
+        lastParsedStamps = emptyMap()
     }
 
     /** The file + source range of [nodeId] in the last parse (selection sync). */
@@ -177,7 +180,10 @@ class ComposerAppService(private val project: Project) : Disposable {
 
     private fun stampsMatch(expected: Map<String, Long>): Boolean {
         val (_, now, _) = snapshot()
-        return expected.all { (path, stamp) -> now[path] == stamp }
+        // Exact key equality matters: a newly-created screen file can collide
+        // with a planned create even though every previously-seen stamp still
+        // matches. Applying that stale plan would overwrite the new file.
+        return now == expected
     }
 
     private fun planEdit(designJson: String): EditOutcome {
@@ -197,47 +203,101 @@ class ComposerAppService(private val project: Project) : Disposable {
             ?: AppParser.parse(sources)
             ?: return Drop
         val plan = AppWriteBackPlanner.plan(previous, sources.associate { it.path to it.text }, edited)
-        if (plan.files.isEmpty()) return Drop // geometry-only or true no-op
+        if (plan.files.isEmpty() && plan.warnings.isEmpty() && plan.blockedReason == null) return Drop // geometry-only or true no-op
         return Planned(plan, stamps)
     }
 
     private fun applyPlan(plan: AppWriteBackPlan) {
+        plan.blockedReason?.let { reason ->
+            ComposerNotifications.warnOnce(
+                project,
+                "composer.app.blocked:${reason.hashCode()}",
+                reason,
+            )
+            repushForNewDesigner()
+            return
+        }
         val (_, _, byPath) = snapshot()
         val dir = mainActivity?.parent ?: return
-        val editedFiles = plan.files.filter { it.edits.isNotEmpty() }.mapNotNull { byPath[it.path] }
-        val psiFiles = editedFiles.mapNotNull { PsiManager.getInstance(project).findFile(it) }
-        val multiFile = plan.files.count { it.edits.isNotEmpty() || it.createText != null } > 1
-        val skippedDeletions = plan.files.filter { it.delete }
-        suppressDocEvents = true
-        try {
-            WriteCommandAction.runWriteCommandAction(
+        val conflicts = plan.files.mapNotNull { filePlan ->
+            if (filePlan.createText == null) return@mapNotNull null
+            val targetName = filePlan.path.substringAfterLast('/')
+            val target = dir.findChild(targetName)
+            val moveFrom = filePlan.moveFrom
+            val source = moveFrom?.let(byPath::get)
+            when {
+                moveFrom != null && source == null -> moveFrom.substringAfterLast('/')
+                target != null && target != source -> targetName
+                else -> null
+            }
+        }.distinct()
+        if (conflicts.isNotEmpty()) {
+            val names = conflicts.joinToString(", ")
+            ComposerNotifications.warnOnce(
                 project,
-                "Edit App Design",
-                "composer.app.${++editSeq}",
-                {
-                    if (multiFile) CommandProcessor.getInstance().markCurrentCommandAsGlobal(project)
-                    for (filePlan in plan.files) {
-                        when {
-                            filePlan.delete -> Unit // conservative: files stay, notified below
-                            filePlan.createText != null -> {
-                                val name = filePlan.path.substringAfterLast('/')
-                                val vf = dir.findChild(name) ?: dir.createChildData(this, name)
-                                VfsUtil.saveText(vf, filePlan.createText!!)
-                            }
-                            else -> {
-                                val vf = byPath[filePlan.path] ?: continue
-                                val doc = FileDocumentManager.getInstance().getDocument(vf) ?: continue
-                                for (e in filePlan.edits.sortedByDescending { it.start }) {
-                                    doc.replaceString(e.start, e.end, e.replacement)
+                "composer.app.file-conflict:${conflicts.sorted().joinToString("|")}",
+                "Composer didn't apply the design edit because it would overwrite existing files: $names",
+            )
+            // The designer has already accepted the edit. Force the canonical
+            // source design back into it instead of leaving UI and code divergent.
+            repushForNewDesigner()
+            return
+        }
+
+        val editedFiles = plan.files.mapNotNull { filePlan ->
+            val moveFrom = filePlan.moveFrom
+            when {
+                moveFrom != null -> byPath[moveFrom]
+                filePlan.edits.isNotEmpty() -> byPath[filePlan.path]
+                else -> null
+            }
+        }.distinct()
+        val psiFiles = editedFiles.mapNotNull { PsiManager.getInstance(project).findFile(it) }
+        val writePlans = plan.files.filter { it.edits.isNotEmpty() || it.createText != null }
+        val hasWrites = writePlans.isNotEmpty()
+        val multiFile = writePlans.size > 1
+        val skippedDeletions = plan.files.filter { it.delete }
+        if (hasWrites) {
+            suppressDocEvents = true
+            try {
+                WriteCommandAction.runWriteCommandAction(
+                    project,
+                    "Edit App Design",
+                    "composer.app.${++editSeq}",
+                    {
+                        if (multiFile) CommandProcessor.getInstance().markCurrentCommandAsGlobal(project)
+                        for (filePlan in plan.files) {
+                            when {
+                                filePlan.delete -> Unit // conservative: files stay, notified below
+                                filePlan.createText != null -> {
+                                    val name = filePlan.path.substringAfterLast('/')
+                                    val moveFrom = filePlan.moveFrom
+                                    val vf = if (moveFrom != null) {
+                                        val source = byPath.getValue(moveFrom)
+                                        if (source.name != name) source.rename(this, name)
+                                        source
+                                    } else {
+                                        // Preflight above guarantees this is a true create,
+                                        // never a silent overwrite of user source.
+                                        dir.createChildData(this, name)
+                                    }
+                                    VfsUtil.saveText(vf, filePlan.createText ?: error("createText disappeared"))
+                                }
+                                else -> {
+                                    val vf = byPath[filePlan.path] ?: continue
+                                    val doc = FileDocumentManager.getInstance().getDocument(vf) ?: continue
+                                    for (e in filePlan.edits.sortedByDescending { it.start }) {
+                                        doc.replaceString(e.start, e.end, e.replacement)
+                                    }
                                 }
                             }
                         }
-                    }
-                },
-                *psiFiles.toTypedArray(),
-            )
-        } finally {
-            suppressDocEvents = false
+                    },
+                    *psiFiles.toTypedArray(),
+                )
+            } finally {
+                suppressDocEvents = false
+            }
         }
         for (w in plan.warnings) {
             ComposerNotifications.infoOnce(project, "composer.app.warn:${w.hashCode()}", w)
@@ -246,9 +306,8 @@ class ComposerAppService(private val project: Project) : Disposable {
             ComposerNotifications.infoOnce(
                 project,
                 "composer.app.deleted:${skippedDeletions.hashCode()}",
-                "Screen removed from navigation — " +
-                    skippedDeletions.joinToString(", ") { it.path.substringAfterLast('/') } +
-                    " were left in place; delete them manually if unwanted.",
+                skippedDeletions.joinToString(", ") { it.path.substringAfterLast('/') } +
+                    " were left in place; delete them manually after confirming the navigation change.",
             )
         }
         for (rename in plan.renames) {
@@ -258,8 +317,9 @@ class ComposerAppService(private val project: Project) : Disposable {
                 "Composer renamed ${rename.from} to ${rename.to} — call sites in hand-written code were not updated.",
             )
         }
-        // Canonical re-push keeps designer ids in sync; identical pushes are dropped.
-        scheduleParse()
+        // Canonical re-push keeps designer ids in sync. If preservation rules
+        // rejected every write, force the old source design back into the UI.
+        if (hasWrites) scheduleParse() else repushForNewDesigner()
     }
 
     private fun installListeners() {
@@ -281,7 +341,8 @@ class ComposerAppService(private val project: Project) : Disposable {
                 override fun after(events: List<VFileEvent>) {
                     if (suppressDocEvents) return
                     val dir = mainActivity?.parent?.path ?: return
-                    if (events.any { it.path.startsWith(dir) && it.path.endsWith(".kt") }) scheduleParse()
+                    val prefix = "$dir/"
+                    if (events.any { it.path.startsWith(prefix) && it.path.endsWith(".kt") }) scheduleParse()
                 }
             },
         )
