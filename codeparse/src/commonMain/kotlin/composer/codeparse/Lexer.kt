@@ -148,8 +148,9 @@ private fun scanString(text: String, from: Int, entries: MutableList<KStringEntr
             }
             if (text[i] == '$' && i + 1 < n && templateStarts(text[i + 1])) {
                 flush()
-                entries += KStringEntry.Interpolation
+                val start = i
                 i = skipInterpolation(text, i)
+                entries += KStringEntry.Interpolation(text.substring(start, i))
             } else {
                 lit.append(text[i]); i++
             }
@@ -173,8 +174,9 @@ private fun scanString(text: String, from: Int, entries: MutableList<KStringEntr
             '$' -> {
                 if (i + 1 < n && templateStarts(text[i + 1])) {
                     flush()
-                    entries += KStringEntry.Interpolation
+                    val start = i
                     i = skipInterpolation(text, i)
+                    entries += KStringEntry.Interpolation(text.substring(start, i))
                 } else {
                     lit.append(c); i++
                 }

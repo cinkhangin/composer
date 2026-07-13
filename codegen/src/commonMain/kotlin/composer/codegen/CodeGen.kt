@@ -405,7 +405,7 @@ object CodeGen {
             is Node.Text -> {
                 imports += "androidx.compose.material3.Text"
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
-                val args = mutableListOf("\"${esc(node.text)}\"")
+                val args = mutableListOf(node.textExpression.ifEmpty { "\"${esc(node.text)}\"" })
                 mod?.let { args += "modifier = $it" }
                 node.color?.let { args += "color = ${colorExpr(it, imports)}" }
                 if (node.fontSize > 0) {
@@ -1106,9 +1106,12 @@ object CodeGen {
      */
     private fun modifierExpr(specs: List<ModifierSpec>, imports: MutableSet<String>, leading: String? = null, indent: Int = 0): String? {
         if (specs.isEmpty() && leading == null) return null
-        imports += "androidx.compose.ui.Modifier"
-        val specParts = specs.map { spec ->
+        val external = specs.filterIsInstance<ModifierSpec.External>().firstOrNull()
+        val base = external?.expression ?: "Modifier"
+        if (external == null) imports += "androidx.compose.ui.Modifier"
+        val specParts = specs.filterNot { it is ModifierSpec.External }.map { spec ->
             when (spec) {
+                is ModifierSpec.External -> error("External modifier roots were filtered")
                 is ModifierSpec.Padding -> {
                     imports += "androidx.compose.foundation.layout.padding"
                     imports += "androidx.compose.ui.unit.dp"
@@ -1259,7 +1262,7 @@ object CodeGen {
         }
         // [leading] is a scope-imposed prefix (e.g. a Scaffold's "padding(innerPadding)").
         val parts = listOfNotNull(leading) + specParts
-        return joinChain(parts, indent)
+        return joinChain(base, parts, indent)
     }
 
     /**
@@ -1319,13 +1322,13 @@ object CodeGen {
         }
     }
 
-    private fun joinChain(parts: List<String>, indent: Int): String? {
-        if (parts.isEmpty()) return null
+    private fun joinChain(base: String, parts: List<String>, indent: Int): String {
+        if (parts.isEmpty()) return base
         return if (parts.size <= 1) {
-            "Modifier." + parts.joinToString(".")
+            "$base." + parts.joinToString(".")
         } else {
             val cont = "    ".repeat(indent + 2)
-            "Modifier\n" + parts.joinToString("\n") { "$cont.$it" }
+            "$base\n" + parts.joinToString("\n") { "$cont.$it" }
         }
     }
 

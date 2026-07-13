@@ -160,10 +160,28 @@ class ParserCasesTest {
         assertEquals(listOf("Screen", "Helper"), parsed.functions.map { it.functionName })
         val helper = parsed.functions.last()
         assertEquals("(label: String, count: Int = 0)", helper.paramList)
-        // Statements that use the params degrade to RawCode; static ones parse.
+        // Parameter-backed Text is renderable and retains its exact expression.
         val screen = parsed.artboard.composables.last() as composer.model.Node.Composable
-        assertTrue(screen.children.first() is composer.model.Node.RawCode)
+        val dynamic = screen.children.first() as composer.model.Node.Text
+        assertEquals("label", dynamic.text)
+        assertEquals("label", dynamic.textExpression)
         assertTrue((screen.children.last() as composer.model.Node.Text).text == "static")
+    }
+
+    @Test
+    fun named_interpolated_text_and_parameter_modifier_are_renderable() {
+        val screen = parseOne(
+            """
+            Text(
+                text = "Hello ${'$'}name!",
+                modifier = modifier
+            )
+            """.trimIndent(),
+        )
+        val text = screen.children.single() as Node.Text
+        assertEquals("Hello name!", text.text)
+        assertEquals("\"Hello ${'$'}name!\"", text.textExpression)
+        assertEquals(listOf(composer.model.ModifierSpec.External("modifier")), text.modifier)
     }
 
     @Test

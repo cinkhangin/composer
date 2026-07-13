@@ -401,6 +401,10 @@ private fun PaddingModeRow(mode: PaddingMode, onPick: (PaddingMode) -> Unit) {
 @Composable
 private fun ModifierParams(spec: ModifierSpec, onChange: (ModifierSpec) -> Unit) {
     when (spec) {
+        is ModifierSpec.External -> BasicText(
+            "Source modifier: ${spec.expression}. Previewed as Modifier.",
+            style = TextStyle(color = Tk.textMuted, fontSize = 11.sp),
+        )
         is Padding -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             PaddingModeRow(spec.mode) { m -> onChange(spec.copy(mode = m)) }
             when (spec.mode) {
@@ -601,6 +605,7 @@ private class ModifierDndState {
 // --- naming + immutable list helpers --------------------------------------
 
 private fun specName(spec: ModifierSpec): String = when (spec) {
+    is ModifierSpec.External -> "source modifier"
     is Padding -> "padding"
     is Size -> "size"
     is ModifierSpec.Width -> "width"

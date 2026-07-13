@@ -46,7 +46,7 @@ class LexerTest {
                 when (e) {
                     is KStringEntry.Literal -> e.text
                     is KStringEntry.Escape -> e.unescaped
-                    KStringEntry.Interpolation -> "\$INTERP"
+                    is KStringEntry.Interpolation -> "\$INTERP"
                 }
             },
         )

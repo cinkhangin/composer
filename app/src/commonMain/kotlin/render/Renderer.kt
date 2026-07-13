@@ -840,6 +840,7 @@ fun themeColor(value: Long, scheme: ColorScheme): Color = when (ThemeColorRef.to
 fun List<ModifierSpec>.toModifier(scheme: ColorScheme): Modifier =
     fold(Modifier as Modifier) { acc, spec ->
         when (spec) {
+            is ModifierSpec.External -> acc // source parameter; preview uses its default Modifier value
             is ModifierSpec.Padding -> when (spec.mode) {
                 PaddingMode.All -> acc.padding(spec.all.dp)
                 PaddingMode.Symmetric -> acc.padding(horizontal = spec.horizontal.dp, vertical = spec.vertical.dp)

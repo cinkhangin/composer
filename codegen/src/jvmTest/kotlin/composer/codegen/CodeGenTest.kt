@@ -26,6 +26,22 @@ class CodeGenTest {
     }
 
     @Test
+    fun parameter_backed_text_and_modifier_preserve_their_source_expressions() {
+        val code = CodeGen.generate(
+            Node.Text(
+                id = "t",
+                text = "Hello name!",
+                modifier = listOf(ModifierSpec.External("modifier"), Padding(8)),
+                textExpression = "\"Hello ${'$'}name!\"",
+            ),
+        )
+        assertTrue("Text(" in code, code)
+        assertTrue("\"Hello ${'$'}name!\"" in code, code)
+        assertTrue("modifier = modifier.padding(8.dp)" in code, code)
+        assertTrue("import androidx.compose.ui.Modifier" !in code, code)
+    }
+
+    @Test
     fun instances_call_the_registered_composables_function() {
         val tree = Node.Artboard(
             "art",

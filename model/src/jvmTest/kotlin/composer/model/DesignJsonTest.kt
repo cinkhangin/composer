@@ -60,4 +60,17 @@ class DesignJsonTest {
         assertEquals(wrapped, decoded)
         assertTrue("\"type\": \"RawCode\"" in DesignJson.encode(wrapped))
     }
+
+    @Test
+    fun source_backed_text_round_trips_with_external_modifier() {
+        val sourceBacked = Node.Text(
+            id = "dynamic",
+            text = "Hello name!",
+            modifier = listOf(ModifierSpec.External("modifier")),
+            textExpression = "\"Hello ${'$'}name!\"",
+        )
+        val json = DesignJson.encode(sourceBacked)
+        assertEquals(sourceBacked, DesignJson.decode(json))
+        assertTrue("\"type\": \"external\"" in json, json)
+    }
 }

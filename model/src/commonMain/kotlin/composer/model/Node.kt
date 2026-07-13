@@ -27,6 +27,10 @@ sealed interface Node {
         val lineHeight: Int = 0, // sp; 0 = auto (fontSize × 1.2)
         val customFont: String = "", // device font family name (Local Font Access); overrides fontFamily
         val textAlign: TextAlignment = TextAlignment.Start,
+        // Exact Kotlin expression for parameter-backed/dynamic text (for example
+        // `"Hello $name!"` or `title`). Empty means [text] is a literal. The
+        // renderer uses [text] as a safe preview; codegen preserves this expression.
+        val textExpression: String = "",
     ) : Node
 
     @Serializable

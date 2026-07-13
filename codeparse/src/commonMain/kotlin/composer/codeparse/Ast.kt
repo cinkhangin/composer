@@ -64,7 +64,7 @@ internal sealed interface KStringEntry {
     class Escape(val unescaped: String?) : KStringEntry
 
     /** `$name` or `${…}` — makes the string a non-literal. */
-    object Interpolation : KStringEntry
+    class Interpolation(val source: String) : KStringEntry
 }
 
 internal class KString(

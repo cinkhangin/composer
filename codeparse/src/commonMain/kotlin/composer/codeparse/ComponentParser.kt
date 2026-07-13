@@ -39,6 +39,9 @@ internal class ParseCtx(
     private var n = 0
     fun newId(): String = "${idPrefix}p${++n}"
 
+    /** Exact source for an expression whose range follows end-exclusive PSI semantics. */
+    fun sourceOf(expr: KExpr): String = text.substring(expr.range.first, expr.range.last + 1)
+
     /** Screen ids referenced by parsed instances → Artboard.componentIds. */
     val referencedScreenIds = LinkedHashSet<String>()
 
@@ -345,9 +348,16 @@ private fun childrenOf(lambda: KLambda?, ctx: ParseCtx): List<Node>? {
 // ---- leaves -------------------------------------------------------------------
 
 private fun parseText(shape: CallShape, ctx: ParseCtx, scopeParam: String?, comment: String?): Parsed? {
-    if (shape.trailingLambda != null || shape.positional.size != 1) return null
-    if (!shape.named.keys.all { it in setOf("modifier", "color", "fontSize", "fontWeight", "fontFamily", "lineHeight", "textAlign") }) return null
-    val text = stringLit(shape.positional[0]) ?: return null
+    if (shape.trailingLambda != null) return null
+    if (!shape.named.keys.all { it in setOf("text", "modifier", "color", "fontSize", "fontWeight", "fontFamily", "lineHeight", "textAlign") }) return null
+    val textExpr = when {
+        shape.positional.size == 1 && "text" !in shape.named -> shape.positional.single()
+        shape.positional.isEmpty() -> shape.named["text"] ?: return null
+        else -> return null
+    }
+    val literal = stringLit(textExpr)
+    val textExpression = if (literal == null) ctx.sourceOf(textExpr) else ""
+    val text = literal ?: stringPreview(textExpr) ?: textExpression
     val m = modifierOf(shape, scopeParam) ?: return null
     val color = shape.named["color"]?.let { colorValue(it) ?: return null }
     val fontSize = shape.named["fontSize"]?.let { spInt(it) ?: return null } ?: 0
@@ -370,6 +380,7 @@ private fun parseText(shape: CallShape, ctx: ParseCtx, scopeParam: String?, comm
             id = ctx.newId(), text = text, modifier = m, fontSize = fontSize,
             fontWeight = fontWeight, fontFamily = fontFamily, color = color,
             lineHeight = lineHeight, customFont = customFont, textAlign = textAlign,
+            textExpression = textExpression,
         ),
     )
 }

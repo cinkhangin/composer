@@ -19,8 +19,9 @@ import composer.model.VAlignment
  * prepends, not model data — it's stripped (and re-imposed on regeneration).
  */
 internal fun parseModifierChain(expr: KExpr, scopeParam: String? = null): List<ModifierSpec>? {
-    val calls = chainCalls(expr.unparen()) ?: return null
+    val (root, calls) = chainCalls(expr.unparen()) ?: return null
     val specs = mutableListOf<ModifierSpec>()
+    if (root != "Modifier") specs += ModifierSpec.External(root)
     calls.forEachIndexed { i, call ->
         if (i == 0 && scopeParam != null && isScopePadding(call, scopeParam)) return@forEachIndexed
         specs += parseModifierCall(call) ?: return null
@@ -28,9 +29,9 @@ internal fun parseModifierChain(expr: KExpr, scopeParam: String? = null): List<M
     return specs
 }
 
-/** The chain's calls in application order; null unless rooted at bare `Modifier`. */
-private fun chainCalls(expr: KExpr): List<KCall>? {
-    if (expr is KName && expr.name == "Modifier") return emptyList()
+/** The chain root and calls in application order; root must be a bare identifier. */
+private fun chainCalls(expr: KExpr): Pair<String, List<KCall>>? {
+    if (expr is KName) return expr.name to emptyList()
     val calls = ArrayDeque<KCall>()
     var cur: KExpr = expr
     while (true) {
@@ -40,8 +41,7 @@ private fun chainCalls(expr: KExpr): List<KCall>? {
         cur = dot.receiver.unparen()
     }
     val root = cur as? KName ?: return null
-    if (root.name != "Modifier") return null
-    return calls.toList()
+    return root.name to calls.toList()
 }
 
 private fun isScopePadding(call: KCall, scopeParam: String): Boolean =

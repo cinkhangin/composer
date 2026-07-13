@@ -40,7 +40,7 @@ class WriteBackTest {
             appendLine("}")
         }
         val prev = parse(text)
-        // Designer edits the parseable Text; the param-using statement is RawCode.
+        // Designer edits the static Text; the parameter-backed Text remains source-aware.
         val screen = prev.artboard.composables.single() as Node.Composable
         val staticText = screen.children.last()
         val edited = prev.artboard.replaceById(staticText.id) {
@@ -49,10 +49,46 @@ class WriteBackTest {
         val out = WriteBackPlanner.apply(text, WriteBackPlanner.plan(text, prev, edited))
         assertTrue("fun Helper(label: String, count: Int = 0) {" in out, out)
         assertTrue("Text(\"edited\")" in out, out)
-        assertTrue("Text(label)" in out, out) // RawCode statement preserved verbatim
+        assertTrue("Text(label)" in out, out)
         // Re-parse: signature still recorded, tree matches the edit.
         val reparsed = parse(out)
         assertEquals("(label: String, count: Int = 0)", reparsed.functions.single().paramList)
+    }
+
+
+    @Test
+    fun styling_interpolated_text_preserves_binding_and_modifier_parameter() {
+        val text = buildString {
+            appendLine("import androidx.compose.material3.Text")
+            appendLine("import androidx.compose.runtime.Composable")
+            appendLine("import androidx.compose.ui.Modifier")
+            appendLine()
+            appendLine("@Composable")
+            appendLine("fun Greeting(name: String, modifier: Modifier = Modifier) {")
+            appendLine("    Text(")
+            appendLine("        text = \"Hello ${'$'}name!\",")
+            appendLine("        modifier = modifier")
+            appendLine("    )")
+            appendLine("}")
+        }
+        val prev = parse(text)
+        val node = (prev.artboard.composables.single() as Node.Composable).children.single() as Node.Text
+        assertEquals("Hello name!", node.text)
+        assertEquals("\"Hello ${'$'}name!\"", node.textExpression)
+        val edited = prev.artboard.replaceById(node.id) {
+            (it as Node.Text).copy(fontSize = 20)
+        } as Node.Artboard
+
+        val out = WriteBackPlanner.apply(text, WriteBackPlanner.plan(text, prev, edited))
+
+        assertTrue("fun Greeting(name: String, modifier: Modifier = Modifier)" in out, out)
+        assertTrue("\"Hello ${'$'}name!\"" in out, out)
+        assertTrue("modifier = modifier" in out, out)
+        assertTrue("fontSize = 20.sp" in out, out)
+        val reparsed = parse(out)
+        val reparsedText = (reparsed.artboard.composables.single() as Node.Composable).children.single() as Node.Text
+        assertEquals(node.textExpression, reparsedText.textExpression)
+        assertEquals(node.modifier, reparsedText.modifier)
     }
 
     @Test

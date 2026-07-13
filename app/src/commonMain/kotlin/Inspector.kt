@@ -205,7 +205,11 @@ fun Inspector(
                     is Node.Text -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Field(
                             value = selected.text,
-                            onValueChange = { v -> state.update(selected.id, coalesceKey = "text:${selected.id}") { (it as Node.Text).copy(text = v) } },
+                            onValueChange = { v ->
+                                state.update(selected.id, coalesceKey = "text:${selected.id}") {
+                                    (it as Node.Text).copy(text = v, textExpression = "")
+                                }
+                            },
                             label = "Text",
                             modifier = Modifier.fillMaxWidth(),
                         )

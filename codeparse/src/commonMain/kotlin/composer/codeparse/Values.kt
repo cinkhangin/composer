@@ -91,7 +91,34 @@ internal fun stringLit(expr: KExpr?): String? {
         when (entry) {
             is KStringEntry.Literal -> sb.append(entry.text)
             is KStringEntry.Escape -> sb.append(entry.unescaped ?: return null)
-            KStringEntry.Interpolation -> return null // interpolation — not a literal
+            is KStringEntry.Interpolation -> return null // interpolation — not a literal
+        }
+    }
+    return sb.toString()
+}
+
+/**
+ * A safe canvas preview for a string template. Interpolations are represented
+ * by their source names/expressions; Composer never tries to execute user code.
+ */
+internal fun stringPreview(expr: KExpr?): String? {
+    val s = expr?.unparen() as? KString ?: return null
+    val sb = StringBuilder()
+    for (entry in s.entries) {
+        when (entry) {
+            is KStringEntry.Literal -> sb.append(entry.text)
+            is KStringEntry.Escape -> sb.append(entry.unescaped ?: return null)
+            is KStringEntry.Interpolation -> {
+                val source = entry.source
+                val value = when {
+                    source.startsWith("\${") && source.endsWith("}") -> source.substring(2, source.length - 1)
+                    source.length >= 3 && source[0] == '$' && source[1] == '`' && source.last() == '`' ->
+                        source.substring(2, source.length - 1)
+                    source.firstOrNull() == '$' -> source.drop(1)
+                    else -> source
+                }
+                sb.append(value)
+            }
         }
     }
     return sb.toString()
