@@ -80,6 +80,16 @@ class ComposerAppService(private val project: Project) : Disposable {
 
     val started: Boolean get() = mainActivity != null
 
+    fun defaultSourceFile(): VirtualFile? = mainActivity?.takeIf { it.isValid }
+
+    fun suggestedComposableName(): String {
+        val used = lastParsed?.functionNamesById?.values?.toSet().orEmpty()
+        var candidate = "NewScreen"
+        var suffix = 2
+        while (candidate in used) candidate = "NewScreen${suffix++}"
+        return candidate
+    }
+
     /** Begin coordinating around [main] (idempotent per file). */
     fun start(main: VirtualFile) {
         if (mainActivity == main) return

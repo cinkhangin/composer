@@ -199,7 +199,11 @@ internal fun EditorScreen(session: DesignerSession) {
             .focusable(),
         verticalArrangement = Arrangement.spacedBy(Tk.gap),
     ) {
-        Toolbar(state)
+        Toolbar(
+            state,
+            showNewComposable = session.appMode,
+            onNewComposable = session::requestNewComposable,
+        )
         Row(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Tk.gap),
@@ -355,10 +359,23 @@ private fun CollapsedPanelStrip(icon: AppIconKind, tip: String, onExpand: () -> 
  * files, source code, export, and project identity.
  */
 @Composable
-private fun Toolbar(state: EditorState) {
+private fun Toolbar(
+    state: EditorState,
+    showNewComposable: Boolean,
+    onNewComposable: () -> Unit,
+) {
     // 40dp: the tallest controls are 32dp, so this leaves 4dp of air above/below —
     // a slim, Figma-like bar instead of the airy 52dp it started with.
     Box(modifier = Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 12.dp)) {
+        if (showNewComposable) {
+            Box(Modifier.align(Alignment.CenterStart)) {
+                ToolButton(
+                    label = "New Composable",
+                    icon = AppIconKind.Plus,
+                    onClick = onNewComposable,
+                )
+            }
+        }
         ScreenSizeControl(state, Modifier.align(Alignment.Center))
         Row(
             modifier = Modifier.align(Alignment.CenterEnd),

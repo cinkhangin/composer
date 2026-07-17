@@ -70,6 +70,10 @@ internal class DesignerSession(private val hostSink: (String) -> Unit) {
         post(DesignerMessage(type = "selectionChanged", rev = ++outRev, nodeId = nodeId))
     }
 
+    fun requestNewComposable() {
+        post(DesignerMessage(type = "newComposable", rev = ++outRev))
+    }
+
     /** Called by the JVM host's native macOS magnification listener. */
     fun magnifyCanvas(delta: Float) {
         val next = (canvasMagnification?.sequence ?: 0L) + 1L
