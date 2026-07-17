@@ -155,7 +155,8 @@ internal fun EditorScreen(session: DesignerSession) {
             session.noteLoaded(DesignJson.encode(state.root))
         }
         session.onSelectNode = { id ->
-            if (state.root.findById(id) != null) state.select(id)
+            val node = state.root.findById(id)
+            if (node != null && node !is Node.RawCode) state.select(id)
         }
         onDispose {
             session.onLoadDesign = null

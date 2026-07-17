@@ -253,28 +253,9 @@ fun RenderNode(
             }
         }
         is Node.Spacer -> Spacer(modifier = modifier)
-        // Opaque preserved code (IDE plugin): a locked chip — selectable so it can be
-        // seen/arranged, but its content is only editable in the code editor.
-        is Node.RawCode -> {
-            val label = node.code.lineSequence().firstOrNull { it.isNotBlank() }?.trim() ?: "Code"
-            Row(
-                modifier = modifier
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(6.dp))
-                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                SymbolIcon("code", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    text = label,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                )
-            }
-        }
+        // RawCode remains in the model for lossless write-back, but it is not a
+        // visual component and must not contribute canvas size or selection UI.
+        is Node.RawCode -> Unit
         is Node.Image -> {
             if (node.url.isNotEmpty()) LaunchedEffect(node.url) { LocalImages.load(node.url) }
             val bitmap = node.url.takeIf { it.isNotEmpty() }?.let { LocalImages.loaded[it] }

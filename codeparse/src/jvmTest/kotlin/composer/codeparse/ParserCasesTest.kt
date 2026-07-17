@@ -71,22 +71,31 @@ class ParserCasesTest {
     }
 
     @Test
-    fun comments_above_a_recognized_call_force_rawcode_to_preserve_them() {
-        val screen = parseOne(
+    fun rawcode_only_composable_is_not_a_design_screen() {
+        val file =
             """
-            // do not lose me
-            Text("hello")
-            """.trimIndent(),
-        )
-        val raw = screen.children.single() as Node.RawCode
-        assertEquals("// do not lose me\nText(\"hello\")", raw.code)
+            import androidx.compose.runtime.Composable
+
+            @Composable
+            fun Screen() {
+                CustomThing()
+            }
+            """.trimIndent()
+        assertNull(DesignParser.parse(file))
     }
 
     @Test
-    fun trailing_same_line_comment_forces_rawcode() {
-        val screen = parseOne("Text(\"hello\") // trailing\n")
-        val raw = screen.children.single() as Node.RawCode
-        assertEquals("Text(\"hello\") // trailing", raw.code)
+    fun comments_on_rawcode_are_preserved_when_mixed_with_renderable_content() {
+        val screen = parseOne(
+            """
+            // do not lose me
+            Text("hidden source")
+            Text("visible")
+            """.trimIndent(),
+        )
+        val raw = screen.children.first() as Node.RawCode
+        assertEquals("// do not lose me\nText(\"hidden source\")", raw.code)
+        assertTrue(screen.children.last() is Node.Text)
     }
 
     @Test
@@ -101,8 +110,7 @@ class ParserCasesTest {
                 Text("hello")
             }
             """.trimIndent()
-        val screen = DesignParser.parse(file)!!.artboard.composables.single() as Node.Composable
-        assertTrue(screen.children.single() is Node.RawCode)
+        assertNull(DesignParser.parse(file))
     }
 
     @Test
@@ -129,14 +137,18 @@ class ParserCasesTest {
 
     @Test
     fun non_canonical_scaffold_param_name_is_rawcode() {
-        val screen = parseOne(
+        val file =
             """
-            Scaffold { padding ->
-                Text("x", modifier = Modifier.padding(padding))
+            import androidx.compose.runtime.Composable
+
+            @Composable
+            fun Screen() {
+                Scaffold { padding ->
+                    Text("x", modifier = Modifier.padding(padding))
+                }
             }
-            """.trimIndent(),
-        )
-        assertTrue(screen.children.single() is Node.RawCode)
+            """.trimIndent()
+        assertNull(DesignParser.parse(file))
     }
 
     @Test

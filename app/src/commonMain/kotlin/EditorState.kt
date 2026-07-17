@@ -549,7 +549,8 @@ class EditorState(initial: Node) {
         redoStack.clear()
         root = newRoot
         idCounter = maxOf(idCounter, maxGeneratedId(root))
-        if (selectedId?.let { root.findById(it) } == null) selectedId = null
+        val selected = selectedId?.let { root.findById(it) }
+        if (selected == null || selected is Node.RawCode) selectedId = null
         lastCommitKey = null
     }
 

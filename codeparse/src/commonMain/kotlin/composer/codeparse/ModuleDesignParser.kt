@@ -87,24 +87,75 @@ object ModuleDesignParser {
         }
         if (allScreens.isEmpty()) return null
 
+        // RawCode is preservation metadata, not visual content. Resolve this
+        // module-wide so a screen containing only a cross-file instance still
+        // survives when that instance eventually reaches real UI.
+        val renderableIds = renderableScreenIds(allScreens)
+        if (renderableIds.isEmpty()) return null
+        val skippedIds = allScreens.mapTo(linkedSetOf()) { it.id } - renderableIds
+        val renderedOrder = allScreens
+            .filter { it.id in renderableIds }
+            .mapIndexed { index, screen -> screen.id to index }
+            .toMap()
+        val sourceByPath = sorted.associateBy { it.path }
+        val renderedFiles = parsedFiles.mapNotNull { parsedFile ->
+            val source = sourceByPath.getValue(parsedFile.path)
+            val retainedScreens = parsedFile.design.artboard.composables
+                .filterIsInstance<Node.Composable>()
+                .filter { it.id in renderableIds }
+                .map { screen ->
+                    val index = renderedOrder.getValue(screen.id)
+                    (screen.preserveSkippedInstances(
+                        skippedIds,
+                        source.text,
+                        parsedFile.design.sourceRanges,
+                    ) as Node.Composable)
+                        .copy(x = (index % COLUMNS) * X_STEP, y = (index / COLUMNS) * Y_STEP)
+                }
+            if (retainedScreens.isEmpty()) return@mapNotNull null
+            val retainedById = retainedScreens.associateBy { it.id }
+            val retainedFunctions = parsedFile.design.functions
+                .filter { it.screenId in renderableIds }
+                .map { fn -> fn.copy(treeHash = ParsedFunction.hashOf(retainedById.getValue(fn.screenId))) }
+            val retainedArtboard = parsedFile.design.artboard.copy(
+                composables = retainedScreens,
+                layerNames = parsedFile.design.artboard.layerNames.filterKeys { it in renderableIds },
+                componentIds = parsedFile.design.artboard.componentIds.filter { it in renderableIds },
+            )
+            ParsedModuleFile(
+                parsedFile.path,
+                parsedFile.design.copy(
+                    artboard = retainedArtboard,
+                    functions = retainedFunctions,
+                    hasNonScreenDeclarations = parsedFile.design.hasNonScreenDeclarations ||
+                        parsedFile.design.functions.any { it.screenId in skippedIds },
+                ),
+            )
+        }
+        val renderedScreens = renderedFiles
+            .flatMap { it.design.artboard.composables }
+            .filterIsInstance<Node.Composable>()
+            .sortedBy { renderedOrder.getValue(it.id) }
+
         val conventional = AppParser.parse(sorted)
         val base = Node.Artboard(id = "artboard")
         val artboard = base.copy(
-            composables = allScreens.sortedBy { indexById.getValue(it.id) },
-            layerNames = allLayerNames,
-            componentIds = componentIds.toList(),
+            composables = renderedScreens,
+            layerNames = allLayerNames.filterKeys { it in renderableIds },
+            componentIds = componentIds.filter { it in renderableIds },
             themes = conventional?.artboard?.themes ?: base.themes,
             activeTheme = conventional?.artboard?.activeTheme ?: base.activeTheme,
         )
-        val duplicateNames = byName.filterValues { it.size > 1 }.keys.sorted()
+        val renderedDeclarations = declarations.filter { it.id in renderableIds }
+        val duplicateNames = renderedDeclarations.groupBy { it.ref.name }.filterValues { it.size > 1 }.keys.sorted()
         val warnings = if (duplicateNames.isEmpty()) emptyList() else listOf(
             "Duplicate composable names are rendered separately, but ambiguous cross-file calls stay locked: " +
                 duplicateNames.joinToString(", "),
         )
         return ParsedModuleDesign(
             artboard = artboard,
-            files = parsedFiles,
-            functionNamesById = declarations.associate { it.id to it.ref.name },
+            files = renderedFiles,
+            functionNamesById = renderedDeclarations.associate { it.id to it.ref.name },
             warnings = warnings,
         )
     }

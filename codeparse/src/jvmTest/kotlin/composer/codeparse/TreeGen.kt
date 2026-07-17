@@ -263,10 +263,13 @@ internal class TreeGen(seed: Int) {
 
     /** A whole design: 1–3 screens; screen 1 may be instantiated by later screens. */
     fun design(): Node.Artboard {
+        fun withConcreteUi(nodes: List<Node>): List<Node> =
+            if (nodes.any { it !is Node.RawCode }) nodes else nodes + Node.Text(nid(), "Visible")
+
         val screens = mutableListOf<Node.Composable>()
         val names = mutableMapOf<String, String>()
         val referenced = mutableSetOf<String>()
-        val first = Node.Composable(id = nid(), children = children(2, weightScope = false), x = 0, y = 0)
+        val first = Node.Composable(id = nid(), children = withConcreteUi(children(2, weightScope = false)), x = 0, y = 0)
         screens += first
         names[first.id] = "CardWidget"
         repeat(rnd.nextInt(0, 3)) { i ->
@@ -280,7 +283,7 @@ internal class TreeGen(seed: Int) {
                 referenced += first.id
             }
             if (rnd.nextInt(3) == 0) kids += scaffold(2)
-            val s = Node.Composable(id = nid(), children = kids, x = (i + 1) * 470, y = 0)
+            val s = Node.Composable(id = nid(), children = withConcreteUi(kids), x = (i + 1) * 470, y = 0)
             screens += s
             names[s.id] = "Screen${i + 2}"
         }

@@ -130,4 +130,35 @@ class ModuleDesignParserTest {
         val text = greeting.children.single() as Node.Text
         assertEquals("\"Hello ${'$'}name!\"", text.textExpression)
     }
+
+    @Test
+    fun skips_rawcode_only_screens_but_preserves_rawcode_in_mixed_screens() {
+        val ui = SourceFile(
+            "/module/src/main/kotlin/demo/Screens.kt",
+            """
+            @Composable
+            fun Mixed() {
+                CustomSideEffect()
+                Text("Visible")
+            }
+            """.trimIndent(),
+        )
+        val theme = SourceFile(
+            "/module/src/main/kotlin/demo/Theme.kt",
+            """
+            @Composable
+            fun ComposeTheme(content: @Composable () -> Unit) {
+                MaterialTheme(content = content)
+            }
+            """.trimIndent(),
+        )
+
+        val parsed = assertNotNull(ModuleDesignParser.parse(listOf(theme, ui)))
+        assertEquals(listOf("Mixed"), parsed.artboard.composables.map { parsed.artboard.layerNames[it.id] })
+        val mixed = parsed.artboard.composables.single() as Node.Composable
+        assertTrue(mixed.children.first() is Node.RawCode)
+        assertTrue(mixed.children.last() is Node.Text)
+        assertEquals(listOf(ui.path), parsed.files.map { it.path })
+        assertEquals(setOf(mixed.id), parsed.functionNamesById.keys)
+    }
 }
