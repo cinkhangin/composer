@@ -95,4 +95,39 @@ class ModuleDesignParserTest {
         assertEquals(2, parsed.artboard.composables.map { it.id }.toSet().size)
         assertTrue(parsed.warnings.single().contains("Chip"))
     }
+
+    @Test
+    fun renders_android_studio_greeting_and_excludes_its_preview() {
+        val file = SourceFile(
+            "/module/src/main/kotlin/demo/MainActivity.kt",
+            """
+            import androidx.compose.material3.Text
+            import androidx.compose.runtime.Composable
+            import androidx.compose.ui.Modifier
+            import androidx.compose.ui.tooling.preview.Preview
+
+            @Composable
+            fun Greeting(name: String, modifier: Modifier = Modifier) {
+                Text(
+                    text = "Hello ${'$'}name!",
+                    modifier = modifier
+                )
+            }
+
+            @Preview(showBackground = true)
+            @Composable
+            fun GreetingPreview() {
+                Greeting("Android")
+            }
+            """.trimIndent(),
+        )
+
+        val parsed = assertNotNull(ModuleDesignParser.parse(listOf(file)))
+        assertEquals(listOf("Greeting"), parsed.artboard.composables.map {
+            parsed.artboard.layerNames[it.id]
+        })
+        val greeting = parsed.artboard.composables.single() as Node.Composable
+        val text = greeting.children.single() as Node.Text
+        assertEquals("\"Hello ${'$'}name!\"", text.textExpression)
+    }
 }

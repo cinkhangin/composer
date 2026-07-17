@@ -946,8 +946,14 @@ private fun NodeBadge(state: EditorState, node: Node, isRoot: Boolean, lockCompo
         }
         Column(modifier = Modifier.weight(1f)) {
             if (isRoot) {
-                BasicText("Artboard", style = TextStyle(color = Tk.textPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold))
-                BasicText("Design root", style = TextStyle(color = Tk.textMuted, fontSize = 11.sp))
+                BasicText(
+                    state.layerName(node.id) ?: "Artboard",
+                    style = TextStyle(color = Tk.textPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
+                )
+                BasicText(
+                    if (state.layerName(node.id) != null) "Application" else "Design root",
+                    style = TextStyle(color = Tk.textMuted, fontSize = 11.sp),
+                )
             } else if (lockComposableStructure && node is Node.Composable) {
                 BasicText(
                     state.layerName(node.id) ?: node.typeName(),

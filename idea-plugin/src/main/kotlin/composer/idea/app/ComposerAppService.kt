@@ -132,8 +132,11 @@ class ComposerAppService(private val project: Project) : Disposable {
 
     /** Re-push the last good design to a freshly booted designer. */
     fun repushForNewDesigner() {
-        lastPushed = null
-        scheduleParse()
+        // A parse can finish before the ComposePanel reports ready. Replaying
+        // the canonical cached payload closes that startup race; reparsing is
+        // only needed when no successful parse has completed yet.
+        val cached = lastPushed
+        if (cached != null) pushDesign?.invoke(cached) else scheduleParse()
     }
 
     fun scheduleParse() {
@@ -328,7 +331,15 @@ class ComposerAppService(private val project: Project) : Disposable {
             val (sources, stamps, _) = snapshot()
             if (sources.isEmpty()) return@nonBlocking null
             val parsed = ModuleDesignParser.parse(sources) ?: return@nonBlocking null
-            Triple(DesignJson.encode(parsed.artboard), parsed, stamps)
+            // Project identity belongs to the plugin host. Store its display
+            // name on the otherwise unnamed design root so shared Layers and
+            // Inspector UI can show the application name without affecting the
+            // standalone website or the generated source.
+            val namedArtboard = parsed.artboard.copy(
+                layerNames = parsed.artboard.layerNames + (parsed.artboard.id to project.name),
+            )
+            val named = parsed.copy(artboard = namedArtboard)
+            Triple(DesignJson.encode(namedArtboard), named, stamps)
         }
             .expireWith(this)
             .coalesceBy(this)
@@ -342,7 +353,10 @@ class ComposerAppService(private val project: Project) : Disposable {
                 lastParsedStamps = stamps
                 log.info(
                     "Composer discovered ${parsed.artboard.composables.size} composables " +
-                        "across ${parsed.files.size} module files",
+                        "across ${parsed.files.size} module files: " +
+                        parsed.artboard.composables.joinToString { screen ->
+                            parsed.artboard.layerNames[screen.id] ?: screen.id
+                        },
                 )
                 onStatus?.invoke(parsed.warnings.firstOrNull())
                 if (json != lastPushed) {

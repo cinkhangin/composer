@@ -136,7 +136,10 @@ import androidx.compose.ui.text.rememberTextMeasurer
 @OptIn(FlowPreview::class)
 @Composable
 internal fun EditorScreen(session: DesignerSession) {
-    val state = remember(session) { EditorState(emptyDesign) }
+    // The IDE must never show a website/new-document sample as if it came from
+    // the open project. The host replaces this blank tree during its ready
+    // handshake (or after the first source parse completes).
+    val state = remember(session) { EditorState(Node.Artboard(id = "root")) }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
     // Reclaim keyboard focus for the editor whenever the selection changes (e.g. after
