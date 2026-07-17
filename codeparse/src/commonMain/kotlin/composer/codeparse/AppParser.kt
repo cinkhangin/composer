@@ -1,8 +1,6 @@
 package composer.codeparse
 
 import composer.codegen.AppCodeGen
-import composer.model.DesignTheme
-import composer.model.NamedTheme
 import composer.model.Node
 
 /** One project source file handed to [AppParser]. */
@@ -151,8 +149,8 @@ object AppParser {
             ?: uiFileByBase.values.firstNotNullOfOrNull { packageNameOf(it.first.text) }
             ?: ""
 
-        // ---- themes: parse the MainActivity theme block back ----------------------
-        val themes = mainEntry?.let { parseThemes(it.first.text, it.second) } ?: ThemeParse(emptyList(), 0)
+        // ---- themes: standard Theme.kt/Color.kt or Composer-generated block -------
+        val themes = ThemeParser.parse(files)
 
         val artboard = Node.Artboard(
             id = "artboard",
@@ -196,33 +194,4 @@ object AppParser {
 
     fun packageNameOf(text: String): String? = PACKAGE.find(text)?.groupValues?.get(1)
 
-    private class ThemeParse(val themes: List<NamedTheme>, val active: Int)
-
-    /**
-     * `val XColors = light|darkColorScheme(token = Color(0x…), …)` properties →
-     * [NamedTheme]s; the active index comes from AppTheme's default parameter.
-     */
-    private fun parseThemes(text: String, src: KSourceFile): ThemeParse {
-        val vals = src.declarations.filterIsInstance<KOtherDecl>().filter { it.themeArtifact && it.name != null }
-        if (vals.isEmpty()) return ThemeParse(emptyList(), 0)
-        val themes = vals.mapNotNull { decl ->
-            val declText = text.substring(decl.range.first, decl.range.last + 1)
-            val lexed = lex(declText)
-            val block = parseBlockSpan(ParseInput(declText, lexed.tokens, lexed.comments), 0, lexed.tokens.size, declText.indices)
-            val prop = block.statements.singleOrNull() as? KPropertyStatement ?: return@mapNotNull null
-            val call = prop.initializer?.unparen() as? KCall ?: return@mapNotNull null
-            val builder = callName(call) ?: return@mapNotNull null
-            var theme = DesignTheme(dark = builder == "darkColorScheme")
-            for (arg in call.args) {
-                val token = arg.name ?: return@mapNotNull null
-                val value = colorValue(arg.expr) ?: return@mapNotNull null
-                theme = theme.set(token, value)
-            }
-            NamedTheme(decl.name!!.removeSuffix("Colors"), theme)
-        }
-        val appTheme = src.declarations.filterIsInstance<KFunctionDecl>().firstOrNull { it.name == "AppTheme" }
-        val activeVal = appTheme?.paramListText?.let { Regex("""=\s*([A-Za-z_]\w*)""").find(it)?.groupValues?.get(1) }
-        val active = vals.indexOfFirst { it.name == activeVal }.coerceAtLeast(0)
-        return ThemeParse(themes, active)
-    }
 }

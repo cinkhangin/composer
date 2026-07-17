@@ -356,7 +356,9 @@ class ComposerAppService(private val project: Project) : Disposable {
                         "across ${parsed.files.size} module files: " +
                         parsed.artboard.composables.joinToString { screen ->
                             parsed.artboard.layerNames[screen.id] ?: screen.id
-                        },
+                        } + parsed.artboard.themes.takeIf { it.isNotEmpty() }?.joinToString(
+                            prefix = "; themes: ",
+                        ) { it.name }.orEmpty(),
                 )
                 onStatus?.invoke(parsed.warnings.firstOrNull())
                 if (json != lastPushed) {

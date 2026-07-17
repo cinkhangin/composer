@@ -137,14 +137,14 @@ object ModuleDesignParser {
             .filterIsInstance<Node.Composable>()
             .sortedBy { renderedOrder.getValue(it.id) }
 
-        val conventional = AppParser.parse(sorted)
+        val extractedThemes = ThemeParser.parse(sorted)
         val base = Node.Artboard(id = "artboard")
         val artboard = base.copy(
             composables = renderedScreens,
             layerNames = allLayerNames.filterKeys { it in renderableIds },
             componentIds = componentIds.filter { it in renderableIds },
-            themes = conventional?.artboard?.themes ?: base.themes,
-            activeTheme = conventional?.artboard?.activeTheme ?: base.activeTheme,
+            themes = extractedThemes.themes,
+            activeTheme = extractedThemes.active,
         )
         val renderedDeclarations = declarations.filter { it.id in renderableIds }
         val duplicateNames = renderedDeclarations.groupBy { it.ref.name }.filterValues { it.size > 1 }.keys.sorted()

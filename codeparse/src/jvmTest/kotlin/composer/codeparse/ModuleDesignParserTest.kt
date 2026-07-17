@@ -161,4 +161,41 @@ class ModuleDesignParserTest {
         assertEquals(listOf(ui.path), parsed.files.map { it.path })
         assertEquals(setOf(mixed.id), parsed.functionNamesById.keys)
     }
+
+    @Test
+    fun applies_theme_extracted_from_standard_module_files() {
+        val screen = SourceFile(
+            "/module/src/main/kotlin/demo/Screen.kt",
+            """
+            @Composable
+            fun Greeting() { Text("Hello") }
+            """.trimIndent(),
+        )
+        val colors = SourceFile(
+            "/module/src/main/kotlin/demo/ui/theme/Color.kt",
+            """
+            val LightPrimary = Color(0xFF112233)
+            val DarkPrimary = Color(0xFFCCDDEE)
+            """.trimIndent(),
+        )
+        val theme = SourceFile(
+            "/module/src/main/kotlin/demo/ui/theme/Theme.kt",
+            """
+            private val DarkColorScheme = darkColorScheme(primary = DarkPrimary)
+            private val LightColorScheme = lightColorScheme(primary = LightPrimary)
+
+            @Composable
+            fun DemoTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
+                val colors = if (darkTheme) DarkColorScheme else LightColorScheme
+                MaterialTheme(colorScheme = colors, content = content)
+            }
+            """.trimIndent(),
+        )
+
+        val parsed = assertNotNull(ModuleDesignParser.parse(listOf(theme, screen, colors)))
+        assertEquals(listOf("Greeting"), parsed.artboard.composables.map { parsed.artboard.layerNames[it.id] })
+        assertEquals(listOf("Dark", "Light"), parsed.artboard.themes.map { it.name })
+        assertEquals(0xFF112233, parsed.artboard.themes[1].theme.primary)
+        assertEquals(1, parsed.artboard.activeTheme)
+    }
 }
