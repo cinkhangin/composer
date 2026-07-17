@@ -37,8 +37,30 @@ internal class DesignerSession(private val hostSink: (String) -> Unit) {
     var canvasMagnification by mutableStateOf<CanvasMagnification?>(null)
         private set
 
+    private var pendingDesign: Node? = null
+    private var pendingSelection: String? = null
+
     var onLoadDesign: ((Node) -> Unit)? = null
+        set(value) {
+            field = value
+            if (value != null) {
+                pendingDesign?.let {
+                    pendingDesign = null
+                    value(it)
+                }
+            }
+        }
+
     var onSelectNode: ((String) -> Unit)? = null
+        set(value) {
+            field = value
+            if (value != null) {
+                pendingSelection?.let {
+                    pendingSelection = null
+                    value(it)
+                }
+            }
+        }
 
     private val json = Json { ignoreUnknownKeys = true }
     private var started = false
@@ -89,11 +111,13 @@ internal class DesignerSession(private val hostSink: (String) -> Unit) {
             "loadDesign" -> {
                 msg.appMode?.let { appMode = it }
                 val tree = msg.design?.let { runCatching { DesignJson.decode(it) }.getOrNull() } ?: return
-                onLoadDesign?.invoke(tree)
+                val callback = onLoadDesign
+                if (callback != null) callback(tree) else pendingDesign = tree
             }
             "selectNode" -> msg.nodeId?.let { id ->
                 lastSelection = id
-                onSelectNode?.invoke(id)
+                val callback = onSelectNode
+                if (callback != null) callback(id) else pendingSelection = id
             }
             "setTheme" -> msg.dark?.let { composer.ui.Theme.set(it) }
         }
@@ -102,6 +126,8 @@ internal class DesignerSession(private val hostSink: (String) -> Unit) {
     fun dispose() {
         onLoadDesign = null
         onSelectNode = null
+        pendingDesign = null
+        pendingSelection = null
     }
 
     private fun post(msg: DesignerMessage) {

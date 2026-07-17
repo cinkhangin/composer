@@ -56,6 +56,11 @@ kotlin {
                 implementation("org.jetbrains.compose.desktop:desktop-jvm-macos-arm64:1.11.1")
             }
         }
+        val jvmTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
     }
 }
 
