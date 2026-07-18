@@ -9,7 +9,8 @@ import kotlinx.serialization.json.Json
  * touches the Node schema, so the two sides can't drift on it.
  *
  * designer → IDE: `ready` (editor booted), `designChanged` (rev + design),
- *            `selectionChanged` (rev + nodeId, null = deselected).
+ *            `selectionChanged` (rev + nodeId, null = deselected),
+ *            `newComposable` (show the IDE-owned creation dialog).
  * IDE → designer: `loadDesign` (rev + design), `setTheme` (dark),
  *            `selectNode` (rev + nodeId).
  *

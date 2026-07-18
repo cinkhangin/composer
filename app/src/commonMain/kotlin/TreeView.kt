@@ -128,7 +128,7 @@ private fun TreeRow(
 ) {
     RowItem(node, depth, state, expanded, dnd)
     if (expanded[node.id] != false) {
-        for (child in node.childNodes()) TreeRow(child, depth + 1, state, expanded, dnd)
+        for (child in node.designerChildren()) TreeRow(child, depth + 1, state, expanded, dnd)
     }
 }
 
@@ -140,7 +140,7 @@ private fun RowItem(
     expanded: MutableMap<String, Boolean>,
     dnd: TreeDndState,
 ) {
-    val children = node.childNodes()
+    val children = node.designerChildren()
     val isExpanded = expanded[node.id] != false
     val isSelected = state.selectedId == node.id
     val isDragging = dnd.draggingId == node.id
@@ -244,6 +244,9 @@ private fun RowItem(
         }
     }
 }
+
+/** RawCode is source-preservation metadata, not a visible designer layer. */
+private fun Node.designerChildren(): List<Node> = childNodes().filterNot { it is Node.RawCode }
 
 @Composable
 private fun DropLine(modifier: Modifier) {

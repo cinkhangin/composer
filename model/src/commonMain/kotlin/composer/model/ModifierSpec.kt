@@ -34,7 +34,26 @@ sealed interface ModifierSpec {
      */
     @Serializable
     @SerialName("external")
-    data class External(val expression: String) : ModifierSpec
+    data class External(
+        val expression: String,
+        // True when [expression] is the entire user-authored chain rather than
+        // only a parameter/root. It may already contain a Scaffold scope prefix.
+        val opaque: Boolean = false,
+        // Static calls recovered from an opaque runtime chain, in authored
+        // order. The renderer applies this safe subset while codegen continues
+        // to emit [expression] verbatim. Entries never contain External specs.
+        val preview: List<ModifierSpec> = emptyList(),
+    ) : ModifierSpec
+
+    /**
+     * `Modifier.padding(<Scaffold content parameter>)` on a direct Scaffold
+     * content child. Unlike fixed [Padding], its runtime padding values come
+     * from Scaffold. Keeping this as an ordered marker preserves authored chains
+     * such as `fillMaxSize().padding(innerPadding)` end-to-end.
+     */
+    @Serializable
+    @SerialName("scaffoldPadding")
+    data class ScaffoldPadding(val parameter: String) : ModifierSpec
 
     /**
      * `Modifier.padding(…)`. [mode] selects the form: [PaddingMode.All] → `padding(all.dp)`,

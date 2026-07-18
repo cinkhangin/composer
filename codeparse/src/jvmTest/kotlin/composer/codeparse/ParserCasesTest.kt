@@ -1,9 +1,12 @@
 package composer.codeparse
 
 import composer.codegen.CodeGen
+import composer.model.ModifierSpec
 import composer.model.Node
+import composer.model.childNodes
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -27,7 +30,7 @@ class ParserCasesTest {
     }
 
     @Test
-    fun unknown_statements_become_rawcode_without_poisoning_siblings() {
+    fun unsupported_wrappers_expose_renderable_children_without_poisoning_siblings() {
         val screen = parseOne(
             """
             Text("hello")
@@ -39,8 +42,10 @@ class ParserCasesTest {
         )
         assertEquals(3, screen.children.size)
         assertTrue(screen.children[0] is Node.Text)
-        val raw = screen.children[1] as Node.RawCode
-        assertEquals("LazyColumn {\n    items(10) { Text(\"row\") }\n}", raw.code)
+        val lazy = screen.children[1] as Node.SourceContainer
+        assertEquals("LazyColumn", lazy.name)
+        val items = lazy.children.single() as Node.SourceContainer
+        assertTrue(items.children.single() is Node.Text)
         assertTrue(screen.children[2] is Node.Text)
     }
 
@@ -71,22 +76,251 @@ class ParserCasesTest {
     }
 
     @Test
-    fun comments_above_a_recognized_call_force_rawcode_to_preserve_them() {
-        val screen = parseOne(
+    fun rawcode_only_composable_is_not_a_design_screen() {
+        val file =
             """
-            // do not lose me
-            Text("hello")
-            """.trimIndent(),
-        )
-        val raw = screen.children.single() as Node.RawCode
-        assertEquals("// do not lose me\nText(\"hello\")", raw.code)
+            import androidx.compose.runtime.Composable
+
+            @Composable
+            fun Screen() {
+                CustomThing()
+            }
+            """.trimIndent()
+        assertNull(DesignParser.parse(file))
     }
 
     @Test
-    fun trailing_same_line_comment_forces_rawcode() {
-        val screen = parseOne("Text(\"hello\") // trailing\n")
-        val raw = screen.children.single() as Node.RawCode
-        assertEquals("Text(\"hello\") // trailing", raw.code)
+    fun ordinary_attached_comments_are_preserved_without_hiding_the_component() {
+        val screen = parseOne(
+            """
+            // do not lose me
+            Text("still visible")
+            Text("visible")
+            """.trimIndent(),
+        )
+        val raw = screen.children.first() as Node.RawCode
+        assertEquals("// do not lose me", raw.code)
+        assertEquals("still visible", (screen.children[1] as Node.Text).text)
+        assertTrue(screen.children.last() is Node.Text)
+    }
+
+    @Test
+    fun runtime_modifier_chain_is_kept_as_opaque_source_while_children_render() {
+        val screen = parseOne(
+            """
+            Box(modifier = Modifier.fillMaxWidth().offset(y = runtimeOffset).padding(12.dp).drawBehind { customDraw() }) {
+                Text("Visible child")
+            }
+            """.trimIndent(),
+        )
+        val box = screen.children.single() as Node.Box
+        val source = box.modifier.single() as ModifierSpec.External
+        assertEquals(
+            "Modifier.fillMaxWidth().offset(y = runtimeOffset).padding(12.dp).drawBehind { customDraw() }",
+            source.expression,
+        )
+        assertTrue(source.opaque)
+        assertEquals(
+            listOf(ModifierSpec.FillMaxWidth(), ModifierSpec.Padding(12)),
+            source.preview,
+        )
+        assertEquals("Visible child", (box.children.single() as Node.Text).text)
+    }
+
+    @Test
+    fun decimal_aspect_ratios_and_named_size_render_statically() {
+        val screen = parseOne(
+            """
+            Column {
+                Box(modifier = Modifier.aspectRatio(1.2f))
+                Box(modifier = Modifier.aspectRatio(1f / 1.2f))
+                Box(modifier = Modifier.size(width = 40.dp, height = 70.dp))
+            }
+            """.trimIndent(),
+        )
+        val children = (screen.children.single() as Node.Column).children
+        assertEquals(ModifierSpec.AspectRatio(6, 5), children[0].modifier.single())
+        assertEquals(ModifierSpec.AspectRatio(5, 6), children[1].modifier.single())
+        assertEquals(ModifierSpec.Size(40, 70), children[2].modifier.single())
+    }
+
+    @Test
+    fun conditional_component_arguments_remain_renderable_source_values() {
+        val screen = parseOne(
+            """
+            Column {
+                Text(
+                    text = if (visible) amount else "****",
+                    color = if (light) Color.Black else Color.White,
+                    fontSize = 16.sp,
+                )
+                IconButton(onClick = toggle) {
+                    Icon(
+                        imageVector = if (visible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                        contentDescription = "Toggle",
+                    )
+                }
+            }
+            """.trimIndent(),
+        )
+        val children = (screen.children.single() as Node.Column).children
+        val text = children[0] as Node.Text
+        assertEquals("amount", text.text)
+        assertEquals("if (visible) amount else \"****\"", text.textExpression)
+        assertEquals("if (light) Color.Black else Color.White", text.colorExpression)
+        assertEquals(0xFF000000, text.color)
+        val button = children[1] as Node.IconButton
+        assertEquals("visibility_off", button.previewSymbol)
+        assertTrue("if (visible)" in button.contentExpression)
+    }
+
+    @Test
+    fun loops_and_named_dsl_lambdas_expose_renderable_descendants() {
+        val screen = parseOne(
+            """
+            Column {
+                repeat(items.size) { index ->
+                    val color = if (index == 0) Color.Red else Color.Blue
+                    Box(modifier = Modifier.fillMaxWidth().background(color)) { Text("Item") }
+                }
+                NavDisplay(
+                    entryProvider = entryProvider {
+                        entry<Home> { Text("Home") }
+                    },
+                )
+            }
+            """.trimIndent(),
+        )
+        val children = (screen.children.single() as Node.Column).children
+        val repeat = children[0] as Node.SourceContainer
+        assertTrue(repeat.children.any { it is Node.Box })
+        val nav = children[1] as Node.SourceContainer
+        assertTrue(nav.children.any { child -> child.childNodes().any { it is Node.Text } })
+        val generated = CodeGen.generate(screen)
+        assertTrue("repeat(items.size)" in generated)
+        assertTrue("NavDisplay(" in generated)
+        assertTrue("entry<Home>" in generated)
+    }
+
+    @Test
+    fun custom_canvas_body_stays_visible_and_source_preserved() {
+        val screen = parseOne(
+            """
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val spacing = 50.dp.toPx()
+                for (x in 0..10) {
+                    drawLine(Color.Black, Offset(x * spacing, 0f), Offset(x * spacing, size.height))
+                }
+            }
+            """.trimIndent(),
+        )
+        val canvas = screen.children.single() as Node.Canvas
+        val raw = canvas.children.single() as Node.RawCode
+        assertTrue("for (x in 0..10)" in raw.code)
+        val generated = CodeGen.generate(screen)
+        assertTrue("val spacing = 50.dp.toPx()" in generated)
+        assertTrue("drawLine(Color.Black" in generated)
+    }
+
+    @Test
+    fun compose_color_constants_and_alpha_copy_render_as_static_colors() {
+        val screen = parseOne(
+            """
+            Text("White", color = Color.White)
+            Text("Faded", color = Color.Black.copy(alpha = 0.5f))
+            """.trimIndent(),
+        )
+        assertEquals(0xFFFFFFFF, (screen.children[0] as Node.Text).color)
+        assertEquals(0x80000000, (screen.children[1] as Node.Text).color)
+    }
+
+    @Test
+    fun dynamic_text_color_and_letter_spacing_keep_source_without_hiding_text() {
+        val screen = parseOne(
+            """
+            Text(
+                text = title,
+                color = selectedColor,
+                letterSpacing = 2.sp,
+            )
+            """.trimIndent(),
+        )
+        val text = screen.children.single() as Node.Text
+        assertEquals("title", text.textExpression)
+        assertEquals("selectedColor", text.colorExpression)
+        assertEquals(2, text.letterSpacing)
+    }
+
+    @Test
+    fun typography_and_source_icons_remain_renderable_and_round_trip() {
+        val screen = parseOne(
+            """
+            Text(
+                text = title,
+                color = Color.White,
+                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+            )
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = Color.White,
+            )
+            IconButton(onClick = { goBack() }) {
+                Icon(Icons.Default.Grid3x3, contentDescription = "Grid")
+            }
+            """.trimIndent(),
+        )
+        val text = screen.children[0] as Node.Text
+        assertTrue(text.styleExpression.startsWith("MaterialTheme.typography"))
+        val icon = screen.children[1] as Node.Icon
+        assertEquals("imageVector", icon.sourceArgumentName)
+        assertEquals("Icons.AutoMirrored.Filled.ArrowBack", icon.sourceImageExpression)
+        assertEquals("Color.White", icon.tintExpression)
+        val button = screen.children[2] as Node.IconButton
+        assertEquals("{ goBack() }", button.onClickExpression)
+        assertTrue("Grid3x3" in button.contentExpression)
+
+        val out = CodeGen.generate(Node.Composable("s", children = screen.children))
+        assertTrue("style = MaterialTheme.typography.headlineSmall.copy" in out, out)
+        assertTrue("imageVector = Icons.AutoMirrored.Filled.ArrowBack" in out, out)
+        assertTrue("tint = Color.White" in out, out)
+        assertTrue("IconButton(onClick = { goBack() })" in out, out)
+        assertTrue("Icon(Icons.Default.Grid3x3, contentDescription = \"Grid\")" in out, out)
+    }
+
+    @Test
+    fun resource_image_renders_as_placeholder_and_preserves_painter_expressions() {
+        val screen = parseOne(
+            """
+            Image(
+                painter = painterResource(R.drawable.hero),
+                contentDescription = "Hero",
+                modifier = Modifier.fillMaxWidth(),
+                contentScale = ContentScale.Crop,
+            )
+            """.trimIndent(),
+        )
+        val image = screen.children.single() as Node.Image
+        assertEquals("painterResource(R.drawable.hero)", image.painterExpression)
+        assertEquals("ContentScale.Crop", image.contentScaleExpression)
+        assertEquals("Hero", image.contentDescription)
+    }
+
+    @Test
+    fun top_app_bar_colors_expression_does_not_hide_its_title() {
+        val screen = parseOne(
+            """
+            TopAppBar(
+                title = { Text("Express") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
+            )
+            """.trimIndent(),
+        )
+        val bar = screen.children.single() as Node.TopAppBar
+        assertEquals("Express", (bar.title as Node.Text).text)
+        assertTrue("TopAppBarDefaults.topAppBarColors" in bar.colorsExpression)
     }
 
     @Test
@@ -101,8 +335,7 @@ class ParserCasesTest {
                 Text("hello")
             }
             """.trimIndent()
-        val screen = DesignParser.parse(file)!!.artboard.composables.single() as Node.Composable
-        assertTrue(screen.children.single() is Node.RawCode)
+        assertNull(DesignParser.parse(file))
     }
 
     @Test
@@ -118,25 +351,103 @@ class ParserCasesTest {
         )
         val scaffold = screen.children.single() as Node.Scaffold
         val box = scaffold.children.single() as Node.Box
-        assertTrue(box.modifier.isEmpty(), "scope padding must be stripped, found ${box.modifier}")
+        assertTrue(box.modifier.isEmpty(), "canonical scope padding must stay implicit, found ${box.modifier}")
         val raw = box.children.single() as Node.RawCode
         assertEquals("CustomThing()", raw.code)
-        // Regeneration re-imposes padding(innerPadding) on the direct child.
+        // Regeneration re-imposes canonical padding(innerPadding) on the direct child.
         val out = CodeGen.generate(Node.Composable("s", children = listOf(scaffold)))
         assertTrue("Scaffold { innerPadding ->" in out, out)
         assertTrue("Box(modifier = Modifier.padding(innerPadding))" in out, out)
     }
 
     @Test
-    fun non_canonical_scaffold_param_name_is_rawcode() {
+    fun scaffold_padding_preserves_its_modifier_order_and_fill_preview() {
         val screen = parseOne(
             """
-            Scaffold { padding ->
-                Text("x", modifier = Modifier.padding(padding))
+            Scaffold(
+                topBar = { Text("Wallet") },
+            ) { padding ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("Wallet content")
+                }
             }
             """.trimIndent(),
         )
-        assertTrue(screen.children.single() is Node.RawCode)
+        val scaffold = screen.children.single() as Node.Scaffold
+        val box = scaffold.children.single() as Node.Box
+        assertEquals(composer.model.BoxAlignment.Center, box.contentAlignment)
+        assertEquals(
+            listOf(ModifierSpec.FillMaxSize(), ModifierSpec.ScaffoldPadding("padding")),
+            box.modifier,
+        )
+
+        val out = CodeGen.generate(Node.Composable("s", children = listOf(scaffold)))
+        val fillAt = out.indexOf(".fillMaxSize()")
+        val paddingAt = out.indexOf(".padding(padding)")
+        assertTrue(fillAt >= 0 && paddingAt > fillAt, out)
+        assertEquals(1, Regex("\\.padding\\(padding\\)").findAll(out).count(), out)
+    }
+
+    @Test
+    fun scaffold_preserves_authored_param_and_source_arguments() {
+        val file =
+            """
+            import androidx.compose.runtime.Composable
+
+            @Composable
+            fun Screen() {
+                Scaffold(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ) { padding ->
+                    Text("x", modifier = Modifier.padding(padding))
+                }
+            }
+            """.trimIndent()
+        val parsed = assertNotNull(DesignParser.parse(file))
+        val scaffold = (parsed.artboard.composables.single() as Node.Composable).children.single() as Node.Scaffold
+        assertEquals("padding", scaffold.contentParameter)
+        assertEquals("MaterialTheme.colorScheme.background", scaffold.sourceArguments["containerColor"])
+        val out = CodeGen.generate(Node.Composable("s", children = listOf(scaffold)))
+        assertTrue("containerColor = MaterialTheme.colorScheme.background" in out, out)
+        assertTrue(") { padding ->" in out, out)
+    }
+
+    @Test
+    fun unsupported_lambda_wrappers_expose_children_and_round_trip_source() {
+        val screen = parseOne(
+            """
+            LazyColumn(state = listState) {
+                items(cards) { card ->
+                    AnimatedVisibility(visible = card.visible) {
+                        Card(
+                            shape = RoundedCornerShape(24.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                        ) {
+                            Text(card.title)
+                        }
+                    }
+                }
+            }
+            """.trimIndent(),
+        )
+        val lazy = screen.children.single() as Node.SourceContainer
+        assertEquals("LazyColumn", lazy.name)
+        val items = lazy.children.single() as Node.SourceContainer
+        val visibility = items.children.single() as Node.SourceContainer
+        val card = visibility.children.single() as Node.SourceContainer
+        assertTrue(card.children.single() is Node.Text)
+
+        val out = CodeGen.generate(Node.Composable("s", children = listOf(lazy)))
+        assertTrue("LazyColumn(state = listState)" in out, out)
+        assertTrue("items(cards) { card ->" in out, out)
+        assertTrue("AnimatedVisibility(visible = card.visible)" in out, out)
+        assertTrue("shape = RoundedCornerShape(24.dp)" in out, out)
+        assertTrue("Text(card.title)" in out, out)
     }
 
     @Test

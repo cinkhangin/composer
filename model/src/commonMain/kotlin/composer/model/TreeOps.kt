@@ -20,6 +20,7 @@ fun Node.childNodes(): List<Node> = when (this) {
     is Node.NavigationBar -> children
     is Node.BadgedBox -> children
     is Node.Canvas -> children
+    is Node.SourceContainer -> children
     is Node.Composable -> children
     is Node.Artboard -> composables
     is Node.Scaffold -> listOfNotNull(topBar, bottomBar, fab) + children
@@ -57,6 +58,7 @@ fun Node.withChildren(children: List<Node>): Node = when (this) {
     is Node.NavigationBar -> copy(children = children)
     is Node.BadgedBox -> copy(children = children)
     is Node.Canvas -> copy(children = children)
+    is Node.SourceContainer -> copy(children = children)
     is Node.Composable -> copy(children = children)
     is Node.Artboard -> copy(composables = children)
     is Node.Text, is Node.Spacer, is Node.Image, is Node.Divider,
@@ -83,6 +85,7 @@ fun Node.mapChildren(transform: (Node) -> Node): Node = when (this) {
     is Node.NavigationBar -> copy(children = children.map(transform))
     is Node.BadgedBox -> copy(children = children.map(transform))
     is Node.Canvas -> copy(children = children.map(transform))
+    is Node.SourceContainer -> copy(children = children.map(transform))
     is Node.Composable -> copy(children = children.map(transform))
     is Node.Artboard -> copy(composables = composables.map(transform))
     is Node.Scaffold -> copy(
@@ -160,6 +163,7 @@ fun Node.typeName(): String = when (this) {
     is Node.CircularProgress -> "CircularProgress"
     is Node.LinearProgress -> "LinearProgress"
     is Node.RawCode -> "RawCode"
+    is Node.SourceContainer -> name
     is Node.TabRow -> "TabRow"
     is Node.Tab -> "Tab"
     is Node.NavigationBar -> "NavigationBar"
@@ -204,6 +208,7 @@ fun Node.withId(id: String): Node = when (this) {
     is Node.CircularProgress -> copy(id = id)
     is Node.LinearProgress -> copy(id = id)
     is Node.RawCode -> copy(id = id)
+    is Node.SourceContainer -> copy(id = id)
     is Node.TabRow -> copy(id = id)
     is Node.Tab -> copy(id = id)
     is Node.NavigationBar -> copy(id = id)
@@ -248,6 +253,7 @@ fun Node.withModifier(modifier: List<ModifierSpec>): Node = when (this) {
     is Node.CircularProgress -> copy(modifier = modifier)
     is Node.LinearProgress -> copy(modifier = modifier)
     is Node.RawCode -> copy(modifier = modifier)
+    is Node.SourceContainer -> copy(modifier = modifier)
     is Node.TabRow -> copy(modifier = modifier)
     is Node.Tab -> copy(modifier = modifier)
     is Node.NavigationBar -> copy(modifier = modifier)

@@ -392,6 +392,7 @@ class EditorState(initial: Node) {
     /** Duplicate the selected node in place (fresh ids), relative to the selection. */
     fun duplicate() {
         val sel = selected ?: return
+        if (sel is Node.SourceContainer) return
         insertNode(sel.cloneWithNewIds(::nextId))
     }
 
@@ -418,7 +419,8 @@ class EditorState(initial: Node) {
 
     fun delete(id: String) {
         if (id == root.id) return
-        if (root.findById(id) is Node.Slot) return // slots are permanent; delete their children instead
+        val target = root.findById(id)
+        if (target is Node.Slot || target is Node.SourceContainer) return
         val parentId = root.parentOf(id)?.id
         commit(root.removeById(id))
         selectedId = parentId
@@ -427,6 +429,7 @@ class EditorState(initial: Node) {
 
     /** Move [id] among its siblings: delta -1 (up/before) or +1 (down/after). */
     fun move(id: String, delta: Int) {
+        if (root.findById(id) is Node.SourceContainer) return
         commit(root.moveById(id, delta))
     }
 
@@ -549,7 +552,8 @@ class EditorState(initial: Node) {
         redoStack.clear()
         root = newRoot
         idCounter = maxOf(idCounter, maxGeneratedId(root))
-        if (selectedId?.let { root.findById(it) } == null) selectedId = null
+        val selected = selectedId?.let { root.findById(it) }
+        if (selected == null || selected is Node.RawCode) selectedId = null
         lastCommitKey = null
     }
 

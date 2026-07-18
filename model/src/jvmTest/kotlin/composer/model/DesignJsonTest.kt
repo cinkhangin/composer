@@ -66,11 +66,32 @@ class DesignJsonTest {
         val sourceBacked = Node.Text(
             id = "dynamic",
             text = "Hello name!",
-            modifier = listOf(ModifierSpec.External("modifier")),
+            modifier = listOf(
+                ModifierSpec.External(
+                    "modifier.fillMaxWidth().customLayout()",
+                    opaque = true,
+                    preview = listOf(ModifierSpec.FillMaxWidth()),
+                ),
+            ),
             textExpression = "\"Hello ${'$'}name!\"",
         )
         val json = DesignJson.encode(sourceBacked)
         assertEquals(sourceBacked, DesignJson.decode(json))
         assertTrue("\"type\": \"external\"" in json, json)
+    }
+
+    @Test
+    fun scaffold_padding_marker_round_trips_in_modifier_order() {
+        val box = Node.Box(
+            id = "content",
+            modifier = listOf(
+                FillMaxSize(),
+                ModifierSpec.ScaffoldPadding("innerPadding"),
+                Padding(8),
+            ),
+        )
+        val json = DesignJson.encode(box)
+        assertEquals(box, DesignJson.decode(json))
+        assertTrue("\"type\": \"scaffoldPadding\"" in json, json)
     }
 }

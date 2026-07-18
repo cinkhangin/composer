@@ -201,9 +201,15 @@ private fun parseProperty(input: ParseInput, from: Int, to: Int, range: IntRange
     val isDelegate = t.isIdent("by")
     val isInit = t.kind == TokKind.PUNCT && t.text == "="
     if (!isDelegate && !isInit) return null
-    val p = ExprParser(input, j + 1, to)
-    val expr = p.parseExpression(2) ?: return null
-    if (p.pos != to) return null
+    val expressionStart = j + 1
+    val p = ExprParser(input, expressionStart, to)
+    val parsed = p.parseExpression(2)
+    val expr = if (parsed != null && p.pos == to) {
+        parsed
+    } else {
+        if (expressionStart >= to) return null
+        KSourceExpr(tokens[expressionStart].start until tokens[to - 1].end)
+    }
     return KPropertyStatement(
         isVar, name, hasReceiver, hasType,
         delegate = if (isDelegate) expr else null,
@@ -348,7 +354,14 @@ internal class ExprParser(private val input: ParseInput, var pos: Int, private v
                     }
                     var spread = false
                     if (peekIs("*")) { spread = true; pos++ }
-                    val expr = parseExpression(2) ?: return null
+                    val expressionStart = pos
+                    val parsed = parseExpression(2)
+                    val expr = if (parsed != null && (peekIs(",") || peekIs(")"))) {
+                        parsed
+                    } else {
+                        pos = expressionStart
+                        parseSourceArgument() ?: return null
+                    }
                     args += KArg(argName, spread, expr)
                     when {
                         peekIs(",") -> { pos++; if (peekIs(")")) break /* trailing comma */ }
@@ -372,12 +385,35 @@ internal class ExprParser(private val input: ParseInput, var pos: Int, private v
         return KCall(callee, hasTypeArgs, args, lambdas, callee.range.first until end)
     }
 
+    /** Capture one balanced argument that is outside the evaluable subset. */
+    private fun parseSourceArgument(): KSourceExpr? {
+        val start = pos
+        var depth = 0
+        while (pos < to) {
+            val token = tokens[pos]
+            if (token.kind == TokKind.PUNCT) {
+                when (token.text) {
+                    "(", "[", "{" -> depth++
+                    ")" -> if (depth == 0) break else depth--
+                    "]", "}" -> if (depth > 0) depth--
+                    "," -> if (depth == 0) break
+                }
+            }
+            pos++
+        }
+        if (pos == start) return null
+        return KSourceExpr(tokens[start].start until tokens[pos - 1].end)
+    }
+
     private fun parsePrimary(): KExpr? {
         val t = peek() ?: return null
         when (t.kind) {
             TokKind.NUMBER, TokKind.CHAR -> { pos++; return KConst(t.text, t.start until t.end) }
             TokKind.STRING -> { pos++; return KString(t.stringRaw, t.stringEntries ?: emptyList(), t.start until t.end) }
             TokKind.IDENT -> {
+                if (!t.backticked && t.text in setOf("if", "for", "when", "while", "do", "try", "return", "throw")) {
+                    return null
+                }
                 if (!t.backticked && (t.text == "true" || t.text == "false" || t.text == "null")) {
                     pos++
                     return KConst(t.text, t.start until t.end)

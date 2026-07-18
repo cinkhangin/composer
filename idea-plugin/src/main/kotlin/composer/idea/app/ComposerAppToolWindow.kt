@@ -294,6 +294,7 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
         when (msg.type) {
             "designChanged" -> msg.design?.let { service.applyDesignerEdit(it) }
             "selectionChanged" -> onDesignerSelection(msg.nodeId)
+            "newComposable" -> NewComposableCreator.show(project, service)
         }
     }
 

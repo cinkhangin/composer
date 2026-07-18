@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -112,7 +113,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.layout
@@ -138,6 +138,7 @@ import composer.model.IconKind
 import composer.model.ModifierSpec
 import composer.model.PaddingMode
 import composer.model.Node
+import composer.model.SourcePreviewLayout
 import composer.model.TextAlignment
 import composer.model.TextFontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -171,6 +172,7 @@ fun RenderNode(
     onSelect: (id: String, deep: Boolean) -> Unit,
     onBounds: (String, LayoutCoordinates) -> Unit = { _, _ -> },
     scopeModifier: Modifier = Modifier,
+    scaffoldPadding: PaddingValues? = null,
 ) {
     // Split the chain so the selection outline wraps the node's FULL box: the positional
     // Offset stays outermost (so a moved node's outline/hit-area track it), but the bounds
@@ -178,8 +180,9 @@ fun RenderNode(
     // background). Otherwise the innermost onGloballyPositioned measured the content area
     // *inside* the padding, so a padded container's outline hugged its content, not its box.
     val scheme = MaterialTheme.colorScheme
-    val offsetMod = node.modifier.filterIsInstance<ModifierSpec.Offset>().toModifier(scheme)
-    val innerMod = node.modifier.filterNot { it is ModifierSpec.Offset }.toModifier(scheme)
+    val previewModifiers = node.modifier.previewSpecs()
+    val offsetMod = previewModifiers.filterIsInstance<ModifierSpec.Offset>().toModifier(scheme, scaffoldPadding)
+    val innerMod = previewModifiers.filterNot { it is ModifierSpec.Offset }.toModifier(scheme, scaffoldPadding)
     val modifier = scopeModifier
         .then(offsetMod)
         .then(selectionModifier(node, onSelect))
@@ -230,6 +233,7 @@ fun RenderNode(
                 fontWeight = node.fontWeight.toCompose(),
                 fontFamily = custom?.let { LocalFonts.loaded[it] } ?: node.fontFamily.toCompose(),
                 textAlign = node.textAlign.toCompose(),
+                letterSpacing = if (node.letterSpacing != 0) node.letterSpacing.sp else TextUnit.Unspecified,
             )
         }
         // A tap-capturing overlay drives selection (the Button's own clickable would swallow it).
@@ -253,26 +257,33 @@ fun RenderNode(
             }
         }
         is Node.Spacer -> Spacer(modifier = modifier)
-        // Opaque preserved code (IDE plugin): a locked chip — selectable so it can be
-        // seen/arranged, but its content is only editable in the code editor.
-        is Node.RawCode -> {
-            val label = node.code.lineSequence().firstOrNull { it.isNotBlank() }?.trim() ?: "Code"
-            Row(
-                modifier = modifier
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(6.dp))
-                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                SymbolIcon("code", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    text = label,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                )
+        // RawCode remains in the model for lossless write-back, but it is not a
+        // visual component and must not contribute canvas size or selection UI.
+        is Node.RawCode -> Unit
+        // Runtime/data wrappers are locked source, but their parsed descendants
+        // form a useful static template in the designer.
+        is Node.SourceContainer -> when (node.previewLayout) {
+            SourcePreviewLayout.Box -> Box(modifier = modifier) {
+                node.children.forEach { child ->
+                    val sm = child.alignBox()?.let { Modifier.align(it.toCompose()) } ?: Modifier
+                    RenderNode(child, selectedId, onSelect, onBounds, sm)
+                }
+            }
+            SourcePreviewLayout.Column -> Column(modifier = modifier) {
+                node.children.forEach { child ->
+                    var sm: Modifier = Modifier
+                    child.weightValue()?.let { sm = sm.weight(it) }
+                    child.alignHorizontal()?.let { sm = sm.align(it.toCompose()) }
+                    RenderNode(child, selectedId, onSelect, onBounds, sm)
+                }
+            }
+            SourcePreviewLayout.Row -> Row(modifier = modifier) {
+                node.children.forEach { child ->
+                    var sm: Modifier = Modifier
+                    child.weightValue()?.let { sm = sm.weight(it) }
+                    child.alignVertical()?.let { sm = sm.align(it.toCompose()) }
+                    RenderNode(child, selectedId, onSelect, onBounds, sm)
+                }
             }
         }
         is Node.Image -> {
@@ -297,25 +308,29 @@ fun RenderNode(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                else -> Image(
-                    painter = ColorPainter(Color(node.placeholderColor)),
-                    contentDescription = node.contentDescription.ifBlank { null },
-                    modifier = modifier,
-                )
+                // Resource painters belong to the source project and are not
+                // available to the in-process designer. Draw a neutral surface
+                // without instantiating ColorPainter: that class is not ABI
+                // compatible across every Compose version bundled by Studio.
+                else -> Box(modifier = modifier.background(Color(node.placeholderColor)))
             }
         }
         is Node.Divider -> HorizontalDivider(modifier = modifier)
         // A free-form Material Symbols name wins over the curated IconKind; the
         // preview draws from the bundled symbol set, sized like a Material icon.
-        is Node.Icon -> if (node.symbol.isNotEmpty()) {
-            SymbolIcon(node.symbol, modifier.size(24.dp), tint = LocalContentColor.current)
+        is Node.Icon -> if (node.sourceImageExpression.isNotEmpty() || node.symbol.isNotEmpty()) {
+            SymbolIcon(
+                node.symbol.ifEmpty { sourceIconName(node.sourceImageExpression) },
+                modifier.size(24.dp),
+                tint = LocalContentColor.current,
+            )
         } else {
             Icon(node.icon.toVector(), contentDescription = node.contentDescription.ifBlank { null }, modifier = modifier)
         }
         is Node.IconButton -> InteractiveNode(node, onSelect, onBounds, scopeModifier) { m ->
             IconButton(onClick = {}, modifier = m) {
-                if (node.symbol.isNotEmpty()) {
-                    SymbolIcon(node.symbol, Modifier.size(24.dp), tint = LocalContentColor.current)
+                if (node.previewSymbol.isNotEmpty() || node.symbol.isNotEmpty()) {
+                    SymbolIcon(node.previewSymbol.ifEmpty { node.symbol }, Modifier.size(24.dp), tint = LocalContentColor.current)
                 } else {
                     Icon(node.icon.toVector(), contentDescription = null)
                 }
@@ -584,9 +599,19 @@ fun RenderNode(
             bottomBar = { node.bottomBar?.takeIf { it.childNodes().isNotEmpty() }?.let { RenderNode(it, selectedId, onSelect, onBounds) } },
             floatingActionButton = { node.fab?.takeIf { it.childNodes().isNotEmpty() }?.let { RenderNode(it, selectedId, onSelect, onBounds) } },
         ) { innerPadding ->
-            // Content applies the Scaffold's innerPadding (clears the bars) — no implicit wrapper node.
+            // Parsed content retains an ordered ScaffoldPadding marker. Content
+            // created in the designer has no marker, so preserve the historical
+            // automatic prefix that keeps it clear of Scaffold bars.
             node.children.forEach { child ->
-                RenderNode(child, selectedId, onSelect, onBounds, scopeModifier = Modifier.padding(innerPadding))
+                val hasAuthoredPadding = child.modifier.previewSpecs().any { it is ModifierSpec.ScaffoldPadding }
+                RenderNode(
+                    child,
+                    selectedId,
+                    onSelect,
+                    onBounds,
+                    scopeModifier = if (hasAuthoredPadding) Modifier else Modifier.padding(innerPadding),
+                    scaffoldPadding = innerPadding,
+                )
             }
         }
         is Node.TopAppBar -> {
@@ -614,18 +639,18 @@ fun RenderNode(
 }
 
 private fun Node.weightValue(): Float? =
-    modifier.firstNotNullOfOrNull { (it as? ModifierSpec.Weight)?.value }?.takeIf { it > 0f }
+    modifier.previewSpecs().firstNotNullOfOrNull { (it as? ModifierSpec.Weight)?.value }?.takeIf { it > 0f }
 
 // align() is a scope member like weight — read per scope kind at the container's
 // call site (mirrors codegen's projectAlign: mismatched fields are ignored).
 private fun Node.alignBox(): BoxAlignment? =
-    modifier.firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.box }
+    modifier.previewSpecs().firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.box }
 
 private fun Node.alignVertical(): VAlignment? =
-    modifier.firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.vertical }
+    modifier.previewSpecs().firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.vertical }
 
 private fun Node.alignHorizontal(): HAlignment? =
-    modifier.firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.horizontal }
+    modifier.previewSpecs().firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.horizontal }
 
 private fun IconKind.toVector() = when (this) {
     IconKind.Menu -> Icons.Default.Menu
@@ -647,6 +672,11 @@ private fun IconKind.toVector() = when (this) {
     IconKind.Email -> Icons.Default.Email
     IconKind.Lock -> Icons.Default.Lock
 }
+
+private fun sourceIconName(expression: String): String =
+    expression.substringAfterLast('.').substringBefore(')').substringBefore('(')
+        .replace(Regex("([a-z0-9])([A-Z])"), "$1_$2")
+        .lowercase()
 
 private fun VArrangement.toCompose(): Arrangement.Vertical = when (this) {
     VArrangement.Top -> Arrangement.Top
@@ -762,8 +792,9 @@ private fun InteractiveNode(
     // and measured bounds move with the component), everything else (size, background, …)
     // styles the inner component. Otherwise a moved component's hit-area lagged its visual.
     val scheme = MaterialTheme.colorScheme
-    val offsetMod = node.modifier.filterIsInstance<ModifierSpec.Offset>().toModifier(scheme)
-    val innerMod = node.modifier.filterNot { it is ModifierSpec.Offset }.toModifier(scheme)
+    val previewModifiers = node.modifier.previewSpecs()
+    val offsetMod = previewModifiers.filterIsInstance<ModifierSpec.Offset>().toModifier(scheme)
+    val innerMod = previewModifiers.filterNot { it is ModifierSpec.Offset }.toModifier(scheme)
     Box(modifier = scopeModifier.then(offsetMod).onGloballyPositioned { onBounds(node.id, it) }) {
         content(innerMod)
         Box(
@@ -839,10 +870,15 @@ fun themeColor(value: Long, scheme: ColorScheme): Color = when (ThemeColorRef.to
  * resolves theme-token color references, so token-colored fills/borders/shadows
  * re-color live when the design theme changes.
  */
-fun List<ModifierSpec>.toModifier(scheme: ColorScheme): Modifier =
+fun List<ModifierSpec>.toModifier(scheme: ColorScheme, scaffoldPadding: PaddingValues? = null): Modifier =
     fold(Modifier as Modifier) { acc, spec ->
         when (spec) {
-            is ModifierSpec.External -> acc // source parameter; preview uses its default Modifier value
+            is ModifierSpec.External -> if (spec.opaque) {
+                acc.then(spec.preview.toModifier(scheme, scaffoldPadding))
+            } else {
+                acc // source parameter; preview uses its default Modifier value
+            }
+            is ModifierSpec.ScaffoldPadding -> if (scaffoldPadding != null) acc.padding(scaffoldPadding) else acc
             is ModifierSpec.Padding -> when (spec.mode) {
                 PaddingMode.All -> acc.padding(spec.all.dp)
                 PaddingMode.Symmetric -> acc.padding(horizontal = spec.horizontal.dp, vertical = spec.vertical.dp)
@@ -907,6 +943,11 @@ fun List<ModifierSpec>.toModifier(scheme: ColorScheme): Modifier =
             is ModifierSpec.FillMaxSize -> acc.fillMaxSize(spec.fraction)
         }
     }
+
+/** Flatten safe static projections from opaque source chains for scope handling. */
+private fun List<ModifierSpec>.previewSpecs(): List<ModifierSpec> = flatMap { spec ->
+    if (spec is ModifierSpec.External && spec.opaque) spec.preview.previewSpecs() else listOf(spec)
+}
 
 
 /** A canvas shape's drawn extent in dp: (x, y, w, h); null for unknown nodes. */

@@ -57,6 +57,13 @@ internal class KBinary(
 /** Numbers (raw text, suffixes/underscores preserved), `true`/`false`/`null`, chars. */
 internal class KConst(val text: String, override val range: IntRange) : KExpr
 
+/**
+ * A balanced argument/property expression outside Composer's evaluable subset
+ * (for example `if (…) a else b`). Its exact range lets mapping code preserve
+ * source-backed values without teaching the syntax layer how to execute it.
+ */
+internal class KSourceExpr(override val range: IntRange) : KExpr
+
 internal sealed interface KStringEntry {
     class Literal(val text: String) : KStringEntry
 

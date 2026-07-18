@@ -28,8 +28,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -124,6 +122,8 @@ import composer.ui.ThemeSwatch
 import composer.ui.Theme
 import composer.ui.Tip
 import composer.ui.Tk
+import composer.ui.TkMenu
+import composer.ui.TkMenuItem
 import composer.ui.ToolButton
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.ui.text.TextStyle
@@ -136,7 +136,10 @@ import androidx.compose.ui.text.rememberTextMeasurer
 @OptIn(FlowPreview::class)
 @Composable
 internal fun EditorScreen(session: DesignerSession) {
-    val state = remember(session) { EditorState(emptyDesign) }
+    // The IDE must never show a website/new-document sample as if it came from
+    // the open project. The host replaces this blank tree during its ready
+    // handshake (or after the first source parse completes).
+    val state = remember(session) { EditorState(Node.Artboard(id = "root")) }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
     // Reclaim keyboard focus for the editor whenever the selection changes (e.g. after
@@ -152,7 +155,8 @@ internal fun EditorScreen(session: DesignerSession) {
             session.noteLoaded(DesignJson.encode(state.root))
         }
         session.onSelectNode = { id ->
-            if (state.root.findById(id) != null) state.select(id)
+            val node = state.root.findById(id)
+            if (node != null && node !is Node.RawCode) state.select(id)
         }
         onDispose {
             session.onLoadDesign = null
@@ -195,7 +199,11 @@ internal fun EditorScreen(session: DesignerSession) {
             .focusable(),
         verticalArrangement = Arrangement.spacedBy(Tk.gap),
     ) {
-        Toolbar(state)
+        Toolbar(
+            state,
+            showNewComposable = session.appMode,
+            onNewComposable = session::requestNewComposable,
+        )
         Row(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Tk.gap),
@@ -351,10 +359,23 @@ private fun CollapsedPanelStrip(icon: AppIconKind, tip: String, onExpand: () -> 
  * files, source code, export, and project identity.
  */
 @Composable
-private fun Toolbar(state: EditorState) {
+private fun Toolbar(
+    state: EditorState,
+    showNewComposable: Boolean,
+    onNewComposable: () -> Unit,
+) {
     // 40dp: the tallest controls are 32dp, so this leaves 4dp of air above/below —
     // a slim, Figma-like bar instead of the airy 52dp it started with.
     Box(modifier = Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 12.dp)) {
+        if (showNewComposable) {
+            Box(Modifier.align(Alignment.CenterStart)) {
+                ToolButton(
+                    label = "New Composable",
+                    icon = AppIconKind.Plus,
+                    onClick = onNewComposable,
+                )
+            }
+        }
         ScreenSizeControl(state, Modifier.align(Alignment.Center))
         Row(
             modifier = Modifier.align(Alignment.CenterEnd),
@@ -760,6 +781,7 @@ private fun ZoomBadge(zoom: Float, onZoom: (Float) -> Unit, onReset: () -> Unit,
  */
 @Composable
 private fun SizeBadge(state: EditorState, appMode: Boolean, modifier: Modifier = Modifier) {
+    var componentMenuOpen by remember { mutableStateOf(false) }
     Island(modifier) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
@@ -777,8 +799,27 @@ private fun SizeBadge(state: EditorState, appMode: Boolean, modifier: Modifier =
             val comps = state.componentDefs()
             if (comps.isNotEmpty()) {
                 Box(Modifier.width(1.dp).height(20.dp).padding(horizontal = 2.dp).background(Tk.border))
-                for ((refId, name) in comps) {
-                    ToolButton(name) { state.insertInstanceOf(refId) }
+                Box {
+                    // A module can expose dozens of reusable composables. Keeping
+                    // every name as a chip made this floating island wider than the
+                    // canvas (and eventually overlapped or clipped the chips). A
+                    // compact trigger keeps the palette stable; TkMenu supplies its
+                    // own bounded, vertically scrollable list for large modules.
+                    ToolButton(
+                        label = if (comps.size == 1) comps.single().second else "Components (${comps.size})",
+                        icon = AppIconKind.Layers,
+                    ) { componentMenuOpen = true }
+                    TkMenu(
+                        expanded = componentMenuOpen,
+                        onDismissRequest = { componentMenuOpen = false },
+                    ) {
+                        comps.forEach { (refId, name) ->
+                            TkMenuItem(name) {
+                                componentMenuOpen = false
+                                state.insertInstanceOf(refId)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -946,19 +987,33 @@ private fun ScreenFrame(
         }
 
         // Screen name label (also the generated @Composable function name).
-        // /scale-compensated to a constant on-screen size at any zoom.
+        // Keep it at a constant on-screen size while it fits above the frame.
+        // At overview scales (large modules can fit at ~0.05x), full /scale
+        // compensation makes the text wider than the frame and BasicText clips
+        // every name to its first couple of letters. Cap the compensation by
+        // the frame width so the complete name shrinks with very small frames.
         val selectedHere = state.selectedId == screen.id
+        val screenName = state.layerName(screen.id) ?: "Composable"
+        val textMeasurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val baseLabelWidthPx = textMeasurer.measure(
+            text = screenName,
+            style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium),
+            maxLines = 1,
+        ).size.width.coerceAtLeast(1)
+        val frameWidthPx = with(density) { (screen.width - 8).coerceAtLeast(1).dp.toPx() }
+        val labelCompensation = minOf(1f / scale, frameWidthPx / baseLabelWidthPx)
         BasicText(
-            text = state.layerName(screen.id) ?: "Composable",
+            text = screenName,
             style = TextStyle(
                 color = if (selectedHere) Tk.accent else Tk.textSecondary,
-                fontSize = (11f / scale).sp,
+                fontSize = (11f * labelCompensation).sp,
                 fontWeight = FontWeight.Medium,
             ),
             maxLines = 1,
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .offset(y = -(20f / scale).dp)
+                .offset(y = -(20f * labelCompensation).dp)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,

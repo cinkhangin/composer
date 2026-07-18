@@ -183,6 +183,11 @@ fun Inspector(
                         "Layers tree); empty slots are omitted from the generated code. The slot itself can't be deleted.",
                     style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
                 )
+            } else if (selected is Node.SourceContainer) {
+                BasicText(
+                    "${selected.name} is a locked source-backed wrapper. Composer renders its supported children as a static template while preserving the wrapper's runtime Kotlin exactly.",
+                    style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
+                )
             } else {
               // Reusable components: instances show their link; mains show their
               // status; anything eligible offers "Create component".
@@ -292,8 +297,15 @@ fun Inspector(
                     }
 
                     is Node.Icon -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        SymbolPickerField("Icon", selected.symbol, fallbackLabel = selected.icon.name) { name ->
-                            state.update(selected.id) { (it as Node.Icon).copy(symbol = name) }
+                        if (selected.sourceImageExpression.isNotEmpty()) {
+                            BasicText(
+                                "Source icon: ${selected.sourceImageExpression}",
+                                style = TextStyle(color = Tk.textMuted, fontSize = 11.sp, fontFamily = FontFamily.Monospace),
+                            )
+                        } else {
+                            SymbolPickerField("Icon", selected.symbol, fallbackLabel = selected.icon.name) { name ->
+                                state.update(selected.id) { (it as Node.Icon).copy(symbol = name) }
+                            }
                         }
                         Field(
                             value = selected.contentDescription,
@@ -303,7 +315,12 @@ fun Inspector(
                         )
                     }
 
-                    is Node.IconButton -> SymbolPickerField("Icon", selected.symbol, fallbackLabel = selected.icon.name) { name ->
+                    is Node.IconButton -> if (selected.contentExpression.isNotEmpty()) {
+                        BasicText(
+                            "Source-backed icon button content is preserved in Kotlin.",
+                            style = TextStyle(color = Tk.textMuted, fontSize = 11.sp),
+                        )
+                    } else SymbolPickerField("Icon", selected.symbol, fallbackLabel = selected.icon.name) { name ->
                         state.update(selected.id) { (it as Node.IconButton).copy(symbol = name) }
                     }
 
@@ -521,7 +538,8 @@ fun Inspector(
                     is Node.Spacer, is Node.Divider, is Node.Card, is Node.Fab,
                     is Node.Composable, is Node.Artboard, is Node.Slot,
                     is Node.Dialog, is Node.BottomSheet, is Node.Instance,
-                    is Node.CircularProgress, is Node.LinearProgress -> Unit
+                    is Node.CircularProgress, is Node.LinearProgress,
+                    is Node.SourceContainer -> Unit
                 }
               }
               // Navigation: what this component's onClick does in the generated app.
@@ -946,8 +964,14 @@ private fun NodeBadge(state: EditorState, node: Node, isRoot: Boolean, lockCompo
         }
         Column(modifier = Modifier.weight(1f)) {
             if (isRoot) {
-                BasicText("Artboard", style = TextStyle(color = Tk.textPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold))
-                BasicText("Design root", style = TextStyle(color = Tk.textMuted, fontSize = 11.sp))
+                BasicText(
+                    state.layerName(node.id) ?: "Artboard",
+                    style = TextStyle(color = Tk.textPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
+                )
+                BasicText(
+                    if (state.layerName(node.id) != null) "Application" else "Design root",
+                    style = TextStyle(color = Tk.textMuted, fontSize = 11.sp),
+                )
             } else if (lockComposableStructure && node is Node.Composable) {
                 BasicText(
                     state.layerName(node.id) ?: node.typeName(),

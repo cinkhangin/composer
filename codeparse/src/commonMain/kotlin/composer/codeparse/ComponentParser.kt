@@ -10,12 +10,15 @@ import composer.model.ModifierSpec
 import composer.model.NavAction
 import composer.model.Node
 import composer.model.PaddingMode
+import composer.model.SourcePreviewLayout
 import composer.model.TextAlignment
 import composer.model.TextFontFamily
 import composer.model.TextWeight
+import composer.model.ThemeColorRef
 import composer.model.TopAppBarVariant
 import composer.model.VAlignment
 import composer.model.VArrangement
+import composer.model.childNodes
 import kotlin.math.roundToInt
 
 /**
@@ -81,17 +84,31 @@ internal fun parseBlock(block: KBlock, ctx: ParseCtx, scopeParam: String? = null
             out += rawCodeNode(ctx, comments.firstOrNull()?.range?.first ?: stmt.range.first, trailing.range.last + 1)
             return@forEachIndexed
         }
-        if (comments.isEmpty()) {
+        // Ordinary leading comments are preservation metadata, not a reason to
+        // hide an otherwise renderable component. Keep them as a RawCode sibling
+        // (the designer hides it) and parse the statement independently. The one
+        // canonical comment consumed by Text/Image/Icon remains attached.
+        val componentComments = comments.takeIf { attachedSpecialComment(it) } ?: emptyList()
+        val preservedComments = if (componentComments.isEmpty()) comments else emptyList()
+        if (preservedComments.isNotEmpty()) {
+            flushPending()
+            out += rawCodeNode(
+                ctx,
+                preservedComments.first().range.first,
+                preservedComments.last().range.last + 1,
+            )
+        }
+        if (componentComments.isEmpty()) {
             matchStateDecl(stmt)?.let { state ->
                 flushPending()
                 pending = state
                 return@forEachIndexed
             }
         }
-        val parsed = parseComponent(stmt, comments, pending, ctx, scopeParam)
+        val parsed = parseComponent(stmt, componentComments, pending, ctx, scopeParam)
         if (parsed == null) {
             flushPending()
-            out += rawCodeNode(ctx, comments.firstOrNull()?.range?.first ?: stmt.range.first, stmt.range.last + 1)
+            out += rawCodeNode(ctx, componentComments.firstOrNull()?.range?.first ?: stmt.range.first, stmt.range.last + 1)
         } else if (parsed.usedPending && stateUsedElsewhere(block, pending!!, stmt)) {
             // Swallowing renames the var to stateN on regeneration — unsafe when
             // any OTHER statement references it. Preserve decl + consumer verbatim.
@@ -115,6 +132,11 @@ internal fun parseBlock(block: KBlock, ctx: ParseCtx, scopeParam: String? = null
 }
 
 private class Parsed(val node: Node, val usedPending: Boolean = false)
+
+private fun attachedSpecialComment(comments: List<KComment>): Boolean {
+    val text = comments.singleOrNull()?.text ?: return false
+    return isFontComment(text) || text == LOCAL_IMAGE_COMMENT || isSymbolComment(text)
+}
 
 // ---- raw capture -------------------------------------------------------------
 
@@ -252,8 +274,18 @@ private fun parseComponent(
     ctx: ParseCtx,
     scopeParam: String?,
 ): Parsed? {
-    val call = (stmt as? KExprStatement)?.expr?.unparen() as? KCall ?: return null
-    val shape = callShape(call) ?: return null
+    val expression = (stmt as? KExprStatement)?.expr?.unparen() ?: return null
+    val call = when (expression) {
+        is KCall -> expression
+        is KDot -> expression.selector?.unparen() as? KCall
+        else -> null
+    } ?: return null
+    val sourceRange = expression.range
+    val shape = callShape(call) ?: return if (comments.isEmpty()) {
+        sourceCallShape(call)?.let { parseSourceContainer(call, it, ctx, sourceRange) }
+    } else {
+        null
+    }
     if (shape.name in ctx.blockedNames) return null
 
     // Comment consumption contract: components may consume ONE special comment
@@ -265,7 +297,7 @@ private fun parseComponent(
 
     if (hasPlainComments) return null
 
-    val node: Parsed? = when (shape.name) {
+    val node: Parsed? = if (expression is KCall) when (shape.name) {
         "Text" -> parseText(shape, ctx, scopeParam, specialComment)
         in BUTTON_VARIANTS -> parseButton(shape, ctx, scopeParam)
         "Spacer" -> simpleLeaf(shape, ctx, scopeParam) { id, m -> Node.Spacer(id, m) }
@@ -297,19 +329,87 @@ private fun parseComponent(
         "Row" -> parseRow(shape, ctx, scopeParam)
         "Box" -> parseBox(shape, ctx, scopeParam)
         else -> null
-    }
+    } else null
     if (node != null) return node
 
-    // Bare call to another parsed screen = a component instance.
-    if (shape.name in ctx.screenIdsByName &&
-        shape.positional.isEmpty() && shape.named.isEmpty() && shape.trailingLambda == null &&
-        specialComment == null
-    ) {
+    // A call to another parsed composable is a visual component instance even
+    // when it passes state/callback/data arguments. The preview resolves the
+    // referenced function and ignores runtime values; the exact call suffix is
+    // retained so a later parent edit cannot erase user-authored arguments.
+    if (shape.name in ctx.screenIdsByName && specialComment == null) {
         val refId = ctx.screenIdsByName.getValue(shape.name)
         ctx.referencedScreenIds += refId
-        return Parsed(Node.Instance(ctx.newId(), refId))
+        val sourceArguments = if (
+            shape.positional.isEmpty() && shape.named.isEmpty() && shape.trailingLambda == null
+        ) {
+            ""
+        } else {
+            val calleeEnd = call.callee?.range?.last?.plus(1) ?: return null
+            ctx.text.substring(calleeEnd, call.range.last + 1)
+        }
+        return Parsed(Node.Instance(ctx.newId(), refId, sourceArguments = sourceArguments))
     }
+    // Unsupported source wrappers can still contain ordinary Compose UI. Keep
+    // the wrapper's exact Kotlin locked while exposing a static child template
+    // to the designer. Calls with no visual descendants remain plain RawCode.
+    if (specialComment == null) parseSourceContainer(call, shape, ctx, sourceRange)?.let { return it }
     return null
+}
+
+private fun parseSourceContainer(
+    call: KCall,
+    shape: CallShape,
+    ctx: ParseCtx,
+    sourceRange: IntRange = call.range,
+): Parsed? {
+    val candidates = buildList {
+        shape.trailingLambda?.let(::add)
+        shape.positional.forEach { addAll(it.sourceLambdas()) }
+        shape.named.values.forEach { addAll(it.sourceLambdas()) }
+    }
+    val (lambda, kids) = candidates.firstNotNullOfOrNull { candidate ->
+        parseBlock(candidate.body, ctx).takeIf { it.any(::isSourceRenderable) }
+            ?.let { candidate to it }
+    } ?: return null
+    val bodyStart = lambda.body.bodyRange.first
+    val bodyEnd = lambda.body.bodyRange.last + 1
+    val prefix = captureSourceFragment(ctx.text, sourceRange.first, bodyStart).trimEnd()
+    val suffix = dedent(ctx.text.substring(bodyEnd, sourceRange.last + 1)).trimStart()
+    if (prefix.isBlank() || suffix.isBlank()) return null
+    val layout = when {
+        shape.name.contains("Row", ignoreCase = true) ||
+            shape.name.contains("Pager", ignoreCase = true) -> SourcePreviewLayout.Row
+        shape.name.contains("Column", ignoreCase = true) ||
+            shape.name in setOf("items", "itemsIndexed", "repeat", "forEach", "forEachIndexed") -> SourcePreviewLayout.Column
+        else -> SourcePreviewLayout.Box
+    }
+    return Parsed(Node.SourceContainer(ctx.newId(), shape.name, prefix, suffix, kids, layout))
+}
+
+/** Lambdas nested in a call argument, in source/outer-first order. */
+private fun KExpr.sourceLambdas(): List<KLambda> = when (val expr = unparen()) {
+    is KLambda -> listOf(expr)
+    is KCall -> expr.trailingLambdas + expr.args.flatMap { it.expr.sourceLambdas() }
+    is KDot -> expr.receiver.sourceLambdas() + expr.selector?.sourceLambdas().orEmpty()
+    is KPrefix -> expr.base?.sourceLambdas().orEmpty()
+    is KBinary -> expr.left?.sourceLambdas().orEmpty() + expr.right?.sourceLambdas().orEmpty()
+    else -> emptyList()
+}
+
+private fun captureSourceFragment(text: String, start: Int, end: Int): String {
+    val source = text.substring(start, end)
+    if (source.contains("\"\"\"")) return source
+    val lineStart = text.lastIndexOf('\n', start - 1) + 1
+    val baseIndent = text.substring(lineStart, start).takeWhile { it == ' ' }.length
+    return source.lines().mapIndexed { index, line ->
+        if (index == 0) line else line.drop(minOf(baseIndent, line.takeWhile { it == ' ' }.length))
+    }.joinToString("\n")
+}
+
+private fun isSourceRenderable(node: Node): Boolean = when (node) {
+    is Node.RawCode -> false
+    is Node.Instance -> true
+    else -> node.childNodes().any(::isSourceRenderable) || node !is Node.SourceContainer
 }
 
 private fun isFontComment(text: String): Boolean =
@@ -322,10 +422,21 @@ private fun isSymbolComment(text: String): Boolean =
 
 // ---- shared helpers ----------------------------------------------------------
 
-/** Parse an optional `modifier =` argument; null = unrecognized chain. */
-private fun modifierOf(shape: CallShape, scopeParam: String?): List<ModifierSpec>? {
+/** Parse an optional `modifier =`; unknown runtime chains become opaque source modifiers. */
+private fun modifierOf(shape: CallShape, ctx: ParseCtx, scopeParam: String?): List<ModifierSpec>? {
     val expr = shape.named["modifier"] ?: return emptyList()
     return parseModifierChain(expr, scopeParam)
+        // A source-authored chain can contain runtime values or custom modifiers
+        // the static designer cannot evaluate. Keep the exact expression as an
+        // opaque source modifier: renderer safely treats it as Modifier while
+        // codegen writes it back byte-for-byte if the component is edited.
+        ?: listOf(
+            ModifierSpec.External(
+                expression = ctx.sourceOf(expr),
+                opaque = true,
+                preview = parseModifierPreview(expr, scopeParam),
+            ),
+        )
 }
 
 private inline fun simpleLeaf(
@@ -335,7 +446,7 @@ private inline fun simpleLeaf(
     build: (id: String, modifier: List<ModifierSpec>) -> Node,
 ): Parsed? {
     if (!shape.argsWithin(setOf("modifier")) || shape.trailingLambda != null) return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     return Parsed(build(ctx.newId(), m))
 }
 
@@ -349,7 +460,7 @@ private fun childrenOf(lambda: KLambda?, ctx: ParseCtx): List<Node>? {
 
 private fun parseText(shape: CallShape, ctx: ParseCtx, scopeParam: String?, comment: String?): Parsed? {
     if (shape.trailingLambda != null) return null
-    if (!shape.named.keys.all { it in setOf("text", "modifier", "color", "fontSize", "fontWeight", "fontFamily", "lineHeight", "textAlign") }) return null
+    if (!shape.named.keys.all { it in setOf("text", "modifier", "color", "fontSize", "fontWeight", "fontFamily", "lineHeight", "letterSpacing", "textAlign", "style") }) return null
     val textExpr = when {
         shape.positional.size == 1 && "text" !in shape.named -> shape.positional.single()
         shape.positional.isEmpty() -> shape.named["text"] ?: return null
@@ -357,9 +468,12 @@ private fun parseText(shape: CallShape, ctx: ParseCtx, scopeParam: String?, comm
     }
     val literal = stringLit(textExpr)
     val textExpression = if (literal == null) ctx.sourceOf(textExpr) else ""
-    val text = literal ?: stringPreview(textExpr) ?: textExpression
-    val m = modifierOf(shape, scopeParam) ?: return null
-    val color = shape.named["color"]?.let { colorValue(it) ?: return null }
+    val text = literal ?: stringPreview(textExpr) ?: dynamicTextPreview(textExpression)
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
+    val colorSource = shape.named["color"]
+    val authoredColor = colorSource?.let(::colorValue)
+    val colorExpression = colorSource?.takeIf { authoredColor == null }?.let(ctx::sourceOf).orEmpty()
+    val color = authoredColor ?: sourceColorPreview(colorExpression)
     val fontSize = shape.named["fontSize"]?.let { spInt(it) ?: return null } ?: 0
     val fontWeight = shape.named["fontWeight"]?.let { enumFrom(it, "FontWeight") { TextWeight.valueOf(it) } ?: return null }
         ?: TextWeight.Normal
@@ -368,6 +482,7 @@ private fun parseText(shape: CallShape, ctx: ParseCtx, scopeParam: String?, comm
     val textAlign = shape.named["textAlign"]?.let { enumFrom(it, "TextAlign") { TextAlignment.valueOf(it) } ?: return null }
         ?: TextAlignment.Start
     var lineHeight = shape.named["lineHeight"]?.let { spInt(it) ?: return null } ?: 0
+    val letterSpacing = shape.named["letterSpacing"]?.let { spInt(it) ?: return null } ?: 0
     // Auto line height (fontSize × 1.2) round-trips as 0 so the inspector shows "Auto".
     if (fontSize > 0 && lineHeight == (fontSize * 1.2).roundToInt()) lineHeight = 0
     val customFont = comment
@@ -380,9 +495,59 @@ private fun parseText(shape: CallShape, ctx: ParseCtx, scopeParam: String?, comm
             id = ctx.newId(), text = text, modifier = m, fontSize = fontSize,
             fontWeight = fontWeight, fontFamily = fontFamily, color = color,
             lineHeight = lineHeight, customFont = customFont, textAlign = textAlign,
-            textExpression = textExpression,
+            textExpression = textExpression, letterSpacing = letterSpacing,
+            colorExpression = colorExpression,
+            styleExpression = shape.named["style"]?.let(ctx::sourceOf).orEmpty(),
         ),
     )
+}
+
+/** A readable, non-executing label for source-backed text such as an if expression. */
+private fun dynamicTextPreview(source: String): String {
+    val trimmed = source.trim()
+    if (trimmed.startsWith("if")) {
+        val close = trimmed.indexOf(')')
+        val elseIndex = trimmed.indexOf("else", startIndex = (close + 1).coerceAtLeast(0))
+        if (close >= 0 && elseIndex > close) {
+            val thenBranch = trimmed.substring(close + 1, elseIndex).trim()
+            if (thenBranch.startsWith('"') && thenBranch.endsWith('"') && thenBranch.length >= 2) {
+                return thenBranch.substring(1, thenBranch.length - 1)
+            }
+            if (thenBranch.matches(Regex("[A-Za-z_][A-Za-z0-9_]*"))) return thenBranch
+        }
+    }
+    return trimmed
+}
+
+/** First statically recognizable color in a runtime expression, for preview only. */
+private fun sourceColorPreview(source: String): Long? {
+    if (source.isBlank()) return null
+    val pattern = Regex(
+        "Color\\(\\s*(0[xX][0-9A-Fa-f_]+)\\s*\\)|" +
+            "Color\\.(Black|DarkGray|Gray|LightGray|White|Red|Green|Blue|Yellow|Cyan|Magenta|Transparent)|" +
+            "MaterialTheme\\.colorScheme\\.([A-Za-z_][A-Za-z0-9_]*)",
+    )
+    val match = pattern.find(source) ?: return null
+    match.groups[1]?.value?.replace("_", "")?.removePrefix("0x")?.removePrefix("0X")
+        ?.toULongOrNull(16)?.toLong()?.let { return it }
+    match.groups[2]?.value?.let { name ->
+        return when (name) {
+            "Black" -> 0xFF000000
+            "DarkGray" -> 0xFF444444
+            "Gray" -> 0xFF888888
+            "LightGray" -> 0xFFCCCCCC
+            "White" -> 0xFFFFFFFF
+            "Red" -> 0xFFFF0000
+            "Green" -> 0xFF00FF00
+            "Blue" -> 0xFF0000FF
+            "Yellow" -> 0xFFFFFF00
+            "Cyan" -> 0xFF00FFFF
+            "Magenta" -> 0xFFFF00FF
+            "Transparent" -> 0x00000000
+            else -> null
+        }
+    }
+    return match.groups[3]?.value?.let(ThemeColorRef::token)
 }
 
 private fun parseAsyncImage(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
@@ -390,36 +555,76 @@ private fun parseAsyncImage(shape: CallShape, ctx: ParseCtx, scopeParam: String?
     if (!shape.named.keys.all { it in setOf("model", "contentDescription", "modifier") }) return null
     val url = stringLit(shape.named["model"] ?: return null) ?: return null
     val desc = stringOrNullLit(shape.named["contentDescription"] ?: return null)?.getOrNull() ?: ""
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     return Parsed(Node.Image(id = ctx.newId(), contentDescription = desc, modifier = m, url = url))
 }
 
 private fun parseImagePlaceholder(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
     if (shape.trailingLambda != null || shape.positional.isNotEmpty()) return null
-    if (!shape.named.keys.all { it in setOf("painter", "contentDescription", "modifier") }) return null
-    val painter = shape.named["painter"]?.unparen() as? KCall ?: return null
-    if (callName(painter) != "ColorPainter") return null
-    val color = colorValue(painter.singlePositionalArg()) ?: return null
+    if (!shape.named.keys.all { it in setOf("painter", "contentDescription", "modifier", "contentScale") }) return null
+    val painterExpr = shape.named["painter"] ?: return null
     val desc = stringOrNullLit(shape.named["contentDescription"] ?: return null)?.getOrNull() ?: ""
-    val m = modifierOf(shape, scopeParam) ?: return null
-    return Parsed(Node.Image(id = ctx.newId(), contentDescription = desc, placeholderColor = color, modifier = m))
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
+    val painter = painterExpr.unparen() as? KCall
+    val color = painter
+        ?.takeIf { callName(it) == "ColorPainter" }
+        ?.singlePositionalArg()
+        ?.let(::colorValue)
+    val painterExpression = if (color == null) ctx.sourceOf(painterExpr) else ""
+    val contentScaleExpression = shape.named["contentScale"]?.let(ctx::sourceOf).orEmpty()
+    return Parsed(
+        Node.Image(
+            id = ctx.newId(),
+            contentDescription = desc,
+            placeholderColor = color ?: 0xFFCFD4DC,
+            modifier = m,
+            painterExpression = painterExpression,
+            contentScaleExpression = contentScaleExpression,
+        ),
+    )
 }
 
 private fun parseIcon(shape: CallShape, ctx: ParseCtx, scopeParam: String?, comment: String? = null): Parsed? {
-    if (shape.trailingLambda != null || shape.positional.size != 1) return null
-    if (!shape.named.keys.all { it in setOf("contentDescription", "modifier") }) return null
+    if (shape.trailingLambda != null || shape.positional.size > 1) return null
+    if (!shape.named.keys.all { it in setOf("imageVector", "painter", "contentDescription", "modifier", "tint") }) return null
+    val namedImages = listOf("imageVector", "painter").filter { it in shape.named }
+    val sourceArgumentName: String
+    val imageExpr: KExpr
+    when {
+        shape.positional.size == 1 && namedImages.isEmpty() -> {
+            sourceArgumentName = ""
+            imageExpr = shape.positional.single()
+        }
+        shape.positional.isEmpty() && namedImages.size == 1 -> {
+            sourceArgumentName = namedImages.single()
+            imageExpr = shape.named.getValue(sourceArgumentName)
+        }
+        else -> return null
+    }
     val desc = shape.named["contentDescription"]?.let { stringOrNullLit(it) ?: return null }?.getOrNull() ?: ""
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
+    val tintExpression = shape.named["tint"]?.let(ctx::sourceOf).orEmpty()
     // Free-form Material Symbols form: painterResource(Res.drawable.ic_x) + a
     // sourcing comment. The comment (when present) must be OUR canonical one for
     // this symbol — anything else stays verbatim as RawCode.
-    painterSymbol(shape.positional[0])?.let { symbol ->
+    painterSymbol(imageExpr)?.let { symbol ->
         if (comment != null && comment != composer.codegen.CodeGen.symbolComment(symbol)) return null
-        return Parsed(Node.Icon(ctx.newId(), IconKind.Favorite, desc, m, symbol = symbol))
+        return Parsed(Node.Icon(ctx.newId(), IconKind.Favorite, desc, m, symbol = symbol, tintExpression = tintExpression))
     }
     if (comment != null) return null // a symbol comment on a non-symbol Icon — not ours
-    val icon = iconKind(shape.positional[0]) ?: return null
-    return Parsed(Node.Icon(ctx.newId(), icon, desc, m))
+    iconKind(imageExpr)?.let { icon ->
+        return Parsed(Node.Icon(ctx.newId(), icon, desc, m, tintExpression = tintExpression))
+    }
+    return Parsed(
+        Node.Icon(
+            id = ctx.newId(),
+            contentDescription = desc,
+            modifier = m,
+            sourceArgumentName = sourceArgumentName,
+            sourceImageExpression = ctx.sourceOf(imageExpr),
+            tintExpression = tintExpression,
+        ),
+    )
 }
 
 /** `painterResource(Res.drawable.ic_<x>)` → `x`, or null for any other shape. */
@@ -437,23 +642,46 @@ private fun painterSymbol(expr: KExpr?): String? {
 private fun parseIconButton(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
     if (shape.positional.isNotEmpty()) return null
     if (!shape.named.keys.all { it in setOf("onClick", "modifier") }) return null
-    val nav = navActionOf(shape.named["onClick"] ?: return null, ctx) ?: return null
-    val m = modifierOf(shape, scopeParam) ?: return null
-    // Body must be exactly `Icon(Icons.Default.X, contentDescription = null)` —
-    // the model has no children slot here.
+    val onClickExpr = shape.named["onClick"] ?: return null
+    val parsedNav = navActionOf(onClickExpr, ctx)
+    val nav = parsedNav ?: NavAction.None
+    val onClickExpression = if (parsedNav == null) ctx.sourceOf(onClickExpr) else ""
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
+    // Body must be exactly one Icon. Canonical content maps to IconKind/symbol;
+    // custom imported expressions stay as locked source content.
     val body = shape.trailingLambda ?: return null
     if (body.params.isNotEmpty()) return null
     val only = body.body.singleExprStatement() as? KCall ?: return null
     val inner = callShape(only) ?: return null
-    if (inner.name != "Icon" || inner.trailingLambda != null || inner.positional.size != 1) return null
-    if (!inner.named.keys.all { it == "contentDescription" }) return null
-    if (inner.named["contentDescription"]?.let { stringOrNullLit(it)?.getOrNull() } != null) return null
-    painterSymbol(inner.positional[0])?.let { symbol ->
-        return Parsed(Node.IconButton(ctx.newId(), IconKind.Menu, m, symbol = symbol, navAction = nav))
+    if (inner.name != "Icon") return null
+    val parsedIcon = (parseIcon(inner, ctx, scopeParam)?.node as? Node.Icon) ?: return null
+    val canonicalContent = parsedIcon.sourceImageExpression.isEmpty() &&
+        parsedIcon.tintExpression.isEmpty() && parsedIcon.modifier.isEmpty() &&
+        parsedIcon.contentDescription.isEmpty()
+    val contentExpression = if (canonicalContent && onClickExpression.isEmpty()) "" else
+        dedent(ctx.text.substring(body.body.bodyRange.first, body.body.bodyRange.last + 1)).trim()
+    val previewSymbol = if (contentExpression.isEmpty()) "" else when {
+        parsedIcon.symbol.isNotEmpty() -> parsedIcon.symbol
+        parsedIcon.sourceImageExpression.isNotEmpty() -> sourceIconName(parsedIcon.sourceImageExpression)
+        else -> parsedIcon.icon.name
     }
-    val icon = iconKind(inner.positional[0]) ?: return null
-    return Parsed(Node.IconButton(ctx.newId(), icon, m, navAction = nav))
+    return Parsed(
+        Node.IconButton(
+            id = ctx.newId(),
+            icon = if (parsedIcon.symbol.isNotEmpty()) IconKind.Menu else parsedIcon.icon,
+            modifier = m,
+            symbol = parsedIcon.symbol, navAction = nav,
+            onClickExpression = onClickExpression,
+            contentExpression = contentExpression,
+            previewSymbol = previewSymbol,
+        ),
+    )
 }
+
+private fun sourceIconName(expression: String): String =
+    expression.substringAfterLast('.').substringBefore(')').substringBefore('(')
+        .replace(Regex("([a-z0-9])([A-Z])"), "$1_$2")
+        .lowercase()
 
 private fun parseTextField(shape: CallShape, pending: PendingState?, ctx: ParseCtx, scopeParam: String?): Parsed? {
     val v = pending?.takeIf { it.str != null } ?: return null
@@ -461,7 +689,7 @@ private fun parseTextField(shape: CallShape, pending: PendingState?, ctx: ParseC
     if (!shape.named.keys.all { it in setOf("value", "onValueChange", "modifier", "label") }) return null
     if (nameOf(shape.named["value"]) != v.name) return null
     if (!isAssignItLambda(shape.named["onValueChange"], v.name)) return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     var placeholder = ""
     shape.named["label"]?.let { label ->
         val only = singleLambdaStatement(label) as? KCall ?: return null
@@ -484,7 +712,7 @@ private inline fun parseChecked(
     if (!shape.named.keys.all { it in setOf("checked", "onCheckedChange", "modifier") }) return null
     if (nameOf(shape.named["checked"]) != v.name) return null
     if (!isAssignItLambda(shape.named["onCheckedChange"], v.name)) return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     return Parsed(build(ctx.newId(), v.bool!!, m), usedPending = true)
 }
 
@@ -494,7 +722,7 @@ private fun parseRadio(shape: CallShape, pending: PendingState?, ctx: ParseCtx, 
     if (!shape.named.keys.all { it in setOf("selected", "onClick", "modifier") }) return null
     if (nameOf(shape.named["selected"]) != v.name) return null
     if (!isToggleLambda(shape.named["onClick"], v.name)) return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     return Parsed(Node.RadioButton(ctx.newId(), v.bool!!, m), usedPending = true)
 }
 
@@ -504,7 +732,7 @@ private fun parseSlider(shape: CallShape, pending: PendingState?, ctx: ParseCtx,
     if (!shape.named.keys.all { it in setOf("value", "onValueChange", "modifier") }) return null
     if (nameOf(shape.named["value"]) != v.name) return null
     if (!isAssignItLambda(shape.named["onValueChange"], v.name)) return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     return Parsed(Node.Slider(ctx.newId(), v.float!!, m), usedPending = true)
 }
 
@@ -514,7 +742,7 @@ private fun parseButton(shape: CallShape, ctx: ParseCtx, scopeParam: String?): P
     if (shape.positional.isNotEmpty()) return null
     if (!shape.named.keys.all { it in setOf("onClick", "modifier") }) return null
     val nav = navActionOf(shape.named["onClick"] ?: return null, ctx) ?: return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     val id = ctx.newId()
     val kids = childrenOf(shape.trailingLambda, ctx) ?: return null
     return Parsed(Node.Button(id = id, modifier = m, variant = BUTTON_VARIANTS.getValue(shape.name), children = kids, navAction = nav))
@@ -527,7 +755,7 @@ private inline fun parsePlainContainer(
     build: (id: String, children: List<Node>, modifier: List<ModifierSpec>) -> Node,
 ): Parsed? {
     if (shape.positional.isNotEmpty() || !shape.named.keys.all { it == "modifier" }) return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     val id = ctx.newId()
     val kids = childrenOf(shape.trailingLambda, ctx) ?: return null
     return Parsed(build(id, kids, m))
@@ -542,7 +770,7 @@ private fun parseCard(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Par
         if (a == NavAction.None) return null // canonical plain Card omits onClick entirely
         a
     } ?: NavAction.None
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     val id = ctx.newId()
     val kids = childrenOf(shape.trailingLambda, ctx) ?: return null
     return Parsed(Node.Card(id, kids, m, navAction = nav))
@@ -552,7 +780,7 @@ private fun parseFab(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Pars
     if (shape.positional.isNotEmpty()) return null
     if (!shape.named.keys.all { it in setOf("onClick", "modifier") }) return null
     val nav = navActionOf(shape.named["onClick"] ?: return null, ctx) ?: return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     val id = ctx.newId()
     val kids = childrenOf(shape.trailingLambda, ctx) ?: return null
     return Parsed(Node.Fab(id, kids, m, navAction = nav))
@@ -561,7 +789,7 @@ private fun parseFab(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Pars
 private fun parseColumn(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
     if (shape.positional.isNotEmpty()) return null
     if (!shape.named.keys.all { it in setOf("modifier", "verticalArrangement", "horizontalAlignment") }) return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     var arrangement = VArrangement.Top
     var spacing = 0
     shape.named["verticalArrangement"]?.let { expr ->
@@ -578,7 +806,7 @@ private fun parseColumn(shape: CallShape, ctx: ParseCtx, scopeParam: String?): P
 private fun parseRow(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
     if (shape.positional.isNotEmpty()) return null
     if (!shape.named.keys.all { it in setOf("modifier", "horizontalArrangement", "verticalAlignment") }) return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     var arrangement = HArrangement.Start
     var spacing = 0
     shape.named["horizontalArrangement"]?.let { expr ->
@@ -595,7 +823,7 @@ private fun parseRow(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Pars
 private fun parseBox(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
     if (shape.positional.isNotEmpty()) return null
     if (!shape.named.keys.all { it in setOf("modifier", "contentAlignment") }) return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     val align = shape.named["contentAlignment"]
         ?.let { enumFrom(it, "Alignment") { BoxAlignment.valueOf(it) } ?: return null }
         ?: BoxAlignment.TopStart
@@ -628,7 +856,7 @@ private fun parseBottomSheet(shape: CallShape, ctx: ParseCtx, scopeParam: String
     if (shape.positional.isNotEmpty()) return null
     if (!shape.named.keys.all { it in setOf("onDismissRequest", "modifier") }) return null
     if (!isEmptyLambda(shape.named["onDismissRequest"] ?: return null)) return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     val kids = wrapperColumnChildren(shape.trailingLambda, paddingAll = 16, ctx) ?: return null
     return Parsed(Node.BottomSheet(ctx.newId(), kids, m))
 }
@@ -645,19 +873,16 @@ private fun wrapperColumnChildren(lambda: KLambda?, paddingAll: Int, ctx: ParseC
 
 private fun parseScaffold(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
     if (shape.positional.isNotEmpty()) return null
-    if (!shape.named.keys.all { it in setOf("modifier", "topBar", "bottomBar", "floatingActionButton") }) return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     // Slot args must be lambdas when present.
     for (slotName in listOf("topBar", "bottomBar", "floatingActionButton")) {
         if (shape.named.containsKey(slotName) && shape.lambdaArg(slotName) == null) return null
     }
-    // Only codegen's canonical content param survives round trips: RawCode
-    // children may reference it by name, and regeneration always calls it
-    // `innerPadding`.
+    // Preserve any simple authored content parameter. Opaque modifiers and
+    // RawCode children may refer to it, so codegen must retain the same name.
     val content = shape.trailingLambda
     val param = content?.params?.singleOrNull()
     if (content != null && content.params.size > 1) return null
-    if (param != null && param != "innerPadding") return null
 
     val id = ctx.newId()
     fun slot(argName: String, slotId: String, slotLabel: String): Node.Slot? {
@@ -671,13 +896,23 @@ private fun parseScaffold(shape: CallShape, ctx: ParseCtx, scopeParam: String?):
     val bottomBar = slot("bottomBar", "bottomBar", "bottomBar") ?: return null
     val fab = slot("floatingActionButton", "fab", "fab") ?: return null
     val kids = content?.let { parseBlock(it.body, ctx, scopeParam = param) } ?: emptyList()
-    return Parsed(Node.Scaffold(id, kids, topBar, bottomBar, fab, m))
+    val modeled = setOf("modifier", "topBar", "bottomBar", "floatingActionButton")
+    val sourceArguments = shape.named
+        .filterKeys { it !in modeled }
+        .mapValues { (_, expr) -> ctx.sourceOf(expr) }
+    return Parsed(
+        Node.Scaffold(
+            id, kids, topBar, bottomBar, fab, m,
+            contentParameter = param.orEmpty(),
+            sourceArguments = sourceArguments,
+        ),
+    )
 }
 
 private fun parseTopAppBar(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
     if (shape.trailingLambda != null || shape.positional.isNotEmpty()) return null
-    if (!shape.named.keys.all { it in setOf("title", "navigationIcon", "actions", "modifier") }) return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    if (!shape.named.keys.all { it in setOf("title", "navigationIcon", "actions", "modifier", "colors") }) return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     val id = ctx.newId()
     val title = shape.named["title"]?.let { singleSlotNode(it, ctx) ?: return null }?.firstOrNull()
     val nav = shape.named["navigationIcon"]?.let { singleSlotNode(it, ctx) ?: return null }?.firstOrNull()
@@ -686,7 +921,12 @@ private fun parseTopAppBar(shape: CallShape, ctx: ParseCtx, scopeParam: String?)
         if (lambda.params.isNotEmpty()) return null
         parseBlock(lambda.body, ctx)
     } ?: emptyList()
-    return Parsed(Node.TopAppBar(id, title, nav, actions, m, TOP_BAR_VARIANTS.getValue(shape.name)))
+    return Parsed(
+        Node.TopAppBar(
+            id, title, nav, actions, m, TOP_BAR_VARIANTS.getValue(shape.name),
+            colorsExpression = shape.named["colors"]?.let(ctx::sourceOf).orEmpty(),
+        ),
+    )
 }
 
 /**
@@ -795,7 +1035,7 @@ private fun parseTabRow(shape: CallShape, pending: PendingState?, ctx: ParseCtx,
     if (shape.positional.isNotEmpty()) return null
     if (!shape.named.keys.all { it in setOf("selectedTabIndex", "modifier") }) return null
     if (nameOf(shape.named["selectedTabIndex"]) != v.name) return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     val body = shape.trailingLambda ?: return null
     if (body.params.isNotEmpty()) return null
     val tabs = mutableListOf<Node>()
@@ -807,7 +1047,7 @@ private fun parseTabRow(shape: CallShape, pending: PendingState?, ctx: ParseCtx,
         if (intEqValue(ts.named["selected"], v.name) != i) return null
         if (assignIntLambda(ts.named["onClick"], v.name) != i) return null
         val label = lambdaTextLabel(ts.named["text"]) ?: return null
-        val tm = modifierOf(ts, null) ?: return null
+        val tm = modifierOf(ts, ctx, null) ?: return null
         tabs += Node.Tab(ctx.newId(), label, tm)
     }
     return Parsed(Node.TabRow(ctx.newId(), tabs, selectedIndex = v.int!!, modifier = m), usedPending = true)
@@ -819,7 +1059,7 @@ private fun parseStandaloneTab(shape: CallShape, ctx: ParseCtx, scopeParam: Stri
     if (boolLit(shape.named["selected"]) != false) return null
     if (!isEmptyLambda(shape.named["onClick"] ?: return null)) return null
     val label = lambdaTextLabel(shape.named["text"]) ?: return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     return Parsed(Node.Tab(ctx.newId(), label, m))
 }
 
@@ -827,7 +1067,7 @@ private fun parseNavigationBar(shape: CallShape, pending: PendingState?, ctx: Pa
     val v = pending?.takeIf { it.int != null } ?: return null
     if (shape.positional.isNotEmpty()) return null
     if (!shape.named.keys.all { it == "modifier" }) return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     val body = shape.trailingLambda ?: return null
     if (body.params.isNotEmpty()) return null
     val items = mutableListOf<Node>()
@@ -840,7 +1080,7 @@ private fun parseNavigationBar(shape: CallShape, pending: PendingState?, ctx: Pa
         if (assignIntLambda(ns.named["onClick"], v.name) != i) return null
         val symbol = lambdaIconSymbol(ns.named["icon"] ?: return null) ?: return null
         val label = lambdaTextLabel(ns.named["label"]) ?: return null
-        val im = modifierOf(ns, null) ?: return null
+        val im = modifierOf(ns, ctx, null) ?: return null
         items += Node.NavItem(ctx.newId(), label, symbol, im)
     }
     return Parsed(Node.NavigationBar(ctx.newId(), items, selectedIndex = v.int!!, modifier = m), usedPending = true)
@@ -858,7 +1098,7 @@ private fun parseChip(shape: CallShape, pending: PendingState?, ctx: ParseCtx, s
     if (!shape.named.keys.all { it in allowed }) return null
     val label = lambdaTextLabel(shape.named["label"]) ?: return null
     val symbol = shape.named[iconParam]?.let { lambdaIconSymbol(it) ?: return null } ?: ""
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     if (stateful) {
         // Toggle form: hoisted state var + toggle lambda (no nav action).
         val v = pending?.takeIf { it.bool != null }
@@ -892,7 +1132,7 @@ private fun parseBadgedBox(shape: CallShape, ctx: ParseCtx, scopeParam: String?)
             stringLit(tsh.positional[0]) ?: return null
         }
     }
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     val kids = childrenOf(shape.trailingLambda, ctx) ?: return null
     return Parsed(Node.BadgedBox(ctx.newId(), badge, kids, m))
 }
@@ -934,13 +1174,20 @@ private fun intFromFloat(expr: KExpr?): Int? =
 private fun parseCanvas(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
     if (shape.positional.isNotEmpty()) return null
     if (!shape.named.keys.all { it == "modifier" }) return null
-    val m = modifierOf(shape, scopeParam) ?: return null
+    val m = modifierOf(shape, ctx, scopeParam) ?: return null
     val body = shape.trailingLambda ?: return null
     if (body.params.isNotEmpty()) return null
     val shapes = mutableListOf<Node>()
     for (stmt in body.body.statements) {
-        val call = (stmt as? KExprStatement)?.expr?.unparen() as? KCall ?: return null
-        shapes += parseShapeCall(call, ctx) ?: return null
+        val call = (stmt as? KExprStatement)?.expr?.unparen() as? KCall
+        val shape = call?.let { parseShapeCall(it, ctx) }
+        if (shape == null) {
+            // Custom draw code is still a real Canvas. Keep its body opaque so
+            // it occupies/render its authored layout without risking data loss.
+            val raw = rawCodeNode(ctx, body.body.bodyRange.first, body.body.bodyRange.last + 1)
+            return Parsed(Node.Canvas(ctx.newId(), listOf(raw), m))
+        }
+        shapes += shape
     }
     return Parsed(Node.Canvas(ctx.newId(), shapes, m))
 }

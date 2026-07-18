@@ -2,6 +2,7 @@ package composer.codeparse
 
 import composer.model.CornerUnit
 import composer.model.ThemeColorRef
+import kotlin.math.roundToInt
 
 /**
  * Literal/expression readers for the syntactic (no-resolve) parser. Every reader
@@ -147,6 +148,37 @@ internal fun colorValue(expr: KExpr?): Long? {
         }
     }
     e.asDot()?.let { dot ->
+        // Color.White / Black / … — the stable constants from Compose UI.
+        val constant = nameOf(dot.selector)
+        if (nameOf(dot.receiver) == "Color") {
+            return when (constant) {
+                "Black" -> 0xFF000000
+                "DarkGray" -> 0xFF444444
+                "Gray" -> 0xFF888888
+                "LightGray" -> 0xFFCCCCCC
+                "White" -> 0xFFFFFFFF
+                "Red" -> 0xFFFF0000
+                "Green" -> 0xFF00FF00
+                "Blue" -> 0xFF0000FF
+                "Yellow" -> 0xFFFFFF00
+                "Cyan" -> 0xFF00FFFF
+                "Magenta" -> 0xFFFF00FF
+                "Transparent" -> 0x00000000
+                else -> null
+            }
+        }
+
+        // Any supported color followed by `.copy(alpha = literal)`.
+        val copy = dot.selector?.unparen() as? KCall
+        if (copy != null && callName(copy) == "copy") {
+            val shape = callShape(copy) ?: return null
+            if (shape.trailingLambda != null || shape.positional.isNotEmpty() || shape.named.keys != setOf("alpha")) return null
+            val base = colorValue(dot.receiver) ?: return null
+            val alpha = floatLit(shape.named.getValue("alpha"))?.coerceIn(0f, 1f) ?: return null
+            val a = (alpha * 255f).roundToInt().toLong()
+            return (base and 0x00FFFFFF) or (a shl 24)
+        }
+
         // MaterialTheme.colorScheme.token
         val token = nameOf(dot.selector) ?: return null
         val inner = dot.receiver.unparen().asDot() ?: return null
@@ -164,6 +196,7 @@ internal fun colorValue(expr: KExpr?): Long? {
 internal fun shapeCorner(expr: KExpr?): Pair<Int, CornerUnit>? {
     val e = expr?.unparen() ?: return null
     if (nameOf(e) == "RectangleShape") return 0 to CornerUnit.Dp
+    if (nameOf(e) == "CircleShape") return 50 to CornerUnit.Percent
     val call = e as? KCall ?: return null
     if (callName(call) != "RoundedCornerShape") return null
     val arg = call.singlePositionalArg() ?: return null

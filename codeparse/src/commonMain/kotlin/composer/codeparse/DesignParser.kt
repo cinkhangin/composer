@@ -132,20 +132,46 @@ object DesignParser {
         }
         if (screens.isEmpty()) return null
 
+        // In module mode the caller performs this after every file has been
+        // parsed, so cross-file instances can participate in reachability.
+        val renderableIds = if (external == null) {
+            renderableScreenIds(screens)
+        } else {
+            screens.mapTo(linkedSetOf()) { it.id }
+        }
+        if (renderableIds.isEmpty()) return null
+        val skippedIds = screens.mapTo(linkedSetOf()) { it.id } - renderableIds
+        val retainedScreens = screens
+            .filter { it.id in renderableIds }
+            .mapIndexed { index, screen ->
+                (screen.preserveSkippedInstances(skippedIds, text, ctx.sourceRanges) as Node.Composable)
+                    .copy(x = index * 470)
+            }
+        val retainedById = retainedScreens.associateBy { it.id }
+        val retainedFunctions = parsedFns
+            .filter { it.screenId in renderableIds }
+            .map { fn -> fn.copy(treeHash = ParsedFunction.hashOf(retainedById.getValue(fn.screenId))) }
+
         val artboard = Node.Artboard(
             id = "artboard",
-            composables = screens,
-            layerNames = layerNames,
-            componentIds = ctx.referencedScreenIds.toList(),
+            composables = retainedScreens,
+            layerNames = layerNames.filterKeys { it in renderableIds },
+            // External/module parsing resolves targets outside this file; the
+            // module/app aggregator filters them after it sees every screen.
+            componentIds = if (external == null) {
+                ctx.referencedScreenIds.filter { it in renderableIds }
+            } else {
+                ctx.referencedScreenIds.toList()
+            },
         )
         return ParsedDesign(
             artboard = artboard,
-            functions = parsedFns,
+            functions = retainedFunctions,
             existingImports = file.imports.map { it.pathStr },
             importInsertOffset = importInsertOffset(file),
             topLevelFunctionNames = file.declarations.filterIsInstance<KFunctionDecl>().mapNotNull { it.name },
             sourceRanges = ctx.sourceRanges.toMap(),
-            hasNonScreenDeclarations = file.declarations.any {
+            hasNonScreenDeclarations = skippedIds.isNotEmpty() || file.declarations.any {
                 isForeignDeclaration(it) ||
                     (external != null && it is KFunctionDecl && isScreenFunction(it) &&
                         !isAppThemeWrapper(it) &&
