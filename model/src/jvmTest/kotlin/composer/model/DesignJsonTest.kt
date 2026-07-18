@@ -66,7 +66,13 @@ class DesignJsonTest {
         val sourceBacked = Node.Text(
             id = "dynamic",
             text = "Hello name!",
-            modifier = listOf(ModifierSpec.External("modifier")),
+            modifier = listOf(
+                ModifierSpec.External(
+                    "modifier.fillMaxWidth().customLayout()",
+                    opaque = true,
+                    preview = listOf(ModifierSpec.FillMaxWidth()),
+                ),
+            ),
             textExpression = "\"Hello ${'$'}name!\"",
         )
         val json = DesignJson.encode(sourceBacked)

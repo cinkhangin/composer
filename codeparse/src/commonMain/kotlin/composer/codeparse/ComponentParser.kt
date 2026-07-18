@@ -14,6 +14,7 @@ import composer.model.SourcePreviewLayout
 import composer.model.TextAlignment
 import composer.model.TextFontFamily
 import composer.model.TextWeight
+import composer.model.ThemeColorRef
 import composer.model.TopAppBarVariant
 import composer.model.VAlignment
 import composer.model.VArrangement
@@ -273,8 +274,18 @@ private fun parseComponent(
     ctx: ParseCtx,
     scopeParam: String?,
 ): Parsed? {
-    val call = (stmt as? KExprStatement)?.expr?.unparen() as? KCall ?: return null
-    val shape = callShape(call) ?: return null
+    val expression = (stmt as? KExprStatement)?.expr?.unparen() ?: return null
+    val call = when (expression) {
+        is KCall -> expression
+        is KDot -> expression.selector?.unparen() as? KCall
+        else -> null
+    } ?: return null
+    val sourceRange = expression.range
+    val shape = callShape(call) ?: return if (comments.isEmpty()) {
+        sourceCallShape(call)?.let { parseSourceContainer(call, it, ctx, sourceRange) }
+    } else {
+        null
+    }
     if (shape.name in ctx.blockedNames) return null
 
     // Comment consumption contract: components may consume ONE special comment
@@ -286,7 +297,7 @@ private fun parseComponent(
 
     if (hasPlainComments) return null
 
-    val node: Parsed? = when (shape.name) {
+    val node: Parsed? = if (expression is KCall) when (shape.name) {
         "Text" -> parseText(shape, ctx, scopeParam, specialComment)
         in BUTTON_VARIANTS -> parseButton(shape, ctx, scopeParam)
         "Spacer" -> simpleLeaf(shape, ctx, scopeParam) { id, m -> Node.Spacer(id, m) }
@@ -318,7 +329,7 @@ private fun parseComponent(
         "Row" -> parseRow(shape, ctx, scopeParam)
         "Box" -> parseBox(shape, ctx, scopeParam)
         else -> null
-    }
+    } else null
     if (node != null) return node
 
     // A call to another parsed composable is a visual component instance even
@@ -341,18 +352,29 @@ private fun parseComponent(
     // Unsupported source wrappers can still contain ordinary Compose UI. Keep
     // the wrapper's exact Kotlin locked while exposing a static child template
     // to the designer. Calls with no visual descendants remain plain RawCode.
-    if (specialComment == null) parseSourceContainer(call, shape, ctx)?.let { return it }
+    if (specialComment == null) parseSourceContainer(call, shape, ctx, sourceRange)?.let { return it }
     return null
 }
 
-private fun parseSourceContainer(call: KCall, shape: CallShape, ctx: ParseCtx): Parsed? {
-    val lambda = shape.trailingLambda ?: return null
-    val kids = parseBlock(lambda.body, ctx)
-    if (kids.none(::isSourceRenderable)) return null
+private fun parseSourceContainer(
+    call: KCall,
+    shape: CallShape,
+    ctx: ParseCtx,
+    sourceRange: IntRange = call.range,
+): Parsed? {
+    val candidates = buildList {
+        shape.trailingLambda?.let(::add)
+        shape.positional.forEach { addAll(it.sourceLambdas()) }
+        shape.named.values.forEach { addAll(it.sourceLambdas()) }
+    }
+    val (lambda, kids) = candidates.firstNotNullOfOrNull { candidate ->
+        parseBlock(candidate.body, ctx).takeIf { it.any(::isSourceRenderable) }
+            ?.let { candidate to it }
+    } ?: return null
     val bodyStart = lambda.body.bodyRange.first
     val bodyEnd = lambda.body.bodyRange.last + 1
-    val prefix = captureSourceFragment(ctx.text, call.range.first, bodyStart).trimEnd()
-    val suffix = dedent(ctx.text.substring(bodyEnd, call.range.last + 1)).trimStart()
+    val prefix = captureSourceFragment(ctx.text, sourceRange.first, bodyStart).trimEnd()
+    val suffix = dedent(ctx.text.substring(bodyEnd, sourceRange.last + 1)).trimStart()
     if (prefix.isBlank() || suffix.isBlank()) return null
     val layout = when {
         shape.name.contains("Row", ignoreCase = true) ||
@@ -362,6 +384,16 @@ private fun parseSourceContainer(call: KCall, shape: CallShape, ctx: ParseCtx): 
         else -> SourcePreviewLayout.Box
     }
     return Parsed(Node.SourceContainer(ctx.newId(), shape.name, prefix, suffix, kids, layout))
+}
+
+/** Lambdas nested in a call argument, in source/outer-first order. */
+private fun KExpr.sourceLambdas(): List<KLambda> = when (val expr = unparen()) {
+    is KLambda -> listOf(expr)
+    is KCall -> expr.trailingLambdas + expr.args.flatMap { it.expr.sourceLambdas() }
+    is KDot -> expr.receiver.sourceLambdas() + expr.selector?.sourceLambdas().orEmpty()
+    is KPrefix -> expr.base?.sourceLambdas().orEmpty()
+    is KBinary -> expr.left?.sourceLambdas().orEmpty() + expr.right?.sourceLambdas().orEmpty()
+    else -> emptyList()
 }
 
 private fun captureSourceFragment(text: String, start: Int, end: Int): String {
@@ -398,7 +430,13 @@ private fun modifierOf(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Li
         // the static designer cannot evaluate. Keep the exact expression as an
         // opaque source modifier: renderer safely treats it as Modifier while
         // codegen writes it back byte-for-byte if the component is edited.
-        ?: listOf(ModifierSpec.External(ctx.sourceOf(expr), opaque = true))
+        ?: listOf(
+            ModifierSpec.External(
+                expression = ctx.sourceOf(expr),
+                opaque = true,
+                preview = parseModifierPreview(expr, scopeParam),
+            ),
+        )
 }
 
 private inline fun simpleLeaf(
@@ -430,11 +468,12 @@ private fun parseText(shape: CallShape, ctx: ParseCtx, scopeParam: String?, comm
     }
     val literal = stringLit(textExpr)
     val textExpression = if (literal == null) ctx.sourceOf(textExpr) else ""
-    val text = literal ?: stringPreview(textExpr) ?: textExpression
+    val text = literal ?: stringPreview(textExpr) ?: dynamicTextPreview(textExpression)
     val m = modifierOf(shape, ctx, scopeParam) ?: return null
     val colorSource = shape.named["color"]
-    val color = colorSource?.let(::colorValue)
-    val colorExpression = colorSource?.takeIf { color == null }?.let(ctx::sourceOf).orEmpty()
+    val authoredColor = colorSource?.let(::colorValue)
+    val colorExpression = colorSource?.takeIf { authoredColor == null }?.let(ctx::sourceOf).orEmpty()
+    val color = authoredColor ?: sourceColorPreview(colorExpression)
     val fontSize = shape.named["fontSize"]?.let { spInt(it) ?: return null } ?: 0
     val fontWeight = shape.named["fontWeight"]?.let { enumFrom(it, "FontWeight") { TextWeight.valueOf(it) } ?: return null }
         ?: TextWeight.Normal
@@ -461,6 +500,54 @@ private fun parseText(shape: CallShape, ctx: ParseCtx, scopeParam: String?, comm
             styleExpression = shape.named["style"]?.let(ctx::sourceOf).orEmpty(),
         ),
     )
+}
+
+/** A readable, non-executing label for source-backed text such as an if expression. */
+private fun dynamicTextPreview(source: String): String {
+    val trimmed = source.trim()
+    if (trimmed.startsWith("if")) {
+        val close = trimmed.indexOf(')')
+        val elseIndex = trimmed.indexOf("else", startIndex = (close + 1).coerceAtLeast(0))
+        if (close >= 0 && elseIndex > close) {
+            val thenBranch = trimmed.substring(close + 1, elseIndex).trim()
+            if (thenBranch.startsWith('"') && thenBranch.endsWith('"') && thenBranch.length >= 2) {
+                return thenBranch.substring(1, thenBranch.length - 1)
+            }
+            if (thenBranch.matches(Regex("[A-Za-z_][A-Za-z0-9_]*"))) return thenBranch
+        }
+    }
+    return trimmed
+}
+
+/** First statically recognizable color in a runtime expression, for preview only. */
+private fun sourceColorPreview(source: String): Long? {
+    if (source.isBlank()) return null
+    val pattern = Regex(
+        "Color\\(\\s*(0[xX][0-9A-Fa-f_]+)\\s*\\)|" +
+            "Color\\.(Black|DarkGray|Gray|LightGray|White|Red|Green|Blue|Yellow|Cyan|Magenta|Transparent)|" +
+            "MaterialTheme\\.colorScheme\\.([A-Za-z_][A-Za-z0-9_]*)",
+    )
+    val match = pattern.find(source) ?: return null
+    match.groups[1]?.value?.replace("_", "")?.removePrefix("0x")?.removePrefix("0X")
+        ?.toULongOrNull(16)?.toLong()?.let { return it }
+    match.groups[2]?.value?.let { name ->
+        return when (name) {
+            "Black" -> 0xFF000000
+            "DarkGray" -> 0xFF444444
+            "Gray" -> 0xFF888888
+            "LightGray" -> 0xFFCCCCCC
+            "White" -> 0xFFFFFFFF
+            "Red" -> 0xFFFF0000
+            "Green" -> 0xFF00FF00
+            "Blue" -> 0xFF0000FF
+            "Yellow" -> 0xFFFFFF00
+            "Cyan" -> 0xFF00FFFF
+            "Magenta" -> 0xFFFF00FF
+            "Transparent" -> 0x00000000
+            else -> null
+        }
+    }
+    return match.groups[3]?.value?.let(ThemeColorRef::token)
 }
 
 private fun parseAsyncImage(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
@@ -1092,8 +1179,15 @@ private fun parseCanvas(shape: CallShape, ctx: ParseCtx, scopeParam: String?): P
     if (body.params.isNotEmpty()) return null
     val shapes = mutableListOf<Node>()
     for (stmt in body.body.statements) {
-        val call = (stmt as? KExprStatement)?.expr?.unparen() as? KCall ?: return null
-        shapes += parseShapeCall(call, ctx) ?: return null
+        val call = (stmt as? KExprStatement)?.expr?.unparen() as? KCall
+        val shape = call?.let { parseShapeCall(it, ctx) }
+        if (shape == null) {
+            // Custom draw code is still a real Canvas. Keep its body opaque so
+            // it occupies/render its authored layout without risking data loss.
+            val raw = rawCodeNode(ctx, body.body.bodyRange.first, body.body.bodyRange.last + 1)
+            return Parsed(Node.Canvas(ctx.newId(), listOf(raw), m))
+        }
+        shapes += shape
     }
     return Parsed(Node.Canvas(ctx.newId(), shapes, m))
 }

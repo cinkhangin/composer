@@ -3,6 +3,7 @@ package composer.codeparse
 import composer.codegen.CodeGen
 import composer.model.ModifierSpec
 import composer.model.Node
+import composer.model.childNodes
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -107,16 +108,118 @@ class ParserCasesTest {
     fun runtime_modifier_chain_is_kept_as_opaque_source_while_children_render() {
         val screen = parseOne(
             """
-            Box(modifier = Modifier.offset(y = runtimeOffset).drawBehind { customDraw() }) {
+            Box(modifier = Modifier.fillMaxWidth().offset(y = runtimeOffset).padding(12.dp).drawBehind { customDraw() }) {
                 Text("Visible child")
             }
             """.trimIndent(),
         )
         val box = screen.children.single() as Node.Box
         val source = box.modifier.single() as ModifierSpec.External
-        assertEquals("Modifier.offset(y = runtimeOffset).drawBehind { customDraw() }", source.expression)
+        assertEquals(
+            "Modifier.fillMaxWidth().offset(y = runtimeOffset).padding(12.dp).drawBehind { customDraw() }",
+            source.expression,
+        )
         assertTrue(source.opaque)
+        assertEquals(
+            listOf(ModifierSpec.FillMaxWidth(), ModifierSpec.Padding(12)),
+            source.preview,
+        )
         assertEquals("Visible child", (box.children.single() as Node.Text).text)
+    }
+
+    @Test
+    fun decimal_aspect_ratios_and_named_size_render_statically() {
+        val screen = parseOne(
+            """
+            Column {
+                Box(modifier = Modifier.aspectRatio(1.2f))
+                Box(modifier = Modifier.aspectRatio(1f / 1.2f))
+                Box(modifier = Modifier.size(width = 40.dp, height = 70.dp))
+            }
+            """.trimIndent(),
+        )
+        val children = (screen.children.single() as Node.Column).children
+        assertEquals(ModifierSpec.AspectRatio(6, 5), children[0].modifier.single())
+        assertEquals(ModifierSpec.AspectRatio(5, 6), children[1].modifier.single())
+        assertEquals(ModifierSpec.Size(40, 70), children[2].modifier.single())
+    }
+
+    @Test
+    fun conditional_component_arguments_remain_renderable_source_values() {
+        val screen = parseOne(
+            """
+            Column {
+                Text(
+                    text = if (visible) amount else "****",
+                    color = if (light) Color.Black else Color.White,
+                    fontSize = 16.sp,
+                )
+                IconButton(onClick = toggle) {
+                    Icon(
+                        imageVector = if (visible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                        contentDescription = "Toggle",
+                    )
+                }
+            }
+            """.trimIndent(),
+        )
+        val children = (screen.children.single() as Node.Column).children
+        val text = children[0] as Node.Text
+        assertEquals("amount", text.text)
+        assertEquals("if (visible) amount else \"****\"", text.textExpression)
+        assertEquals("if (light) Color.Black else Color.White", text.colorExpression)
+        assertEquals(0xFF000000, text.color)
+        val button = children[1] as Node.IconButton
+        assertEquals("visibility_off", button.previewSymbol)
+        assertTrue("if (visible)" in button.contentExpression)
+    }
+
+    @Test
+    fun loops_and_named_dsl_lambdas_expose_renderable_descendants() {
+        val screen = parseOne(
+            """
+            Column {
+                repeat(items.size) { index ->
+                    val color = if (index == 0) Color.Red else Color.Blue
+                    Box(modifier = Modifier.fillMaxWidth().background(color)) { Text("Item") }
+                }
+                NavDisplay(
+                    entryProvider = entryProvider {
+                        entry<Home> { Text("Home") }
+                    },
+                )
+            }
+            """.trimIndent(),
+        )
+        val children = (screen.children.single() as Node.Column).children
+        val repeat = children[0] as Node.SourceContainer
+        assertTrue(repeat.children.any { it is Node.Box })
+        val nav = children[1] as Node.SourceContainer
+        assertTrue(nav.children.any { child -> child.childNodes().any { it is Node.Text } })
+        val generated = CodeGen.generate(screen)
+        assertTrue("repeat(items.size)" in generated)
+        assertTrue("NavDisplay(" in generated)
+        assertTrue("entry<Home>" in generated)
+    }
+
+    @Test
+    fun custom_canvas_body_stays_visible_and_source_preserved() {
+        val screen = parseOne(
+            """
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val spacing = 50.dp.toPx()
+                for (x in 0..10) {
+                    drawLine(Color.Black, Offset(x * spacing, 0f), Offset(x * spacing, size.height))
+                }
+            }
+            """.trimIndent(),
+        )
+        val canvas = screen.children.single() as Node.Canvas
+        val raw = canvas.children.single() as Node.RawCode
+        assertTrue("for (x in 0..10)" in raw.code)
+        val generated = CodeGen.generate(screen)
+        assertTrue("val spacing = 50.dp.toPx()" in generated)
+        assertTrue("drawLine(Color.Black" in generated)
     }
 
     @Test

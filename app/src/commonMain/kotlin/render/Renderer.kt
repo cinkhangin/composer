@@ -180,8 +180,9 @@ fun RenderNode(
     // background). Otherwise the innermost onGloballyPositioned measured the content area
     // *inside* the padding, so a padded container's outline hugged its content, not its box.
     val scheme = MaterialTheme.colorScheme
-    val offsetMod = node.modifier.filterIsInstance<ModifierSpec.Offset>().toModifier(scheme, scaffoldPadding)
-    val innerMod = node.modifier.filterNot { it is ModifierSpec.Offset }.toModifier(scheme, scaffoldPadding)
+    val previewModifiers = node.modifier.previewSpecs()
+    val offsetMod = previewModifiers.filterIsInstance<ModifierSpec.Offset>().toModifier(scheme, scaffoldPadding)
+    val innerMod = previewModifiers.filterNot { it is ModifierSpec.Offset }.toModifier(scheme, scaffoldPadding)
     val modifier = scopeModifier
         .then(offsetMod)
         .then(selectionModifier(node, onSelect))
@@ -602,7 +603,7 @@ fun RenderNode(
             // created in the designer has no marker, so preserve the historical
             // automatic prefix that keeps it clear of Scaffold bars.
             node.children.forEach { child ->
-                val hasAuthoredPadding = child.modifier.any { it is ModifierSpec.ScaffoldPadding }
+                val hasAuthoredPadding = child.modifier.previewSpecs().any { it is ModifierSpec.ScaffoldPadding }
                 RenderNode(
                     child,
                     selectedId,
@@ -638,18 +639,18 @@ fun RenderNode(
 }
 
 private fun Node.weightValue(): Float? =
-    modifier.firstNotNullOfOrNull { (it as? ModifierSpec.Weight)?.value }?.takeIf { it > 0f }
+    modifier.previewSpecs().firstNotNullOfOrNull { (it as? ModifierSpec.Weight)?.value }?.takeIf { it > 0f }
 
 // align() is a scope member like weight — read per scope kind at the container's
 // call site (mirrors codegen's projectAlign: mismatched fields are ignored).
 private fun Node.alignBox(): BoxAlignment? =
-    modifier.firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.box }
+    modifier.previewSpecs().firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.box }
 
 private fun Node.alignVertical(): VAlignment? =
-    modifier.firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.vertical }
+    modifier.previewSpecs().firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.vertical }
 
 private fun Node.alignHorizontal(): HAlignment? =
-    modifier.firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.horizontal }
+    modifier.previewSpecs().firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.horizontal }
 
 private fun IconKind.toVector() = when (this) {
     IconKind.Menu -> Icons.Default.Menu
@@ -791,8 +792,9 @@ private fun InteractiveNode(
     // and measured bounds move with the component), everything else (size, background, …)
     // styles the inner component. Otherwise a moved component's hit-area lagged its visual.
     val scheme = MaterialTheme.colorScheme
-    val offsetMod = node.modifier.filterIsInstance<ModifierSpec.Offset>().toModifier(scheme)
-    val innerMod = node.modifier.filterNot { it is ModifierSpec.Offset }.toModifier(scheme)
+    val previewModifiers = node.modifier.previewSpecs()
+    val offsetMod = previewModifiers.filterIsInstance<ModifierSpec.Offset>().toModifier(scheme)
+    val innerMod = previewModifiers.filterNot { it is ModifierSpec.Offset }.toModifier(scheme)
     Box(modifier = scopeModifier.then(offsetMod).onGloballyPositioned { onBounds(node.id, it) }) {
         content(innerMod)
         Box(
@@ -871,7 +873,11 @@ fun themeColor(value: Long, scheme: ColorScheme): Color = when (ThemeColorRef.to
 fun List<ModifierSpec>.toModifier(scheme: ColorScheme, scaffoldPadding: PaddingValues? = null): Modifier =
     fold(Modifier as Modifier) { acc, spec ->
         when (spec) {
-            is ModifierSpec.External -> acc // source parameter; preview uses its default Modifier value
+            is ModifierSpec.External -> if (spec.opaque) {
+                acc.then(spec.preview.toModifier(scheme, scaffoldPadding))
+            } else {
+                acc // source parameter; preview uses its default Modifier value
+            }
             is ModifierSpec.ScaffoldPadding -> if (scaffoldPadding != null) acc.padding(scaffoldPadding) else acc
             is ModifierSpec.Padding -> when (spec.mode) {
                 PaddingMode.All -> acc.padding(spec.all.dp)
@@ -937,6 +943,11 @@ fun List<ModifierSpec>.toModifier(scheme: ColorScheme, scaffoldPadding: PaddingV
             is ModifierSpec.FillMaxSize -> acc.fillMaxSize(spec.fraction)
         }
     }
+
+/** Flatten safe static projections from opaque source chains for scope handling. */
+private fun List<ModifierSpec>.previewSpecs(): List<ModifierSpec> = flatMap { spec ->
+    if (spec is ModifierSpec.External && spec.opaque) spec.preview.previewSpecs() else listOf(spec)
+}
 
 
 /** A canvas shape's drawn extent in dp: (x, y, w, h); null for unknown nodes. */

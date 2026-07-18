@@ -402,7 +402,11 @@ private fun PaddingModeRow(mode: PaddingMode, onPick: (PaddingMode) -> Unit) {
 private fun ModifierParams(spec: ModifierSpec, onChange: (ModifierSpec) -> Unit) {
     when (spec) {
         is ModifierSpec.External -> BasicText(
-            "Source modifier: ${spec.expression}. Previewed as Modifier.",
+            if (spec.preview.isEmpty()) {
+                "Source modifier: ${spec.expression}. Previewed as Modifier."
+            } else {
+                "Source modifier: ${spec.expression}. ${spec.preview.size} static call(s) previewed."
+            },
             style = TextStyle(color = Tk.textMuted, fontSize = 11.sp),
         )
         is ModifierSpec.ScaffoldPadding -> BasicText(

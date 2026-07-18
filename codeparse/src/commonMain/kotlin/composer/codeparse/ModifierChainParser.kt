@@ -7,6 +7,7 @@ import composer.model.HAlignment
 import composer.model.ModifierSpec
 import composer.model.PaddingMode
 import composer.model.VAlignment
+import kotlin.math.roundToInt
 
 /**
  * `Modifier.padding(16.dp).fillMaxWidth()…` → ordered [ModifierSpec] list — the
@@ -21,9 +22,25 @@ import composer.model.VAlignment
  * [ModifierSpec.ScaffoldPadding] marker so authored suffix padding is not moved.
  */
 internal fun parseModifierChain(expr: KExpr, scopeParam: String? = null): List<ModifierSpec>? {
+    return parseModifierChain(expr, scopeParam, skipUnknown = false)
+}
+
+/**
+ * Recover the statically evaluable calls from a runtime-dependent chain. The
+ * owning [ModifierSpec.External] remains the write-back authority; this list is
+ * only a safe preview projection, so unknown calls are deliberate no-ops.
+ */
+internal fun parseModifierPreview(expr: KExpr, scopeParam: String? = null): List<ModifierSpec> =
+    parseModifierChain(expr, scopeParam, skipUnknown = true).orEmpty()
+
+private fun parseModifierChain(
+    expr: KExpr,
+    scopeParam: String?,
+    skipUnknown: Boolean,
+): List<ModifierSpec>? {
     val (root, calls) = chainCalls(expr.unparen()) ?: return null
     val specs = mutableListOf<ModifierSpec>()
-    if (root != "Modifier") specs += ModifierSpec.External(root)
+    if (!skipUnknown && root != "Modifier") specs += ModifierSpec.External(root)
     val scopePaddingCount = if (scopeParam == null) 0 else calls.count { isScopePadding(it, scopeParam) }
     calls.forEachIndexed { index, call ->
         if (scopeParam != null && isScopePadding(call, scopeParam)) {
@@ -35,7 +52,9 @@ internal fun parseModifierChain(expr: KExpr, scopeParam: String? = null): List<M
             specs += ModifierSpec.ScaffoldPadding(scopeParam)
             return@forEachIndexed
         }
-        specs += parseModifierCall(call) ?: return null
+        val parsed = parseModifierCall(call)
+        if (parsed != null) specs += parsed
+        else if (!skipUnknown) return null
     }
     return specs
 }
@@ -64,6 +83,11 @@ private fun parseModifierCall(call: KCall): ModifierSpec? {
     return when (shape.name) {
         "padding" -> parsePadding(shape)
         "size" -> when {
+            shape.positional.isEmpty() && shape.named.keys == setOf("width", "height") -> {
+                val w = dpInt(shape.named.getValue("width")) ?: return null
+                val h = dpInt(shape.named.getValue("height")) ?: return null
+                ModifierSpec.Size(w, h)
+            }
             shape.named.isNotEmpty() -> null
             shape.positional.size == 2 -> {
                 val w = dpInt(shape.positional[0]) ?: return null
@@ -223,13 +247,37 @@ private fun parseBackground(shape: CallShape): ModifierSpec.Background? {
 }
 
 private fun parseAspectRatio(shape: CallShape): ModifierSpec.AspectRatio? {
-    val arg = single(shape)?.unparen() as? KBinary ?: return null
-    if (arg.op != "/") return null
-    val w = floatLit(arg.left) ?: return null
-    val h = floatLit(arg.right) ?: return null
-    // The model stores ints; only integral ratios are representable.
-    if (w != w.toInt().toFloat() || h != h.toInt().toFloat()) return null
-    return ModifierSpec.AspectRatio(w.toInt(), h.toInt())
+    val arg = single(shape)?.unparen() ?: return null
+    val ratio = if (arg is KBinary && arg.op == "/") {
+        val width = floatLit(arg.left) ?: return null
+        val height = floatLit(arg.right) ?: return null
+        if (height == 0f) return null
+        if (width == width.toInt().toFloat() && height == height.toInt().toFloat()) {
+            return ModifierSpec.AspectRatio(width.toInt(), height.toInt())
+        }
+        width / height
+    } else {
+        floatLit(arg) ?: return null
+    }
+    if (!ratio.isFinite() || ratio <= 0f) return null
+
+    // AspectRatio stores a rational pair so it remains deterministic and easy
+    // to edit. Approximate decimal source ratios (1.2f, 1f / 1.2f) closely with
+    // a small denominator; common values resolve exactly (6:5 and 5:6).
+    var bestWidth = 1
+    var bestHeight = 1
+    var bestError = kotlin.math.abs(ratio - 1f)
+    for (height in 1..100) {
+        val width = (ratio * height).roundToInt().coerceAtLeast(1)
+        val error = kotlin.math.abs(ratio - width.toFloat() / height)
+        if (error < bestError) {
+            bestWidth = width
+            bestHeight = height
+            bestError = error
+        }
+        if (error < 0.00001f) break
+    }
+    return ModifierSpec.AspectRatio(bestWidth, bestHeight)
 }
 
 private fun parseBorder(shape: CallShape): ModifierSpec.Border? {

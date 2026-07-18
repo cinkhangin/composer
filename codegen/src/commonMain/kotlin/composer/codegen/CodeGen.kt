@@ -712,6 +712,10 @@ object CodeGen {
                 val mod = modifierExpr(mods, imports, scopeModifier, indent) ?: "Modifier" // Canvas has no default modifier param
                 out.appendLine("$pad" + "Canvas(modifier = $mod) {")
                 for (shape in node.children) {
+                    if (shape is Node.RawCode) {
+                        emit(shape, indent + 1, out, imports, seq)
+                        continue
+                    }
                     val call = shapeCall(shape, imports)
                     if (call != null) {
                         out.appendLine("$pad    $call")

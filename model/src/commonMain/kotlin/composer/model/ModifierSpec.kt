@@ -39,6 +39,10 @@ sealed interface ModifierSpec {
         // True when [expression] is the entire user-authored chain rather than
         // only a parameter/root. It may already contain a Scaffold scope prefix.
         val opaque: Boolean = false,
+        // Static calls recovered from an opaque runtime chain, in authored
+        // order. The renderer applies this safe subset while codegen continues
+        // to emit [expression] verbatim. Entries never contain External specs.
+        val preview: List<ModifierSpec> = emptyList(),
     ) : ModifierSpec
 
     /**

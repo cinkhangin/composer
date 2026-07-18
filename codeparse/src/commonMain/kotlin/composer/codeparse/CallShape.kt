@@ -17,9 +17,14 @@ internal class CallShape(
         positional.size <= maxPositional && named.keys.all { it in allowed }
 }
 
-internal fun callShape(call: KCall): CallShape? {
+internal fun callShape(call: KCall): CallShape? = callShape(call, allowTypeArgs = false)
+
+/** Generic source wrappers may carry DSL type arguments (`entry<Home> { … }`). */
+internal fun sourceCallShape(call: KCall): CallShape? = callShape(call, allowTypeArgs = true)
+
+private fun callShape(call: KCall, allowTypeArgs: Boolean): CallShape? {
     val name = callName(call) ?: return null
-    if (call.hasTypeArgs) return null
+    if (call.hasTypeArgs && !allowTypeArgs) return null
     val positional = mutableListOf<KExpr>()
     val named = mutableMapOf<String, KExpr>()
     for (arg in call.args) {
