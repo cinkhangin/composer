@@ -5,6 +5,7 @@ import composer.model.ModifierSpec
 import composer.model.Node
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -28,7 +29,7 @@ class ParserCasesTest {
     }
 
     @Test
-    fun unknown_statements_become_rawcode_without_poisoning_siblings() {
+    fun unsupported_wrappers_expose_renderable_children_without_poisoning_siblings() {
         val screen = parseOne(
             """
             Text("hello")
@@ -40,8 +41,10 @@ class ParserCasesTest {
         )
         assertEquals(3, screen.children.size)
         assertTrue(screen.children[0] is Node.Text)
-        val raw = screen.children[1] as Node.RawCode
-        assertEquals("LazyColumn {\n    items(10) { Text(\"row\") }\n}", raw.code)
+        val lazy = screen.children[1] as Node.SourceContainer
+        assertEquals("LazyColumn", lazy.name)
+        val items = lazy.children.single() as Node.SourceContainer
+        assertTrue(items.children.single() is Node.Text)
         assertTrue(screen.children[2] is Node.Text)
     }
 
@@ -146,6 +149,43 @@ class ParserCasesTest {
     }
 
     @Test
+    fun typography_and_source_icons_remain_renderable_and_round_trip() {
+        val screen = parseOne(
+            """
+            Text(
+                text = title,
+                color = Color.White,
+                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+            )
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = Color.White,
+            )
+            IconButton(onClick = { goBack() }) {
+                Icon(Icons.Default.Grid3x3, contentDescription = "Grid")
+            }
+            """.trimIndent(),
+        )
+        val text = screen.children[0] as Node.Text
+        assertTrue(text.styleExpression.startsWith("MaterialTheme.typography"))
+        val icon = screen.children[1] as Node.Icon
+        assertEquals("imageVector", icon.sourceArgumentName)
+        assertEquals("Icons.AutoMirrored.Filled.ArrowBack", icon.sourceImageExpression)
+        assertEquals("Color.White", icon.tintExpression)
+        val button = screen.children[2] as Node.IconButton
+        assertEquals("{ goBack() }", button.onClickExpression)
+        assertTrue("Grid3x3" in button.contentExpression)
+
+        val out = CodeGen.generate(Node.Composable("s", children = screen.children))
+        assertTrue("style = MaterialTheme.typography.headlineSmall.copy" in out, out)
+        assertTrue("imageVector = Icons.AutoMirrored.Filled.ArrowBack" in out, out)
+        assertTrue("tint = Color.White" in out, out)
+        assertTrue("IconButton(onClick = { goBack() })" in out, out)
+        assertTrue("Icon(Icons.Default.Grid3x3, contentDescription = \"Grid\")" in out, out)
+    }
+
+    @Test
     fun resource_image_renders_as_placeholder_and_preserves_painter_expressions() {
         val screen = parseOne(
             """
@@ -218,19 +258,60 @@ class ParserCasesTest {
     }
 
     @Test
-    fun non_canonical_scaffold_param_name_is_rawcode() {
+    fun scaffold_preserves_authored_param_and_source_arguments() {
         val file =
             """
             import androidx.compose.runtime.Composable
 
             @Composable
             fun Screen() {
-                Scaffold { padding ->
+                Scaffold(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ) { padding ->
                     Text("x", modifier = Modifier.padding(padding))
                 }
             }
             """.trimIndent()
-        assertNull(DesignParser.parse(file))
+        val parsed = assertNotNull(DesignParser.parse(file))
+        val scaffold = (parsed.artboard.composables.single() as Node.Composable).children.single() as Node.Scaffold
+        assertEquals("padding", scaffold.contentParameter)
+        assertEquals("MaterialTheme.colorScheme.background", scaffold.sourceArguments["containerColor"])
+        val out = CodeGen.generate(Node.Composable("s", children = listOf(scaffold)))
+        assertTrue("containerColor = MaterialTheme.colorScheme.background" in out, out)
+        assertTrue(") { padding ->" in out, out)
+    }
+
+    @Test
+    fun unsupported_lambda_wrappers_expose_children_and_round_trip_source() {
+        val screen = parseOne(
+            """
+            LazyColumn(state = listState) {
+                items(cards) { card ->
+                    AnimatedVisibility(visible = card.visible) {
+                        Card(
+                            shape = RoundedCornerShape(24.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                        ) {
+                            Text(card.title)
+                        }
+                    }
+                }
+            }
+            """.trimIndent(),
+        )
+        val lazy = screen.children.single() as Node.SourceContainer
+        assertEquals("LazyColumn", lazy.name)
+        val items = lazy.children.single() as Node.SourceContainer
+        val visibility = items.children.single() as Node.SourceContainer
+        val card = visibility.children.single() as Node.SourceContainer
+        assertTrue(card.children.single() is Node.Text)
+
+        val out = CodeGen.generate(Node.Composable("s", children = listOf(lazy)))
+        assertTrue("LazyColumn(state = listState)" in out, out)
+        assertTrue("items(cards) { card ->" in out, out)
+        assertTrue("AnimatedVisibility(visible = card.visible)" in out, out)
+        assertTrue("shape = RoundedCornerShape(24.dp)" in out, out)
+        assertTrue("Text(card.title)" in out, out)
     }
 
     @Test

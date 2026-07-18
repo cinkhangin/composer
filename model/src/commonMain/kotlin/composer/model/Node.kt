@@ -35,6 +35,9 @@ sealed interface Node {
         // Dynamic source color (for example an `if` expression) that the static
         // preview cannot evaluate. Renderer inherits color; codegen preserves it.
         val colorExpression: String = "",
+        // Source typography/style expression (often MaterialTheme.typography.*
+        // or .copy(...)); preview uses the explicit fields it understands.
+        val styleExpression: String = "",
     ) : Node
 
     @Serializable
@@ -131,6 +134,11 @@ sealed interface Node {
         // legacy curated [IconKind] (Icons.Default.X). Placed after [modifier] so
         // positional calls and old JSON keep working.
         val symbol: String = "",
+        // Imported/custom source icon forms that cannot be reduced to IconKind.
+        // The argument name is empty for the positional Icon overload.
+        val sourceArgumentName: String = "",
+        val sourceImageExpression: String = "",
+        val tintExpression: String = "",
     ) : Node
 
     @Serializable
@@ -141,6 +149,10 @@ sealed interface Node {
         override val modifier: List<ModifierSpec> = emptyList(),
         val symbol: String = "", // same contract as [Icon.symbol]
         val navAction: NavAction = NavAction.None,
+        // Exact source callback/content for non-canonical IDE-imported buttons.
+        val onClickExpression: String = "",
+        val contentExpression: String = "",
+        val previewSymbol: String = "",
     ) : Node
 
     /** Material3 TabRow: children are [Tab] leaves; [selectedIndex] drives the indicator and the generated initial state. */
@@ -392,6 +404,13 @@ sealed interface Node {
         val bottomBar: Node? = null,
         val fab: Node? = null,
         override val modifier: List<ModifierSpec> = emptyList(),
+        // Parser-authored Scaffold content lambdas keep their parameter name so
+        // opaque modifiers such as `Modifier.padding(padding)` remain valid.
+        val contentParameter: String = "innerPadding",
+        // Named arguments not represented by the visual model (for example
+        // containerColor/contentWindowInsets). Renderer safely ignores them;
+        // codegen retains their exact source expressions.
+        val sourceArguments: Map<String, String> = emptyMap(),
     ) : Node
 
     /** Material3 CenterAlignedTopAppBar: navigation icon (left), title (center), actions (right). */
@@ -462,6 +481,26 @@ sealed interface Node {
     ) : Node
 
     /**
+     * An unsupported source call with a trailing content lambda whose visual
+     * descendants are still parseable. The wrapper is locked and its exact
+     * source before/after the lambda body is retained, while [children] form a
+     * static designer template. This exposes UI inside data/animation wrappers
+     * such as LazyColumn/items/HorizontalPager/AnimatedVisibility without
+     * pretending Composer can evaluate their runtime behavior.
+     */
+    @Serializable
+    @SerialName("SourceContainer")
+    data class SourceContainer(
+        override val id: String,
+        val name: String,
+        val sourcePrefix: String,
+        val sourceSuffix: String,
+        val children: List<Node> = emptyList(),
+        val previewLayout: SourcePreviewLayout = SourcePreviewLayout.Box,
+        override val modifier: List<ModifierSpec> = emptyList(),
+    ) : Node
+
+    /**
      * Not a real UI component — one composable **function scope** (the body of a
      * generated `@Composable fun`). Its children are emitted directly into the
      * function (no wrapper). Lives directly under the [Artboard]; its layer name
@@ -516,6 +555,9 @@ sealed interface Node {
             themes.getOrNull(activeTheme.coerceIn(0, (themes.size - 1).coerceAtLeast(0)))?.theme ?: theme
     }
 }
+
+@Serializable
+enum class SourcePreviewLayout { Box, Column, Row }
 
 /** A user-named Material theme (e.g. "Light", "Dark", "Brand"). */
 @Serializable

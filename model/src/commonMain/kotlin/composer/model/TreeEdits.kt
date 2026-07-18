@@ -17,7 +17,7 @@ fun Node.isContainer(): Boolean = when (this) {
     is Node.Tab, is Node.NavItem, is Node.Chip,
     is Node.Line, is Node.RectShape, is Node.CircleShape, is Node.EllipseShape, is Node.ArcShape,
     is Node.CircularProgress, is Node.LinearProgress, is Node.Instance,
-    is Node.RawCode -> false
+    is Node.RawCode, is Node.SourceContainer -> false
 }
 
 /**

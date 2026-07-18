@@ -10,12 +10,14 @@ import composer.model.ModifierSpec
 import composer.model.NavAction
 import composer.model.Node
 import composer.model.PaddingMode
+import composer.model.SourcePreviewLayout
 import composer.model.TextAlignment
 import composer.model.TextFontFamily
 import composer.model.TextWeight
 import composer.model.TopAppBarVariant
 import composer.model.VAlignment
 import composer.model.VArrangement
+import composer.model.childNodes
 import kotlin.math.roundToInt
 
 /**
@@ -336,7 +338,46 @@ private fun parseComponent(
         }
         return Parsed(Node.Instance(ctx.newId(), refId, sourceArguments = sourceArguments))
     }
+    // Unsupported source wrappers can still contain ordinary Compose UI. Keep
+    // the wrapper's exact Kotlin locked while exposing a static child template
+    // to the designer. Calls with no visual descendants remain plain RawCode.
+    if (specialComment == null) parseSourceContainer(call, shape, ctx)?.let { return it }
     return null
+}
+
+private fun parseSourceContainer(call: KCall, shape: CallShape, ctx: ParseCtx): Parsed? {
+    val lambda = shape.trailingLambda ?: return null
+    val kids = parseBlock(lambda.body, ctx)
+    if (kids.none(::isSourceRenderable)) return null
+    val bodyStart = lambda.body.bodyRange.first
+    val bodyEnd = lambda.body.bodyRange.last + 1
+    val prefix = captureSourceFragment(ctx.text, call.range.first, bodyStart).trimEnd()
+    val suffix = dedent(ctx.text.substring(bodyEnd, call.range.last + 1)).trimStart()
+    if (prefix.isBlank() || suffix.isBlank()) return null
+    val layout = when {
+        shape.name.contains("Row", ignoreCase = true) ||
+            shape.name.contains("Pager", ignoreCase = true) -> SourcePreviewLayout.Row
+        shape.name.contains("Column", ignoreCase = true) ||
+            shape.name in setOf("items", "itemsIndexed", "repeat", "forEach", "forEachIndexed") -> SourcePreviewLayout.Column
+        else -> SourcePreviewLayout.Box
+    }
+    return Parsed(Node.SourceContainer(ctx.newId(), shape.name, prefix, suffix, kids, layout))
+}
+
+private fun captureSourceFragment(text: String, start: Int, end: Int): String {
+    val source = text.substring(start, end)
+    if (source.contains("\"\"\"")) return source
+    val lineStart = text.lastIndexOf('\n', start - 1) + 1
+    val baseIndent = text.substring(lineStart, start).takeWhile { it == ' ' }.length
+    return source.lines().mapIndexed { index, line ->
+        if (index == 0) line else line.drop(minOf(baseIndent, line.takeWhile { it == ' ' }.length))
+    }.joinToString("\n")
+}
+
+private fun isSourceRenderable(node: Node): Boolean = when (node) {
+    is Node.RawCode -> false
+    is Node.Instance -> true
+    else -> node.childNodes().any(::isSourceRenderable) || node !is Node.SourceContainer
 }
 
 private fun isFontComment(text: String): Boolean =
@@ -381,7 +422,7 @@ private fun childrenOf(lambda: KLambda?, ctx: ParseCtx): List<Node>? {
 
 private fun parseText(shape: CallShape, ctx: ParseCtx, scopeParam: String?, comment: String?): Parsed? {
     if (shape.trailingLambda != null) return null
-    if (!shape.named.keys.all { it in setOf("text", "modifier", "color", "fontSize", "fontWeight", "fontFamily", "lineHeight", "letterSpacing", "textAlign") }) return null
+    if (!shape.named.keys.all { it in setOf("text", "modifier", "color", "fontSize", "fontWeight", "fontFamily", "lineHeight", "letterSpacing", "textAlign", "style") }) return null
     val textExpr = when {
         shape.positional.size == 1 && "text" !in shape.named -> shape.positional.single()
         shape.positional.isEmpty() -> shape.named["text"] ?: return null
@@ -417,6 +458,7 @@ private fun parseText(shape: CallShape, ctx: ParseCtx, scopeParam: String?, comm
             lineHeight = lineHeight, customFont = customFont, textAlign = textAlign,
             textExpression = textExpression, letterSpacing = letterSpacing,
             colorExpression = colorExpression,
+            styleExpression = shape.named["style"]?.let(ctx::sourceOf).orEmpty(),
         ),
     )
 }
@@ -456,20 +498,46 @@ private fun parseImagePlaceholder(shape: CallShape, ctx: ParseCtx, scopeParam: S
 }
 
 private fun parseIcon(shape: CallShape, ctx: ParseCtx, scopeParam: String?, comment: String? = null): Parsed? {
-    if (shape.trailingLambda != null || shape.positional.size != 1) return null
-    if (!shape.named.keys.all { it in setOf("contentDescription", "modifier") }) return null
+    if (shape.trailingLambda != null || shape.positional.size > 1) return null
+    if (!shape.named.keys.all { it in setOf("imageVector", "painter", "contentDescription", "modifier", "tint") }) return null
+    val namedImages = listOf("imageVector", "painter").filter { it in shape.named }
+    val sourceArgumentName: String
+    val imageExpr: KExpr
+    when {
+        shape.positional.size == 1 && namedImages.isEmpty() -> {
+            sourceArgumentName = ""
+            imageExpr = shape.positional.single()
+        }
+        shape.positional.isEmpty() && namedImages.size == 1 -> {
+            sourceArgumentName = namedImages.single()
+            imageExpr = shape.named.getValue(sourceArgumentName)
+        }
+        else -> return null
+    }
     val desc = shape.named["contentDescription"]?.let { stringOrNullLit(it) ?: return null }?.getOrNull() ?: ""
     val m = modifierOf(shape, ctx, scopeParam) ?: return null
+    val tintExpression = shape.named["tint"]?.let(ctx::sourceOf).orEmpty()
     // Free-form Material Symbols form: painterResource(Res.drawable.ic_x) + a
     // sourcing comment. The comment (when present) must be OUR canonical one for
     // this symbol — anything else stays verbatim as RawCode.
-    painterSymbol(shape.positional[0])?.let { symbol ->
+    painterSymbol(imageExpr)?.let { symbol ->
         if (comment != null && comment != composer.codegen.CodeGen.symbolComment(symbol)) return null
-        return Parsed(Node.Icon(ctx.newId(), IconKind.Favorite, desc, m, symbol = symbol))
+        return Parsed(Node.Icon(ctx.newId(), IconKind.Favorite, desc, m, symbol = symbol, tintExpression = tintExpression))
     }
     if (comment != null) return null // a symbol comment on a non-symbol Icon — not ours
-    val icon = iconKind(shape.positional[0]) ?: return null
-    return Parsed(Node.Icon(ctx.newId(), icon, desc, m))
+    iconKind(imageExpr)?.let { icon ->
+        return Parsed(Node.Icon(ctx.newId(), icon, desc, m, tintExpression = tintExpression))
+    }
+    return Parsed(
+        Node.Icon(
+            id = ctx.newId(),
+            contentDescription = desc,
+            modifier = m,
+            sourceArgumentName = sourceArgumentName,
+            sourceImageExpression = ctx.sourceOf(imageExpr),
+            tintExpression = tintExpression,
+        ),
+    )
 }
 
 /** `painterResource(Res.drawable.ic_<x>)` → `x`, or null for any other shape. */
@@ -487,23 +555,46 @@ private fun painterSymbol(expr: KExpr?): String? {
 private fun parseIconButton(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
     if (shape.positional.isNotEmpty()) return null
     if (!shape.named.keys.all { it in setOf("onClick", "modifier") }) return null
-    val nav = navActionOf(shape.named["onClick"] ?: return null, ctx) ?: return null
+    val onClickExpr = shape.named["onClick"] ?: return null
+    val parsedNav = navActionOf(onClickExpr, ctx)
+    val nav = parsedNav ?: NavAction.None
+    val onClickExpression = if (parsedNav == null) ctx.sourceOf(onClickExpr) else ""
     val m = modifierOf(shape, ctx, scopeParam) ?: return null
-    // Body must be exactly `Icon(Icons.Default.X, contentDescription = null)` —
-    // the model has no children slot here.
+    // Body must be exactly one Icon. Canonical content maps to IconKind/symbol;
+    // custom imported expressions stay as locked source content.
     val body = shape.trailingLambda ?: return null
     if (body.params.isNotEmpty()) return null
     val only = body.body.singleExprStatement() as? KCall ?: return null
     val inner = callShape(only) ?: return null
-    if (inner.name != "Icon" || inner.trailingLambda != null || inner.positional.size != 1) return null
-    if (!inner.named.keys.all { it == "contentDescription" }) return null
-    if (inner.named["contentDescription"]?.let { stringOrNullLit(it)?.getOrNull() } != null) return null
-    painterSymbol(inner.positional[0])?.let { symbol ->
-        return Parsed(Node.IconButton(ctx.newId(), IconKind.Menu, m, symbol = symbol, navAction = nav))
+    if (inner.name != "Icon") return null
+    val parsedIcon = (parseIcon(inner, ctx, scopeParam)?.node as? Node.Icon) ?: return null
+    val canonicalContent = parsedIcon.sourceImageExpression.isEmpty() &&
+        parsedIcon.tintExpression.isEmpty() && parsedIcon.modifier.isEmpty() &&
+        parsedIcon.contentDescription.isEmpty()
+    val contentExpression = if (canonicalContent && onClickExpression.isEmpty()) "" else
+        dedent(ctx.text.substring(body.body.bodyRange.first, body.body.bodyRange.last + 1)).trim()
+    val previewSymbol = if (contentExpression.isEmpty()) "" else when {
+        parsedIcon.symbol.isNotEmpty() -> parsedIcon.symbol
+        parsedIcon.sourceImageExpression.isNotEmpty() -> sourceIconName(parsedIcon.sourceImageExpression)
+        else -> parsedIcon.icon.name
     }
-    val icon = iconKind(inner.positional[0]) ?: return null
-    return Parsed(Node.IconButton(ctx.newId(), icon, m, navAction = nav))
+    return Parsed(
+        Node.IconButton(
+            id = ctx.newId(),
+            icon = if (parsedIcon.symbol.isNotEmpty()) IconKind.Menu else parsedIcon.icon,
+            modifier = m,
+            symbol = parsedIcon.symbol, navAction = nav,
+            onClickExpression = onClickExpression,
+            contentExpression = contentExpression,
+            previewSymbol = previewSymbol,
+        ),
+    )
 }
+
+private fun sourceIconName(expression: String): String =
+    expression.substringAfterLast('.').substringBefore(')').substringBefore('(')
+        .replace(Regex("([a-z0-9])([A-Z])"), "$1_$2")
+        .lowercase()
 
 private fun parseTextField(shape: CallShape, pending: PendingState?, ctx: ParseCtx, scopeParam: String?): Parsed? {
     val v = pending?.takeIf { it.str != null } ?: return null
@@ -695,19 +786,16 @@ private fun wrapperColumnChildren(lambda: KLambda?, paddingAll: Int, ctx: ParseC
 
 private fun parseScaffold(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {
     if (shape.positional.isNotEmpty()) return null
-    if (!shape.named.keys.all { it in setOf("modifier", "topBar", "bottomBar", "floatingActionButton") }) return null
     val m = modifierOf(shape, ctx, scopeParam) ?: return null
     // Slot args must be lambdas when present.
     for (slotName in listOf("topBar", "bottomBar", "floatingActionButton")) {
         if (shape.named.containsKey(slotName) && shape.lambdaArg(slotName) == null) return null
     }
-    // Only codegen's canonical content param survives round trips: RawCode
-    // children may reference it by name, and regeneration always calls it
-    // `innerPadding`.
+    // Preserve any simple authored content parameter. Opaque modifiers and
+    // RawCode children may refer to it, so codegen must retain the same name.
     val content = shape.trailingLambda
     val param = content?.params?.singleOrNull()
     if (content != null && content.params.size > 1) return null
-    if (param != null && param != "innerPadding") return null
 
     val id = ctx.newId()
     fun slot(argName: String, slotId: String, slotLabel: String): Node.Slot? {
@@ -721,7 +809,17 @@ private fun parseScaffold(shape: CallShape, ctx: ParseCtx, scopeParam: String?):
     val bottomBar = slot("bottomBar", "bottomBar", "bottomBar") ?: return null
     val fab = slot("floatingActionButton", "fab", "fab") ?: return null
     val kids = content?.let { parseBlock(it.body, ctx, scopeParam = param) } ?: emptyList()
-    return Parsed(Node.Scaffold(id, kids, topBar, bottomBar, fab, m))
+    val modeled = setOf("modifier", "topBar", "bottomBar", "floatingActionButton")
+    val sourceArguments = shape.named
+        .filterKeys { it !in modeled }
+        .mapValues { (_, expr) -> ctx.sourceOf(expr) }
+    return Parsed(
+        Node.Scaffold(
+            id, kids, topBar, bottomBar, fab, m,
+            contentParameter = param.orEmpty(),
+            sourceArguments = sourceArguments,
+        ),
+    )
 }
 
 private fun parseTopAppBar(shape: CallShape, ctx: ParseCtx, scopeParam: String?): Parsed? {

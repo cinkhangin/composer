@@ -370,6 +370,13 @@ object CodeGen {
             }
         }
         when (node) {
+            is Node.SourceContainer -> {
+                // Locked parser-owned wrapper: retain the authored call/control
+                // expression while allowing supported descendants to regenerate.
+                appendSourceFragment(out, pad, node.sourcePrefix)
+                emitSiblings(node.children, indent + 1, out, imports, seq)
+                appendSourceFragment(out, pad, node.sourceSuffix)
+            }
             is Node.RawCode -> {
                 // Opaque preserved source (IDE plugin code-import): re-emit VERBATIM,
                 // never through esc() — this is code, not a string literal. Lines are
@@ -438,6 +445,7 @@ object CodeGen {
                     imports += "androidx.compose.ui.text.style.TextAlign"
                     args += "textAlign = TextAlign.${node.textAlign.name}"
                 }
+                if (node.styleExpression.isNotEmpty()) args += "style = ${node.styleExpression}"
                 // A device font can't be referenced portably — leave a note to embed it.
                 if (node.customFont.isNotEmpty()) {
                     out.appendLine("$pad// Font \"${node.customFont.replace('\n', ' ').replace('\r', ' ')}\" — embed it as a font resource and set fontFamily = FontFamily(Font(...)).")
@@ -520,14 +528,19 @@ object CodeGen {
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
                 val desc = if (node.contentDescription.isBlank()) "null" else "\"${esc(node.contentDescription)}\""
                 val symbol = safeSymbol(node.symbol)
-                if (symbol != null) {
+                val tint = node.tintExpression.takeIf { it.isNotEmpty() }?.let { "tint = $it" }
+                if (node.sourceImageExpression.isNotEmpty()) {
+                    val image = if (node.sourceArgumentName.isEmpty()) node.sourceImageExpression
+                    else "${node.sourceArgumentName} = ${node.sourceImageExpression}"
+                    appendCall(out, indent, "Icon", listOfNotNull(image, "contentDescription = $desc", mod?.let { "modifier = $it" }, tint))
+                } else if (symbol != null) {
                     imports += "org.jetbrains.compose.resources.painterResource"
                     out.appendLine("$pad${symbolComment(symbol)}")
-                    appendCall(out, indent, "Icon", listOfNotNull("painterResource(Res.drawable.ic_$symbol)", "contentDescription = $desc", mod?.let { "modifier = $it" }))
+                    appendCall(out, indent, "Icon", listOfNotNull("painterResource(Res.drawable.ic_$symbol)", "contentDescription = $desc", mod?.let { "modifier = $it" }, tint))
                 } else {
                     imports += "androidx.compose.material.icons.Icons"
                     imports += "androidx.compose.material.icons.filled.${node.icon.name}"
-                    appendCall(out, indent, "Icon", listOfNotNull("Icons.Default.${node.icon.name}", "contentDescription = $desc", mod?.let { "modifier = $it" }))
+                    appendCall(out, indent, "Icon", listOfNotNull("Icons.Default.${node.icon.name}", "contentDescription = $desc", mod?.let { "modifier = $it" }, tint))
                 }
             }
 
@@ -542,9 +555,13 @@ object CodeGen {
                     imports += "androidx.compose.material.icons.filled.${node.icon.name}"
                 }
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
-                val args = listOfNotNull(onClickArg(node), mod?.let { "modifier = $it" })
+                val onClick = node.onClickExpression.takeIf { it.isNotEmpty() }
+                    ?.let { "onClick = $it" } ?: onClickArg(node)
+                val args = listOfNotNull(onClick, mod?.let { "modifier = $it" })
                 appendCall(out, indent, "IconButton", args, open = true)
-                if (symbol != null) {
+                if (node.contentExpression.isNotEmpty()) {
+                    appendSourceFragment(out, "$pad    ", node.contentExpression)
+                } else if (symbol != null) {
                     out.appendLine("$pad    ${symbolComment(symbol)}")
                     out.appendLine("$pad    Icon(painterResource(Res.drawable.ic_$symbol), contentDescription = null)")
                 } else {
@@ -849,15 +866,20 @@ object CodeGen {
                 val topKids = slotKids(node.topBar)
                 val bottomKids = slotKids(node.bottomBar)
                 val fabKids = slotKids(node.fab)
-                val hasArgs = mod != null || topKids.isNotEmpty() || bottomKids.isNotEmpty() || fabKids.isNotEmpty()
+                val hasArgs = mod != null || topKids.isNotEmpty() || bottomKids.isNotEmpty() ||
+                    fabKids.isNotEmpty() || node.sourceArguments.isNotEmpty()
                 val hasContent = node.children.isNotEmpty()
                 // Content applies the Scaffold's innerPadding (so it clears the bars) — no wrapper node.
-                val contentScope = if (hasContent) "padding(innerPadding)" else null
-                if (hasContent) imports += "androidx.compose.foundation.layout.padding"
-                val lambdaOpen = if (hasContent) " { innerPadding ->" else " {"
+                val contentParam = node.contentParameter.takeIf { it.isNotBlank() }
+                val contentScope = if (hasContent && contentParam != null) "padding($contentParam)" else null
+                if (contentScope != null) imports += "androidx.compose.foundation.layout.padding"
+                val lambdaOpen = if (hasContent && contentParam != null) " { $contentParam ->" else " {"
                 if (hasArgs) {
                     out.appendLine("$pad" + "Scaffold(")
                     if (mod != null) out.appendLine("$pad    modifier = $mod,")
+                    node.sourceArguments.forEach { (name, expression) ->
+                        appendSourceArgument(out, "$pad    ", name, expression)
+                    }
                     fun slot(name: String, kids: List<Node>) {
                         if (kids.isEmpty()) return
                         out.appendLine("$pad    $name = {")
@@ -1351,6 +1373,28 @@ object CodeGen {
             val cont = "    ".repeat(indent + 2)
             "$base\n" + parts.joinToString("\n") { "$cont.$it" }
         }
+    }
+
+    private fun appendSourceFragment(out: StringBuilder, pad: String, source: String) {
+        val hasRawString = source.contains("\"\"\"")
+        for (line in source.lines()) {
+            when {
+                line.isBlank() -> out.appendLine()
+                hasRawString -> out.appendLine(line)
+                else -> out.appendLine("$pad$line")
+            }
+        }
+    }
+
+    private fun appendSourceArgument(out: StringBuilder, pad: String, name: String, expression: String) {
+        val lines = expression.lines()
+        if (lines.size == 1) {
+            out.appendLine("$pad$name = ${lines.single()},")
+            return
+        }
+        out.appendLine("$pad$name = ${lines.first()}")
+        lines.drop(1).dropLast(1).forEach { out.appendLine("$pad    ${it.trimStart()}") }
+        out.appendLine("$pad    ${lines.last().trimStart()},")
     }
 
     /** Emit a parsed component call while retaining its user-authored argument suffix. */

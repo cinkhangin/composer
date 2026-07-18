@@ -137,6 +137,7 @@ import composer.model.IconKind
 import composer.model.ModifierSpec
 import composer.model.PaddingMode
 import composer.model.Node
+import composer.model.SourcePreviewLayout
 import composer.model.TextAlignment
 import composer.model.TextFontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -256,6 +257,32 @@ fun RenderNode(
         // RawCode remains in the model for lossless write-back, but it is not a
         // visual component and must not contribute canvas size or selection UI.
         is Node.RawCode -> Unit
+        // Runtime/data wrappers are locked source, but their parsed descendants
+        // form a useful static template in the designer.
+        is Node.SourceContainer -> when (node.previewLayout) {
+            SourcePreviewLayout.Box -> Box(modifier = modifier) {
+                node.children.forEach { child ->
+                    val sm = child.alignBox()?.let { Modifier.align(it.toCompose()) } ?: Modifier
+                    RenderNode(child, selectedId, onSelect, onBounds, sm)
+                }
+            }
+            SourcePreviewLayout.Column -> Column(modifier = modifier) {
+                node.children.forEach { child ->
+                    var sm: Modifier = Modifier
+                    child.weightValue()?.let { sm = sm.weight(it) }
+                    child.alignHorizontal()?.let { sm = sm.align(it.toCompose()) }
+                    RenderNode(child, selectedId, onSelect, onBounds, sm)
+                }
+            }
+            SourcePreviewLayout.Row -> Row(modifier = modifier) {
+                node.children.forEach { child ->
+                    var sm: Modifier = Modifier
+                    child.weightValue()?.let { sm = sm.weight(it) }
+                    child.alignVertical()?.let { sm = sm.align(it.toCompose()) }
+                    RenderNode(child, selectedId, onSelect, onBounds, sm)
+                }
+            }
+        }
         is Node.Image -> {
             if (node.url.isNotEmpty()) LaunchedEffect(node.url) { LocalImages.load(node.url) }
             val bitmap = node.url.takeIf { it.isNotEmpty() }?.let { LocalImages.loaded[it] }
@@ -288,15 +315,19 @@ fun RenderNode(
         is Node.Divider -> HorizontalDivider(modifier = modifier)
         // A free-form Material Symbols name wins over the curated IconKind; the
         // preview draws from the bundled symbol set, sized like a Material icon.
-        is Node.Icon -> if (node.symbol.isNotEmpty()) {
-            SymbolIcon(node.symbol, modifier.size(24.dp), tint = LocalContentColor.current)
+        is Node.Icon -> if (node.sourceImageExpression.isNotEmpty() || node.symbol.isNotEmpty()) {
+            SymbolIcon(
+                node.symbol.ifEmpty { sourceIconName(node.sourceImageExpression) },
+                modifier.size(24.dp),
+                tint = LocalContentColor.current,
+            )
         } else {
             Icon(node.icon.toVector(), contentDescription = node.contentDescription.ifBlank { null }, modifier = modifier)
         }
         is Node.IconButton -> InteractiveNode(node, onSelect, onBounds, scopeModifier) { m ->
             IconButton(onClick = {}, modifier = m) {
-                if (node.symbol.isNotEmpty()) {
-                    SymbolIcon(node.symbol, Modifier.size(24.dp), tint = LocalContentColor.current)
+                if (node.previewSymbol.isNotEmpty() || node.symbol.isNotEmpty()) {
+                    SymbolIcon(node.previewSymbol.ifEmpty { node.symbol }, Modifier.size(24.dp), tint = LocalContentColor.current)
                 } else {
                     Icon(node.icon.toVector(), contentDescription = null)
                 }
@@ -628,6 +659,11 @@ private fun IconKind.toVector() = when (this) {
     IconKind.Email -> Icons.Default.Email
     IconKind.Lock -> Icons.Default.Lock
 }
+
+private fun sourceIconName(expression: String): String =
+    expression.substringAfterLast('.').substringBefore(')').substringBefore('(')
+        .replace(Regex("([a-z0-9])([A-Z])"), "$1_$2")
+        .lowercase()
 
 private fun VArrangement.toCompose(): Arrangement.Vertical = when (this) {
     VArrangement.Top -> Arrangement.Top
