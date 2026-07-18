@@ -112,7 +112,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.layout
@@ -279,20 +278,11 @@ fun RenderNode(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                else -> Image(
-                    painter = ColorPainter(Color(node.placeholderColor)),
-                    contentDescription = node.contentDescription.ifBlank { null },
-                    modifier = modifier,
-                    contentScale = when (node.contentScaleExpression.substringAfterLast('.')) {
-                        "Crop" -> ContentScale.Crop
-                        "FillBounds" -> ContentScale.FillBounds
-                        "FillHeight" -> ContentScale.FillHeight
-                        "FillWidth" -> ContentScale.FillWidth
-                        "Inside" -> ContentScale.Inside
-                        "None" -> ContentScale.None
-                        else -> ContentScale.Fit
-                    },
-                )
+                // Resource painters belong to the source project and are not
+                // available to the in-process designer. Draw a neutral surface
+                // without instantiating ColorPainter: that class is not ABI
+                // compatible across every Compose version bundled by Studio.
+                else -> Box(modifier = modifier.background(Color(node.placeholderColor)))
             }
         }
         is Node.Divider -> HorizontalDivider(modifier = modifier)
