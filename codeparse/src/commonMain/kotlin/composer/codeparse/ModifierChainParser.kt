@@ -15,16 +15,26 @@ import composer.model.VAlignment
  * `ModifierSpec.External`. The canvas ignores that chain without hiding the
  * component, while codegen preserves it and its significant order.
  *
- * [scopeParam] is the enclosing Scaffold content lambda's parameter: a FIRST
- * chain call `padding(<scopeParam>)` is the scope-imposed prefix codegen
- * prepends, not model data — it's stripped (and re-imposed on regeneration).
+ * [scopeParam] is the enclosing Scaffold content lambda's parameter. A
+ * first `padding(<scopeParam>)` call is the canonical prefix codegen adds and is
+ * therefore implicit. The same call later in the chain becomes an ordered
+ * [ModifierSpec.ScaffoldPadding] marker so authored suffix padding is not moved.
  */
 internal fun parseModifierChain(expr: KExpr, scopeParam: String? = null): List<ModifierSpec>? {
     val (root, calls) = chainCalls(expr.unparen()) ?: return null
     val specs = mutableListOf<ModifierSpec>()
     if (root != "Modifier") specs += ModifierSpec.External(root)
-    calls.forEachIndexed { i, call ->
-        if (i == 0 && scopeParam != null && isScopePadding(call, scopeParam)) return@forEachIndexed
+    val scopePaddingCount = if (scopeParam == null) 0 else calls.count { isScopePadding(it, scopeParam) }
+    calls.forEachIndexed { index, call ->
+        if (scopeParam != null && isScopePadding(call, scopeParam)) {
+            // A single leading call is codegen's canonical implicit prefix. If
+            // the source deliberately contains the scope padding more than once,
+            // retain every occurrence so suppressing the implicit prefix cannot
+            // silently drop one.
+            if (index == 0 && scopePaddingCount == 1) return@forEachIndexed
+            specs += ModifierSpec.ScaffoldPadding(scopeParam)
+            return@forEachIndexed
+        }
         specs += parseModifierCall(call) ?: return null
     }
     return specs

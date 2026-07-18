@@ -248,13 +248,46 @@ class ParserCasesTest {
         )
         val scaffold = screen.children.single() as Node.Scaffold
         val box = scaffold.children.single() as Node.Box
-        assertTrue(box.modifier.isEmpty(), "scope padding must be stripped, found ${box.modifier}")
+        assertTrue(box.modifier.isEmpty(), "canonical scope padding must stay implicit, found ${box.modifier}")
         val raw = box.children.single() as Node.RawCode
         assertEquals("CustomThing()", raw.code)
-        // Regeneration re-imposes padding(innerPadding) on the direct child.
+        // Regeneration re-imposes canonical padding(innerPadding) on the direct child.
         val out = CodeGen.generate(Node.Composable("s", children = listOf(scaffold)))
         assertTrue("Scaffold { innerPadding ->" in out, out)
         assertTrue("Box(modifier = Modifier.padding(innerPadding))" in out, out)
+    }
+
+    @Test
+    fun scaffold_padding_preserves_its_modifier_order_and_fill_preview() {
+        val screen = parseOne(
+            """
+            Scaffold(
+                topBar = { Text("Wallet") },
+            ) { padding ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("Wallet content")
+                }
+            }
+            """.trimIndent(),
+        )
+        val scaffold = screen.children.single() as Node.Scaffold
+        val box = scaffold.children.single() as Node.Box
+        assertEquals(composer.model.BoxAlignment.Center, box.contentAlignment)
+        assertEquals(
+            listOf(ModifierSpec.FillMaxSize(), ModifierSpec.ScaffoldPadding("padding")),
+            box.modifier,
+        )
+
+        val out = CodeGen.generate(Node.Composable("s", children = listOf(scaffold)))
+        val fillAt = out.indexOf(".fillMaxSize()")
+        val paddingAt = out.indexOf(".padding(padding)")
+        assertTrue(fillAt >= 0 && paddingAt > fillAt, out)
+        assertEquals(1, Regex("\\.padding\\(padding\\)").findAll(out).count(), out)
     }
 
     @Test

@@ -1155,6 +1155,10 @@ object CodeGen {
         val specParts = specs.filterNot { it is ModifierSpec.External }.map { spec ->
             when (spec) {
                 is ModifierSpec.External -> error("External modifier roots were filtered")
+                is ModifierSpec.ScaffoldPadding -> {
+                    imports += "androidx.compose.foundation.layout.padding"
+                    "padding(${spec.parameter})"
+                }
                 is ModifierSpec.Padding -> {
                     imports += "androidx.compose.foundation.layout.padding"
                     imports += "androidx.compose.ui.unit.dp"
@@ -1304,7 +1308,10 @@ object CodeGen {
             }
         }
         // [leading] is a scope-imposed prefix (e.g. a Scaffold's "padding(innerPadding)").
-        val parts = listOfNotNull(leading?.takeUnless { external?.opaque == true }) + specParts
+        val hasAuthoredScaffoldPadding = specs.any { it is ModifierSpec.ScaffoldPadding }
+        val parts = listOfNotNull(
+            leading?.takeUnless { external?.opaque == true || hasAuthoredScaffoldPadding },
+        ) + specParts
         return joinChain(base, parts, indent)
     }
 

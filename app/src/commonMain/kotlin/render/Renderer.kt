@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -171,6 +172,7 @@ fun RenderNode(
     onSelect: (id: String, deep: Boolean) -> Unit,
     onBounds: (String, LayoutCoordinates) -> Unit = { _, _ -> },
     scopeModifier: Modifier = Modifier,
+    scaffoldPadding: PaddingValues? = null,
 ) {
     // Split the chain so the selection outline wraps the node's FULL box: the positional
     // Offset stays outermost (so a moved node's outline/hit-area track it), but the bounds
@@ -178,8 +180,8 @@ fun RenderNode(
     // background). Otherwise the innermost onGloballyPositioned measured the content area
     // *inside* the padding, so a padded container's outline hugged its content, not its box.
     val scheme = MaterialTheme.colorScheme
-    val offsetMod = node.modifier.filterIsInstance<ModifierSpec.Offset>().toModifier(scheme)
-    val innerMod = node.modifier.filterNot { it is ModifierSpec.Offset }.toModifier(scheme)
+    val offsetMod = node.modifier.filterIsInstance<ModifierSpec.Offset>().toModifier(scheme, scaffoldPadding)
+    val innerMod = node.modifier.filterNot { it is ModifierSpec.Offset }.toModifier(scheme, scaffoldPadding)
     val modifier = scopeModifier
         .then(offsetMod)
         .then(selectionModifier(node, onSelect))
@@ -596,9 +598,19 @@ fun RenderNode(
             bottomBar = { node.bottomBar?.takeIf { it.childNodes().isNotEmpty() }?.let { RenderNode(it, selectedId, onSelect, onBounds) } },
             floatingActionButton = { node.fab?.takeIf { it.childNodes().isNotEmpty() }?.let { RenderNode(it, selectedId, onSelect, onBounds) } },
         ) { innerPadding ->
-            // Content applies the Scaffold's innerPadding (clears the bars) — no implicit wrapper node.
+            // Parsed content retains an ordered ScaffoldPadding marker. Content
+            // created in the designer has no marker, so preserve the historical
+            // automatic prefix that keeps it clear of Scaffold bars.
             node.children.forEach { child ->
-                RenderNode(child, selectedId, onSelect, onBounds, scopeModifier = Modifier.padding(innerPadding))
+                val hasAuthoredPadding = child.modifier.any { it is ModifierSpec.ScaffoldPadding }
+                RenderNode(
+                    child,
+                    selectedId,
+                    onSelect,
+                    onBounds,
+                    scopeModifier = if (hasAuthoredPadding) Modifier else Modifier.padding(innerPadding),
+                    scaffoldPadding = innerPadding,
+                )
             }
         }
         is Node.TopAppBar -> {
@@ -856,10 +868,11 @@ fun themeColor(value: Long, scheme: ColorScheme): Color = when (ThemeColorRef.to
  * resolves theme-token color references, so token-colored fills/borders/shadows
  * re-color live when the design theme changes.
  */
-fun List<ModifierSpec>.toModifier(scheme: ColorScheme): Modifier =
+fun List<ModifierSpec>.toModifier(scheme: ColorScheme, scaffoldPadding: PaddingValues? = null): Modifier =
     fold(Modifier as Modifier) { acc, spec ->
         when (spec) {
             is ModifierSpec.External -> acc // source parameter; preview uses its default Modifier value
+            is ModifierSpec.ScaffoldPadding -> if (scaffoldPadding != null) acc.padding(scaffoldPadding) else acc
             is ModifierSpec.Padding -> when (spec.mode) {
                 PaddingMode.All -> acc.padding(spec.all.dp)
                 PaddingMode.Symmetric -> acc.padding(horizontal = spec.horizontal.dp, vertical = spec.vertical.dp)

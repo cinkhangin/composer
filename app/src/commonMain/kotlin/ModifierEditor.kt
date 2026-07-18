@@ -405,6 +405,10 @@ private fun ModifierParams(spec: ModifierSpec, onChange: (ModifierSpec) -> Unit)
             "Source modifier: ${spec.expression}. Previewed as Modifier.",
             style = TextStyle(color = Tk.textMuted, fontSize = 11.sp),
         )
+        is ModifierSpec.ScaffoldPadding -> BasicText(
+            "Runtime padding from Scaffold (${spec.parameter}).",
+            style = TextStyle(color = Tk.textMuted, fontSize = 11.sp),
+        )
         is Padding -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             PaddingModeRow(spec.mode) { m -> onChange(spec.copy(mode = m)) }
             when (spec.mode) {
@@ -606,6 +610,7 @@ private class ModifierDndState {
 
 private fun specName(spec: ModifierSpec): String = when (spec) {
     is ModifierSpec.External -> "source modifier"
+    is ModifierSpec.ScaffoldPadding -> "scaffold padding"
     is Padding -> "padding"
     is Size -> "size"
     is ModifierSpec.Width -> "width"

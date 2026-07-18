@@ -42,6 +42,16 @@ sealed interface ModifierSpec {
     ) : ModifierSpec
 
     /**
+     * `Modifier.padding(<Scaffold content parameter>)` on a direct Scaffold
+     * content child. Unlike fixed [Padding], its runtime padding values come
+     * from Scaffold. Keeping this as an ordered marker preserves authored chains
+     * such as `fillMaxSize().padding(innerPadding)` end-to-end.
+     */
+    @Serializable
+    @SerialName("scaffoldPadding")
+    data class ScaffoldPadding(val parameter: String) : ModifierSpec
+
+    /**
      * `Modifier.padding(…)`. [mode] selects the form: [PaddingMode.All] → `padding(all.dp)`,
      * [PaddingMode.Symmetric] → `padding(horizontal, vertical)`, [PaddingMode.Sides] →
      * `padding(start, top, end, bottom)`. `all` is kept first so `Padding(16)` and old saved

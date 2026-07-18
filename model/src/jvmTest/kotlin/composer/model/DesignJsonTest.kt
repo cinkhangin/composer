@@ -73,4 +73,19 @@ class DesignJsonTest {
         assertEquals(sourceBacked, DesignJson.decode(json))
         assertTrue("\"type\": \"external\"" in json, json)
     }
+
+    @Test
+    fun scaffold_padding_marker_round_trips_in_modifier_order() {
+        val box = Node.Box(
+            id = "content",
+            modifier = listOf(
+                FillMaxSize(),
+                ModifierSpec.ScaffoldPadding("innerPadding"),
+                Padding(8),
+            ),
+        )
+        val json = DesignJson.encode(box)
+        assertEquals(box, DesignJson.decode(json))
+        assertTrue("\"type\": \"scaffoldPadding\"" in json, json)
+    }
 }
