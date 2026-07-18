@@ -1,79 +1,139 @@
 # Composer
 
-Composer is a visual app designer for Compose, available as both an Android
-Studio plugin and a standalone browser app. Both hosts use the same Compose
-Multiplatform editor, deterministic parser, model, renderer, and code generator.
+Composer is a Figma-like visual app designer for Compose Multiplatform. It runs
+as an in-process Android Studio plugin and as a standalone Kotlin/Wasm website;
+both hosts share the same deterministic parser, model, renderer, and code
+generator.
 
-> Design the app visually while Kotlin remains the source of truth.
+> Design visually while Kotlin remains the source of truth.
 
-The plugin discovers composable functions across an Android module and writes
-visual edits back to Kotlin source. The website provides a local-first design
-workspace with templates, browser persistence, an editable Kotlin view, and
-Compose/JSON export. The product contains no AI or model-assisted generation.
+Composer is built for source safety. Supported Compose code becomes an editable
+design tree, while code the designer cannot represent is preserved verbatim as
+`RawCode`. There is no AI-generated code, hidden backend, or JCEF-based IDE
+frontend.
 
-## Features
+## Project status
 
-- Module-wide discovery of supported top-level `@Composable` functions in
-  production Kotlin source roots. Functions annotated with `@Preview` are
-  intentionally excluded.
-- Infinite artboard with multiple composables, selection, resize handles, snap
-  guides, keyboard nudging, trackpad pinch-to-zoom, and two-finger pan.
-- Material 3 component palette and a modifier-first inspector.
-- Cross-file composable calls rendered as live instances when the callable name
-  is unambiguous.
-- Layer tree editing and reparenting inside composable function bodies.
-- Named Material themes and theme-token color references.
-- Two-way source synchronization that edits only the owning function and
-  conservatively preserves unsupported syntax as `RawCode`.
-- One global undoable Android Studio write command, including edits that span
-  multiple source files.
-- Standalone Kotlin/Wasm website with local files, auto-save, deep-link routing,
-  starter templates, JSON import/export, and Kotlin export.
-- Editable, syntax-highlighted Kotlin view on the website with conservative
-  `RawCode` preservation for unsupported statements.
+Composer is under active development and is not yet a stable release.
 
-The current parser renders top-level block-body composables without receivers,
-type parameters, or explicit return types. Function creation, deletion,
-renaming, and ownership changes remain source-controlled until stable Composer
-annotations are introduced.
+Available today:
 
-## Android Studio plugin
+- Android Studio tool window backed by an in-process `ComposePanel`.
+- Module-wide discovery of renderable top-level `@Composable` functions in
+  production Kotlin source roots; `@Preview` functions are excluded.
+- Two-way synchronization between Kotlin source and the visual design for the
+  supported syntax subset.
+- Standalone, local-first Kotlin/Wasm editor with browser persistence and
+  Kotlin/JSON import and export.
+- Deterministic Compose Multiplatform code generation and conservative
+  declaration-level write-back.
 
-The designer uses Android Studio's platform Compose runtime directly. Each
-project tool window owns an independent in-process session, so several projects
-can remain open without sharing bridge state. Android Studio's native Compose
-Preview remains responsible for preview-only functions and split previews.
+In progress:
 
-The current plugin target is Android Studio 2026.1+ (`261`, platform Compose).
-Use JDK 17 for Gradle:
+- Broader coverage of real-world Compose syntax and source-backed containers.
+- Whole-app modeling for screen identity, state, events, ViewModels, and
+  Navigation 3 relationships.
+- Release hardening and expanded Android Studio and browser testing.
+
+The whole-app logic model described in [GOAL.md](GOAL.md) is the direction of
+the project, not a claim that arbitrary ViewModel or navigation code is already
+visually editable. See [ROADMAP.md](ROADMAP.md) for the remaining release work.
+
+## Current capabilities
+
+### Visual designer
+
+- Infinite multi-composable canvas with selection, resize handles, snap guides,
+  keyboard nudging, undo/redo, and layer reparenting.
+- Trackpad two-finger pan and pinch-to-zoom behavior.
+- Designer-wide screen-size selector; composables hug their rendered content,
+  expand when their content fills the screen, and measure `0x0` when they have
+  no renderable content.
+- Material 3 component palette, modifier editor, inspector, component tree, and
+  named light/dark theme preview.
+- Cross-file composable calls rendered as component instances when the target
+  can be resolved unambiguously.
+
+### Kotlin source support
+
+- Common Compose and Material 3 primitives, layout containers, Scaffold slots,
+  alignment, common modifiers, theme tokens, typography expressions, and
+  parameter-backed text previews.
+- Source-backed wrappers keep renderable descendants visible when the outer
+  Kotlin call is not directly editable.
+- Annotation-free extraction of unambiguous `Color(...)` constants and
+  light/dark Material color schemes.
+- Unsupported statements, callbacks, arguments, and runtime-dependent modifier
+  expressions are retained conservatively instead of being discarded.
+- Composables containing only non-renderable source are omitted from the design;
+  hidden `RawCode` remains attached when mixed with renderable content.
+
+### Android Studio integration
+
+- Automatic refresh after relevant editor and project-file changes.
+- Selection synchronization between the Composer tree and Kotlin source.
+- One undoable IDE command for designer edits, including multi-file writes.
+- `New Composable` flow that can append to the active module file or create a
+  new Kotlin file.
+- Optional app scaffolding for a first screen, ViewModel, and Navigation 3
+  source layout. Composer reports required Gradle dependencies but does not edit
+  build files automatically.
+
+Android Studio's native Compose Preview continues to own per-file split
+previews. The Composer plugin does not register a custom split editor or embed
+the website.
+
+## Known limits
+
+- Production parsing is intentionally conservative and supports top-level
+  block-body composables without receivers, type parameters, or explicit return
+  types.
+- Unsupported Kotlin is preserved but not visually editable.
+- Creating composables is supported; structural rename, deletion, and ownership
+  changes remain source-controlled until stable screen identities are added.
+- Visual state machines, ViewModel logic, and full navigation editing are not
+  complete yet.
+- The plugin targets Android Studio 2026.1+ / IntelliJ Platform build 261+ and
+  relies on the IDE's bundled Compose runtime.
+
+## Run the Android Studio plugin
+
+Use JDK 17:
 
 ```bash
-./gradlew :idea-plugin:runAndroidStudio
-./gradlew :idea-plugin:buildPlugin
+JAVA_HOME=/path/to/jdk-17 ./gradlew :idea-plugin:runAndroidStudio
 ```
 
-Override the Android Studio installation when needed:
+By default, the task uses `~/Applications/Android Studio.app`. Override it when
+needed:
 
 ```bash
-./gradlew :idea-plugin:runAndroidStudio \
+JAVA_HOME=/path/to/jdk-17 ./gradlew :idea-plugin:runAndroidStudio \
   -Pcomposer.androidStudio.path="/path/to/Android Studio.app"
 ```
 
-## Website
-
-The browser app is a separate Kotlin/Wasm host; it is not embedded into the IDE
-and does not bring JCEF or browser runtime code into the plugin. Run it locally
-with JDK 17:
+Build the installable plugin archive with:
 
 ```bash
-./gradlew :app:wasmJsBrowserDevelopmentRun --no-configuration-cache
+JAVA_HOME=/path/to/jdk-17 ./gradlew :idea-plugin:buildPlugin
+```
+
+The archive is written under `idea-plugin/build/distributions`.
+
+## Run the website
+
+Start the Kotlin/Wasm development server:
+
+```bash
+JAVA_HOME=/path/to/jdk-17 ./gradlew \
+  :app:wasmJsBrowserDevelopmentRun --no-configuration-cache
 ```
 
 Then open [http://localhost:8080](http://localhost:8080). Build the production
 distribution with:
 
 ```bash
-./gradlew :app:wasmJsBrowserDistribution
+JAVA_HOME=/path/to/jdk-17 ./gradlew :app:wasmJsBrowserDistribution
 ```
 
 The generated site is under
@@ -83,38 +143,38 @@ installed-font access APIs.
 
 ## Architecture
 
-The immutable design tree is the single source of truth.
-
 ```text
-model/        Pure Kotlin model, modifiers, tree operations, and serialization.
-codegen/      Deterministic design tree -> Compose Multiplatform source.
-codeparse/    Kotlin source -> design tree plus conservative write-back planning.
-app/          Shared Compose editor; JVM plugin host plus standalone Wasm website.
-idea-plugin/  Android Studio app tool window, project source sync, and generation.
+model/        Serializable design tree, modifiers, themes, and tree operations.
+codegen/      Deterministic design tree -> Compose Multiplatform Kotlin source.
+codeparse/    Kotlin source -> design tree and conservative write-back plans.
+app/          Shared Compose editor plus JVM and standalone Wasm hosts.
+idea-plugin/  Android Studio tool window, project discovery, and source sync.
 ```
 
-`model`, `codegen`, and `codeparse` have no Compose UI dependencies. Run their
-tests and compile the designer/plugin with:
+`model`, `codegen`, and `codeparse` do not depend on Compose UI. The plugin uses
+Android Studio's platform Compose, Skiko, Kotlin, and coroutine modules instead
+of bundling duplicate runtimes.
+
+## Verify the project
+
+Run the core tests and both host compilation checks with JDK 17:
 
 ```bash
-./gradlew :model:jvmTest :codegen:jvmTest :codeparse:jvmTest \
-  :app:compileKotlinJvm :app:compileKotlinWasmJs :idea-plugin:compileKotlin
+JAVA_HOME=/path/to/jdk-17 ./gradlew \
+  :model:jvmTest \
+  :codegen:jvmTest \
+  :codeparse:jvmTest \
+  :app:jvmTest \
+  :app:compileKotlinWasmJs \
+  :idea-plugin:buildPlugin
 ```
 
-The parser is anchored by round-trip property tests and PSI-conformance tests;
-code generation is covered by golden files.
-
-## Direction
-
-Composer's goal is whole-app visual design: UI, logic, state, and navigation in
-one model while preserving idiomatic Kotlin. The next identity layer will group
-related screen, UI, and ViewModel declarations with stable Composer annotations;
-until then, module discovery uses deterministic source-based identities and
-keeps structural function operations locked.
+Parser round trips, source write-back, serialization, and code-generation
+goldens are covered by the test suites.
 
 ## Stack
 
-- Kotlin 2.4.0
+- Kotlin and Compose compiler 2.4.0
 - Compose Multiplatform 1.11.1
 - Material 3 1.9.0
 - Gradle 8.14.5 and JDK 17
