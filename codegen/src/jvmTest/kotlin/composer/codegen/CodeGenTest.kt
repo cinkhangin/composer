@@ -42,6 +42,34 @@ class CodeGenTest {
     }
 
     @Test
+    fun imported_text_and_image_expressions_survive_regeneration() {
+        val code = CodeGen.generate(
+            Node.Column(
+                "column",
+                children = listOf(
+                    Node.Text(
+                        id = "text",
+                        text = "title",
+                        textExpression = "title",
+                        letterSpacing = 2,
+                        colorExpression = "selectedColor",
+                    ),
+                    Node.Image(
+                        id = "image",
+                        contentDescription = "Hero",
+                        painterExpression = "painterResource(R.drawable.hero)",
+                        contentScaleExpression = "ContentScale.Crop",
+                    ),
+                ),
+            ),
+        )
+        assertTrue("color = selectedColor" in code, code)
+        assertTrue("letterSpacing = 2.sp" in code, code)
+        assertTrue("painter = painterResource(R.drawable.hero)" in code, code)
+        assertTrue("contentScale = ContentScale.Crop" in code, code)
+    }
+
+    @Test
     fun instances_call_the_registered_composables_function() {
         val tree = Node.Artboard(
             "art",
@@ -68,6 +96,53 @@ class CodeGenTest {
         assertTrue("Box(modifier = Modifier.padding(4.dp)) {\n        InfoCard()\n    }" in code, code)
         // the card's padding lives once, inside InfoCard
         assertTrue(code.indexOf("padding(12.dp)") == code.lastIndexOf("padding(12.dp)"), code)
+    }
+
+    @Test
+    fun parsed_instance_arguments_are_preserved_when_a_parent_is_regenerated() {
+        val tree = Node.Artboard(
+            "art",
+            composables = listOf(
+                Node.Composable("card", children = listOf(Node.Text("t", "Card"))),
+                Node.Composable(
+                    "home",
+                    children = listOf(
+                        Node.Instance(
+                            id = "instance",
+                            refId = "card",
+                            sourceArguments = "(title = \"Welcome\", onClick = { println(\"clicked\") })",
+                        ),
+                    ),
+                ),
+            ),
+            layerNames = mapOf("card" to "SharedCard", "home" to "Home"),
+            componentIds = listOf("card"),
+        )
+
+        val code = CodeGen.generate(tree)
+        assertTrue("SharedCard(title = \"Welcome\", onClick = { println(\"clicked\") })" in code, code)
+    }
+
+    @Test
+    fun opaque_modifier_does_not_duplicate_scaffold_scope_padding() {
+        val code = CodeGen.generate(
+            Node.Scaffold(
+                "scaffold",
+                children = listOf(
+                    Node.Box(
+                        "content",
+                        modifier = listOf(
+                            ModifierSpec.External(
+                                "Modifier.padding(innerPadding).customLayout()",
+                                opaque = true,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        assertEquals(1, Regex("padding\\(innerPadding\\)").findAll(code).count(), code)
+        assertTrue("Modifier.padding(innerPadding).customLayout()" in code, code)
     }
 
     @Test

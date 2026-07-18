@@ -1,6 +1,7 @@
 package composer.codeparse
 
 import composer.codegen.CodeGen
+import composer.model.ModifierSpec
 import composer.model.Node
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -85,17 +86,98 @@ class ParserCasesTest {
     }
 
     @Test
-    fun comments_on_rawcode_are_preserved_when_mixed_with_renderable_content() {
+    fun ordinary_attached_comments_are_preserved_without_hiding_the_component() {
         val screen = parseOne(
             """
             // do not lose me
-            Text("hidden source")
+            Text("still visible")
             Text("visible")
             """.trimIndent(),
         )
         val raw = screen.children.first() as Node.RawCode
-        assertEquals("// do not lose me\nText(\"hidden source\")", raw.code)
+        assertEquals("// do not lose me", raw.code)
+        assertEquals("still visible", (screen.children[1] as Node.Text).text)
         assertTrue(screen.children.last() is Node.Text)
+    }
+
+    @Test
+    fun runtime_modifier_chain_is_kept_as_opaque_source_while_children_render() {
+        val screen = parseOne(
+            """
+            Box(modifier = Modifier.offset(y = runtimeOffset).drawBehind { customDraw() }) {
+                Text("Visible child")
+            }
+            """.trimIndent(),
+        )
+        val box = screen.children.single() as Node.Box
+        val source = box.modifier.single() as ModifierSpec.External
+        assertEquals("Modifier.offset(y = runtimeOffset).drawBehind { customDraw() }", source.expression)
+        assertTrue(source.opaque)
+        assertEquals("Visible child", (box.children.single() as Node.Text).text)
+    }
+
+    @Test
+    fun compose_color_constants_and_alpha_copy_render_as_static_colors() {
+        val screen = parseOne(
+            """
+            Text("White", color = Color.White)
+            Text("Faded", color = Color.Black.copy(alpha = 0.5f))
+            """.trimIndent(),
+        )
+        assertEquals(0xFFFFFFFF, (screen.children[0] as Node.Text).color)
+        assertEquals(0x80000000, (screen.children[1] as Node.Text).color)
+    }
+
+    @Test
+    fun dynamic_text_color_and_letter_spacing_keep_source_without_hiding_text() {
+        val screen = parseOne(
+            """
+            Text(
+                text = title,
+                color = selectedColor,
+                letterSpacing = 2.sp,
+            )
+            """.trimIndent(),
+        )
+        val text = screen.children.single() as Node.Text
+        assertEquals("title", text.textExpression)
+        assertEquals("selectedColor", text.colorExpression)
+        assertEquals(2, text.letterSpacing)
+    }
+
+    @Test
+    fun resource_image_renders_as_placeholder_and_preserves_painter_expressions() {
+        val screen = parseOne(
+            """
+            Image(
+                painter = painterResource(R.drawable.hero),
+                contentDescription = "Hero",
+                modifier = Modifier.fillMaxWidth(),
+                contentScale = ContentScale.Crop,
+            )
+            """.trimIndent(),
+        )
+        val image = screen.children.single() as Node.Image
+        assertEquals("painterResource(R.drawable.hero)", image.painterExpression)
+        assertEquals("ContentScale.Crop", image.contentScaleExpression)
+        assertEquals("Hero", image.contentDescription)
+    }
+
+    @Test
+    fun top_app_bar_colors_expression_does_not_hide_its_title() {
+        val screen = parseOne(
+            """
+            TopAppBar(
+                title = { Text("Express") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
+            )
+            """.trimIndent(),
+        )
+        val bar = screen.children.single() as Node.TopAppBar
+        assertEquals("Express", (bar.title as Node.Text).text)
+        assertTrue("TopAppBarDefaults.topAppBarColors" in bar.colorsExpression)
     }
 
     @Test

@@ -34,7 +34,12 @@ sealed interface ModifierSpec {
      */
     @Serializable
     @SerialName("external")
-    data class External(val expression: String) : ModifierSpec
+    data class External(
+        val expression: String,
+        // True when [expression] is the entire user-authored chain rather than
+        // only a parameter/root. It may already contain a Scaffold scope prefix.
+        val opaque: Boolean = false,
+    ) : ModifierSpec
 
     /**
      * `Modifier.padding(…)`. [mode] selects the form: [PaddingMode.All] → `padding(all.dp)`,

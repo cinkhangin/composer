@@ -59,6 +59,43 @@ class ModuleDesignParserTest {
     }
 
     @Test
+    fun parameterized_cross_file_calls_render_as_source_preserving_instances() {
+        val caller = SourceFile(
+            "/module/Caller.kt",
+            """
+            @Composable
+            fun Home() {
+                SharedCard(
+                    title = "Welcome",
+                    onClick = { println("clicked") },
+                )
+            }
+            """.trimIndent(),
+        )
+        val component = SourceFile(
+            "/module/Component.kt",
+            """
+            @Composable
+            fun SharedCard(title: String, onClick: () -> Unit) {
+                Text(title)
+            }
+            """.trimIndent(),
+        )
+
+        val parsed = assertNotNull(ModuleDesignParser.parse(listOf(caller, component)))
+        val home = parsed.artboard.composables.first {
+            parsed.artboard.layerNames[it.id] == "Home"
+        } as Node.Composable
+        val instance = home.children.single() as Node.Instance
+        assertTrue("title = \"Welcome\"" in instance.sourceArguments)
+        assertTrue("onClick = { println(\"clicked\") }" in instance.sourceArguments)
+        assertEquals(
+            "SharedCard",
+            parsed.functionNamesById.getValue(instance.refId),
+        )
+    }
+
+    @Test
     fun edits_only_the_owning_file_and_preserves_parameterized_raw_code() {
         val parsed = assertNotNull(ModuleDesignParser.parse(listOf(first, second)))
         val card = parsed.artboard.composables.first { parsed.artboard.layerNames[it.id] == "SharedCard" } as Node.Composable

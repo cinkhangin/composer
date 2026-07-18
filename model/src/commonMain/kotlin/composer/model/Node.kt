@@ -31,6 +31,10 @@ sealed interface Node {
         // `"Hello $name!"` or `title`). Empty means [text] is a literal. The
         // renderer uses [text] as a safe preview; codegen preserves this expression.
         val textExpression: String = "",
+        val letterSpacing: Int = 0, // sp; 0 = Compose default
+        // Dynamic source color (for example an `if` expression) that the static
+        // preview cannot evaluate. Renderer inherits color; codegen preserves it.
+        val colorExpression: String = "",
     ) : Node
 
     @Serializable
@@ -100,6 +104,11 @@ sealed interface Node {
         val placeholderColor: Long = 0xFFCFD4DC,
         override val modifier: List<ModifierSpec> = emptyList(),
         val url: String = "", // http(s) URL → Coil AsyncImage; data: URL → a picked local image (preview only)
+        // Exact source expressions for imported resource/custom painters and
+        // content scale. The preview uses its placeholder plus a known scale;
+        // codegen retains expressions when regenerating the owning function.
+        val painterExpression: String = "",
+        val contentScaleExpression: String = "",
     ) : Node
 
     @Serializable
@@ -395,6 +404,9 @@ sealed interface Node {
         val actions: List<Node> = emptyList(),
         override val modifier: List<ModifierSpec> = emptyList(),
         val variant: TopAppBarVariant = TopAppBarVariant.CenterAligned,
+        // Imported TopAppBarDefaults.* expression; preview uses its active theme
+        // while codegen preserves the source expression during parent edits.
+        val colorsExpression: String = "",
     ) : Node
 
     /**
@@ -427,6 +439,11 @@ sealed interface Node {
         override val id: String,
         val refId: String,
         override val modifier: List<ModifierSpec> = emptyList(),
+        // Parser-only exact suffix beginning at the call's `(`, including named
+        // arguments and trailing lambdas. Empty means the canonical `()` call.
+        // The preview resolves [refId] and intentionally does not evaluate it;
+        // codegen preserves the suffix so editing a parent never drops user args.
+        val sourceArguments: String = "",
     ) : Node
 
     /**

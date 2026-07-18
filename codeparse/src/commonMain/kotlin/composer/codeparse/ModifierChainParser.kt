@@ -10,9 +10,10 @@ import composer.model.VAlignment
 
 /**
  * `Modifier.padding(16.dp).fillMaxWidth()…` → ordered [ModifierSpec] list — the
- * exact inverse of CodeGen.modifierExpr. Any unrecognized call/argument in the
- * chain fails the WHOLE node (→ RawCode): a modifier the canvas can't execute
- * would silently lie about layout, and chain order is significant.
+ * exact inverse of CodeGen.modifierExpr. An unrecognized call/argument returns
+ * null; ComponentParser then retains the entire expression as an opaque
+ * `ModifierSpec.External`. The canvas ignores that chain without hiding the
+ * component, while codegen preserves it and its significant order.
  *
  * [scopeParam] is the enclosing Scaffold content lambda's parameter: a FIRST
  * chain call `padding(<scopeParam>)` is the scope-imposed prefix codegen
@@ -65,9 +66,19 @@ private fun parseModifierCall(call: KCall): ModifierSpec? {
         "width" -> single(shape)?.let { dpInt(it) }?.let { ModifierSpec.Width(it) }
         "height" -> single(shape)?.let { dpInt(it) }?.let { ModifierSpec.Height(it) }
         "offset" -> {
-            if (shape.named.isNotEmpty() || shape.positional.size != 2) return null
-            val x = dpInt(shape.positional[0]) ?: return null
-            val y = dpInt(shape.positional[1]) ?: return null
+            val (x, y) = when {
+                shape.named.isEmpty() && shape.positional.size == 2 -> {
+                    val x = dpInt(shape.positional[0]) ?: return null
+                    val y = dpInt(shape.positional[1]) ?: return null
+                    x to y
+                }
+                shape.positional.isEmpty() && shape.named.keys.all { it in setOf("x", "y") } -> {
+                    val x = shape.named["x"]?.let { dpInt(it) ?: return null } ?: 0
+                    val y = shape.named["y"]?.let { dpInt(it) ?: return null } ?: 0
+                    x to y
+                }
+                else -> return null
+            }
             ModifierSpec.Offset(x, y)
         }
         "background" -> parseBackground(shape)
@@ -157,11 +168,20 @@ private fun parsePadding(shape: CallShape): ModifierSpec.Padding? {
 }
 
 private fun parseBackground(shape: CallShape): ModifierSpec.Background? {
-    if (shape.named.isNotEmpty() || shape.positional.isEmpty() || shape.positional.size > 2) return null
-    val (corner, unit) = shape.positional.getOrNull(1)
-        ?.let { shapeCorner(it) ?: return null }
-        ?: (0 to CornerUnit.Dp)
-    val fill = shape.positional[0].unparen()
+    val fill: KExpr
+    val shapeExpr: KExpr?
+    when {
+        shape.named.isEmpty() && shape.positional.size in 1..2 -> {
+            fill = shape.positional[0].unparen()
+            shapeExpr = shape.positional.getOrNull(1)
+        }
+        shape.positional.isEmpty() && shape.named.keys.all { it in setOf("color", "shape") } && "color" in shape.named -> {
+            fill = shape.named.getValue("color").unparen()
+            shapeExpr = shape.named["shape"]
+        }
+        else -> return null
+    }
+    val (corner, unit) = shapeExpr?.let { shapeCorner(it) ?: return null } ?: (0 to CornerUnit.Dp)
     colorValue(fill)?.let { solid ->
         return ModifierSpec.Background(color = solid, corner = corner, cornerUnit = unit)
     }

@@ -393,13 +393,13 @@ object CodeGen {
                     // Dangling reference (the composable was deleted) — keep output compiling.
                     out.appendLine("$pad// Missing component: ${node.refId.replace(Regex("[\\r\\n]"), " ")}")
                 } else if (mod == null) {
-                    out.appendLine("$pad$fnName()")
+                    appendSourceCall(out, pad, fnName, node.sourceArguments)
                 } else {
                     // A composable's body has no root to receive a modifier param, so the
                     // instance's chain wraps the call — exactly what the canvas renders.
                     imports += "androidx.compose.foundation.layout.Box"
                     appendCall(out, indent, "Box", listOf("modifier = $mod"), open = true)
-                    out.appendLine("$pad    $fnName()")
+                    appendSourceCall(out, "$pad    ", fnName, node.sourceArguments)
                     out.appendLine("$pad}")
                 }
             }
@@ -408,7 +408,11 @@ object CodeGen {
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
                 val args = mutableListOf(node.textExpression.ifEmpty { "\"${esc(node.text)}\"" })
                 mod?.let { args += "modifier = $it" }
-                node.color?.let { args += "color = ${colorExpr(it, imports)}" }
+                if (node.colorExpression.isNotEmpty()) {
+                    args += "color = ${node.colorExpression}"
+                } else {
+                    node.color?.let { args += "color = ${colorExpr(it, imports)}" }
+                }
                 if (node.fontSize > 0) {
                     imports += "androidx.compose.ui.unit.sp"
                     args += "fontSize = ${node.fontSize}.sp"
@@ -425,6 +429,10 @@ object CodeGen {
                 if (lineHeight > 0) {
                     imports += "androidx.compose.ui.unit.sp"
                     args += "lineHeight = $lineHeight.sp"
+                }
+                if (node.letterSpacing != 0) {
+                    imports += "androidx.compose.ui.unit.sp"
+                    args += "letterSpacing = ${node.letterSpacing}.sp"
                 }
                 if (node.textAlign != TextAlignment.Start) {
                     imports += "androidx.compose.ui.text.style.TextAlign"
@@ -463,6 +471,16 @@ object CodeGen {
                 val desc = if (node.contentDescription.isBlank()) "null" else "\"${esc(node.contentDescription)}\""
                 val isWebUrl = node.url.startsWith("http://") || node.url.startsWith("https://")
                 when {
+                    node.painterExpression.isNotEmpty() -> {
+                        imports += "androidx.compose.foundation.Image"
+                        val args = listOfNotNull(
+                            "painter = ${node.painterExpression}",
+                            "contentDescription = $desc",
+                            mod?.let { "modifier = $it" },
+                            node.contentScaleExpression.takeIf { it.isNotEmpty() }?.let { "contentScale = $it" },
+                        )
+                        appendCall(out, indent, "Image", args)
+                    }
                     isWebUrl -> {
                         // Coil 3 AsyncImage — the user's project must depend on io.coil-kt.coil3:coil-compose.
                         imports += "coil3.compose.AsyncImage"
@@ -931,6 +949,8 @@ object CodeGen {
                     out.appendLine("$pad    },")
                 }
                 mod?.let { out.appendLine("$pad    modifier = $it,") }
+                node.colorsExpression.takeIf { it.isNotEmpty() }
+                    ?.let { out.appendLine("$pad    colors = $it,") }
                 out.appendLine("$pad)")
             }
 
@@ -1262,7 +1282,7 @@ object CodeGen {
             }
         }
         // [leading] is a scope-imposed prefix (e.g. a Scaffold's "padding(innerPadding)").
-        val parts = listOfNotNull(leading) + specParts
+        val parts = listOfNotNull(leading?.takeUnless { external?.opaque == true }) + specParts
         return joinChain(base, parts, indent)
     }
 
@@ -1330,6 +1350,22 @@ object CodeGen {
         } else {
             val cont = "    ".repeat(indent + 2)
             "$base\n" + parts.joinToString("\n") { "$cont.$it" }
+        }
+    }
+
+    /** Emit a parsed component call while retaining its user-authored argument suffix. */
+    private fun appendSourceCall(out: StringBuilder, pad: String, name: String, sourceArguments: String) {
+        if (sourceArguments.isEmpty()) {
+            out.appendLine("$pad$name()")
+            return
+        }
+        val lines = sourceArguments.lines()
+        out.appendLine("$pad$name${lines.first()}")
+        val hasRawString = sourceArguments.contains("\"\"\"")
+        for (line in lines.drop(1)) {
+            // Re-indenting inside a raw string changes its value. Kotlin does not
+            // require statement indentation, so retain those continuation bytes.
+            if (hasRawString) out.appendLine(line) else out.appendLine("$pad    ${line.trimStart()}")
         }
     }
 

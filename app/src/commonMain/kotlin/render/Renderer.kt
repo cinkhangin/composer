@@ -230,6 +230,7 @@ fun RenderNode(
                 fontWeight = node.fontWeight.toCompose(),
                 fontFamily = custom?.let { LocalFonts.loaded[it] } ?: node.fontFamily.toCompose(),
                 textAlign = node.textAlign.toCompose(),
+                letterSpacing = if (node.letterSpacing != 0) node.letterSpacing.sp else TextUnit.Unspecified,
             )
         }
         // A tap-capturing overlay drives selection (the Button's own clickable would swallow it).
@@ -282,6 +283,15 @@ fun RenderNode(
                     painter = ColorPainter(Color(node.placeholderColor)),
                     contentDescription = node.contentDescription.ifBlank { null },
                     modifier = modifier,
+                    contentScale = when (node.contentScaleExpression.substringAfterLast('.')) {
+                        "Crop" -> ContentScale.Crop
+                        "FillBounds" -> ContentScale.FillBounds
+                        "FillHeight" -> ContentScale.FillHeight
+                        "FillWidth" -> ContentScale.FillWidth
+                        "Inside" -> ContentScale.Inside
+                        "None" -> ContentScale.None
+                        else -> ContentScale.Fit
+                    },
                 )
             }
         }
