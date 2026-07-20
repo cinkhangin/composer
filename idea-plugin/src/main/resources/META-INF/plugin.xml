@@ -4,8 +4,8 @@
     <vendor>cinkhangin</vendor>
     <description><![CDATA[
         Visual app designer for Compose Multiplatform code. The Composer App
-        tool window edits screens, ViewModels, and navigation visually while
-        regenerating Kotlin source deterministically.
+        tool window discovers and edits supported Compose UI across project
+        files while regenerating Kotlin source deterministically.
         Code the designer can't represent is preserved verbatim as locked
         blocks — it never destroys code it doesn't understand.
     ]]></description>
