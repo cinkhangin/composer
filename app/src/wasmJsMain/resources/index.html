@@ -26,12 +26,9 @@
         #loader.light { background: #ECEEF2; }
         #loader.done { opacity: 0; pointer-events: none; }
         #loader .mark {
-            width: 56px; height: 56px; border-radius: 14px; background: #6E7BF2;
-            color: #fff; font-size: 30px; font-weight: 700;
-            display: flex; align-items: center; justify-content: center;
+            width: 56px; height: 56px;
             animation: loaderPulse 1.6s ease-in-out infinite;
         }
-        #loader.light .mark { background: #5563E8; }
         #loader .name { color: #E7E9EE; font-size: 15px; font-weight: 600; letter-spacing: .3px; }
         #loader.light .name { color: #1E2128; }
         #loader .bar {
@@ -66,11 +63,8 @@
         }
         #mobile-gate.light { background: #ECEEF2; }
         #mobile-gate .mark {
-            width: 56px; height: 56px; border-radius: 14px; background: #6E7BF2;
-            color: #fff; font-size: 30px; font-weight: 700;
-            display: flex; align-items: center; justify-content: center;
+            width: 56px; height: 56px;
         }
-        #mobile-gate.light .mark { background: #5563E8; }
         #mobile-gate .title { color: #E7E9EE; font-size: 17px; font-weight: 600; }
         #mobile-gate.light .title { color: #1E2128; }
         #mobile-gate .body { color: #8A90A0; font-size: 13px; line-height: 1.5; max-width: 300px; }
@@ -95,14 +89,14 @@
 <body>
     <div id="composer"></div>
     <div id="loader">
-        <div class="mark">C</div>
+        <img class="mark" src="/logo.svg" alt="Composer">
         <div class="name">Composer</div>
         <div class="bar"></div>
         <div class="hint" id="loader-hint">Loading the editor…</div>
         <button class="reload" onclick="location.reload()">Reload</button>
     </div>
     <div id="mobile-gate">
-        <div class="mark">C</div>
+        <img class="mark" src="/logo.svg" alt="Composer">
         <div class="title">Composer needs a bigger screen</div>
         <div class="body">This is a desktop design tool. Please open it on a laptop or desktop browser to start designing.</div>
     </div>
