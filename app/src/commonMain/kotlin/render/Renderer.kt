@@ -72,27 +72,7 @@ import androidx.compose.material3.MediumTopAppBar
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
@@ -323,16 +303,22 @@ fun RenderNode(
                 node.symbol.ifEmpty { sourceIconName(node.sourceImageExpression) },
                 modifier.size(24.dp),
                 tint = LocalContentColor.current,
+                contentDescription = node.contentDescription.ifBlank { null },
             )
         } else {
-            Icon(node.icon.toVector(), contentDescription = node.contentDescription.ifBlank { null }, modifier = modifier)
+            SymbolIcon(
+                node.icon.symbolName(),
+                modifier.size(24.dp),
+                tint = LocalContentColor.current,
+                contentDescription = node.contentDescription.ifBlank { null },
+            )
         }
         is Node.IconButton -> InteractiveNode(node, onSelect, onBounds, scopeModifier) { m ->
             IconButton(onClick = {}, modifier = m) {
                 if (node.previewSymbol.isNotEmpty() || node.symbol.isNotEmpty()) {
                     SymbolIcon(node.previewSymbol.ifEmpty { node.symbol }, Modifier.size(24.dp), tint = LocalContentColor.current)
                 } else {
-                    Icon(node.icon.toVector(), contentDescription = null)
+                    SymbolIcon(node.icon.symbolName(), Modifier.size(24.dp), tint = LocalContentColor.current)
                 }
             }
         }
@@ -652,25 +638,25 @@ private fun Node.alignVertical(): VAlignment? =
 private fun Node.alignHorizontal(): HAlignment? =
     modifier.previewSpecs().firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.horizontal }
 
-private fun IconKind.toVector() = when (this) {
-    IconKind.Menu -> Icons.Default.Menu
-    IconKind.Search -> Icons.Default.Search
-    IconKind.Home -> Icons.Default.Home
-    IconKind.Settings -> Icons.Default.Settings
-    IconKind.Favorite -> Icons.Default.Favorite
-    IconKind.Star -> Icons.Default.Star
-    IconKind.Add -> Icons.Default.Add
-    IconKind.Close -> Icons.Default.Close
-    IconKind.Check -> Icons.Default.Check
-    IconKind.Delete -> Icons.Default.Delete
-    IconKind.Edit -> Icons.Default.Edit
-    IconKind.Share -> Icons.Default.Share
-    IconKind.Notifications -> Icons.Default.Notifications
-    IconKind.Person -> Icons.Default.Person
-    IconKind.Info -> Icons.Default.Info
-    IconKind.MoreVert -> Icons.Default.MoreVert
-    IconKind.Email -> Icons.Default.Email
-    IconKind.Lock -> Icons.Default.Lock
+private fun IconKind.symbolName() = when (this) {
+    IconKind.Menu -> "menu"
+    IconKind.Search -> "search"
+    IconKind.Home -> "home"
+    IconKind.Settings -> "settings"
+    IconKind.Favorite -> "favorite"
+    IconKind.Star -> "star"
+    IconKind.Add -> "add"
+    IconKind.Close -> "close"
+    IconKind.Check -> "check"
+    IconKind.Delete -> "delete"
+    IconKind.Edit -> "edit"
+    IconKind.Share -> "share"
+    IconKind.Notifications -> "notifications"
+    IconKind.Person -> "person"
+    IconKind.Info -> "info"
+    IconKind.MoreVert -> "more_vert"
+    IconKind.Email -> "mail"
+    IconKind.Lock -> "lock"
 }
 
 private fun sourceIconName(expression: String): String =
