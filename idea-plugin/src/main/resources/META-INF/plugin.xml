@@ -19,7 +19,7 @@
         <notificationGroup id="Composer" displayType="BALLOON"/>
         <toolWindow id="Composer App" anchor="right" secondary="false"
                     factoryClass="composer.idea.app.ComposerAppToolWindowFactory"
-                    icon="/META-INF/pluginIcon.svg"/>
+                    icon="/icons/composerToolWindow.svg"/>
     </extensions>
 
     <!-- PSI use is syntax-level only, so both Kotlin plugin modes work. -->
