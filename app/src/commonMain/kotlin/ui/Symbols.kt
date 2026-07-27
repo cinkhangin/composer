@@ -84,11 +84,16 @@ object Symbols {
  * applies [tint], so the single-color artwork picks up the theme color.
  */
 @Composable
-fun SymbolIcon(name: String, modifier: Modifier = Modifier.size(16.dp), tint: Color = Tk.textSecondary) {
+fun SymbolIcon(
+    name: String,
+    modifier: Modifier = Modifier.size(16.dp),
+    tint: Color = Tk.textSecondary,
+    contentDescription: String? = null,
+) {
     LaunchedEffect(Unit) { Symbols.load() }
     val vector = if (Symbols.loaded) Symbols.vector(name) else null
     if (vector != null) {
-        Icon(imageVector = vector, contentDescription = null, modifier = modifier, tint = tint)
+        Icon(imageVector = vector, contentDescription = contentDescription, modifier = modifier, tint = tint)
     } else {
         Box(modifier) // reserve space until loaded (avoids layout jump)
     }

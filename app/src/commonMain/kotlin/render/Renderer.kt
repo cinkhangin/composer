@@ -72,27 +72,7 @@ import androidx.compose.material3.MediumTopAppBar
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
@@ -109,6 +89,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.RectangleShape
@@ -197,7 +178,7 @@ fun RenderNode(
             val designRoot = LocalDesignRoot.current
             val depth = LocalInstanceDepth.current
             val main = if (depth < 8) designRoot?.findById(node.refId) as? Node.Composable else null
-            Box(modifier = modifier) {
+            Box(modifier = modifier.clipToBounds()) {
                 if (main == null) {
                     Box(
                         Modifier
@@ -263,13 +244,13 @@ fun RenderNode(
         // Runtime/data wrappers are locked source, but their parsed descendants
         // form a useful static template in the designer.
         is Node.SourceContainer -> when (node.previewLayout) {
-            SourcePreviewLayout.Box -> Box(modifier = modifier) {
+            SourcePreviewLayout.Box -> Box(modifier = modifier.clipToBounds()) {
                 node.children.forEach { child ->
                     val sm = child.alignBox()?.let { Modifier.align(it.toCompose()) } ?: Modifier
                     RenderNode(child, selectedId, onSelect, onBounds, sm)
                 }
             }
-            SourcePreviewLayout.Column -> Column(modifier = modifier) {
+            SourcePreviewLayout.Column -> Column(modifier = modifier.clipToBounds()) {
                 node.children.forEach { child ->
                     var sm: Modifier = Modifier
                     child.weightValue()?.let { sm = sm.weight(it) }
@@ -277,7 +258,7 @@ fun RenderNode(
                     RenderNode(child, selectedId, onSelect, onBounds, sm)
                 }
             }
-            SourcePreviewLayout.Row -> Row(modifier = modifier) {
+            SourcePreviewLayout.Row -> Row(modifier = modifier.clipToBounds()) {
                 node.children.forEach { child ->
                     var sm: Modifier = Modifier
                     child.weightValue()?.let { sm = sm.weight(it) }
@@ -323,16 +304,22 @@ fun RenderNode(
                 node.symbol.ifEmpty { sourceIconName(node.sourceImageExpression) },
                 modifier.size(24.dp),
                 tint = LocalContentColor.current,
+                contentDescription = node.contentDescription.ifBlank { null },
             )
         } else {
-            Icon(node.icon.toVector(), contentDescription = node.contentDescription.ifBlank { null }, modifier = modifier)
+            SymbolIcon(
+                node.icon.symbolName(),
+                modifier.size(24.dp),
+                tint = LocalContentColor.current,
+                contentDescription = node.contentDescription.ifBlank { null },
+            )
         }
         is Node.IconButton -> InteractiveNode(node, onSelect, onBounds, scopeModifier) { m ->
             IconButton(onClick = {}, modifier = m) {
                 if (node.previewSymbol.isNotEmpty() || node.symbol.isNotEmpty()) {
                     SymbolIcon(node.previewSymbol.ifEmpty { node.symbol }, Modifier.size(24.dp), tint = LocalContentColor.current)
                 } else {
-                    Icon(node.icon.toVector(), contentDescription = null)
+                    SymbolIcon(node.icon.symbolName(), Modifier.size(24.dp), tint = LocalContentColor.current)
                 }
             }
         }
@@ -510,7 +497,7 @@ fun RenderNode(
         is Node.LinearProgress -> LinearProgressIndicator(modifier = modifier)
         // weight() is a Column/Row scope member, so it's applied here per child.
         is Node.Column -> Column(
-            modifier = modifier,
+            modifier = modifier.clipToBounds(),
             verticalArrangement = if (node.spacing > 0) Arrangement.spacedBy(node.spacing.dp) else node.verticalArrangement.toCompose(),
             horizontalAlignment = node.horizontalAlignment.toCompose(),
         ) {
@@ -522,7 +509,7 @@ fun RenderNode(
             }
         }
         is Node.Row -> Row(
-            modifier = modifier,
+            modifier = modifier.clipToBounds(),
             horizontalArrangement = if (node.spacing > 0) Arrangement.spacedBy(node.spacing.dp) else node.horizontalArrangement.toCompose(),
             verticalAlignment = node.verticalAlignment.toCompose(),
         ) {
@@ -533,7 +520,7 @@ fun RenderNode(
                 RenderNode(child, selectedId, onSelect, onBounds, sm)
             }
         }
-        is Node.Box -> Box(modifier = modifier, contentAlignment = node.contentAlignment.toCompose()) {
+        is Node.Box -> Box(modifier = modifier.clipToBounds(), contentAlignment = node.contentAlignment.toCompose()) {
             node.children.forEach { child ->
                 val sm = child.alignBox()?.let { Modifier.align(it.toCompose()) } ?: Modifier
                 RenderNode(child, selectedId, onSelect, onBounds, sm)
@@ -627,11 +614,15 @@ fun RenderNode(
         }
         // A Slot = a slot-argument scope; preview its children in a plain box (its
         // parent's slot lambda positions it). Selectable so users can target it.
-        is Node.Slot -> Box(modifier = modifier) { node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) } }
+        is Node.Slot -> Box(modifier = modifier.clipToBounds()) {
+            node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) }
+        }
         // A Composable = function scope; it hugs children unless one of them fills
         // the bounded preview surface. ScreenFrame normally renders its children
         // directly, but keep this defensive branch consistent with that behavior.
-        is Node.Composable -> Box(modifier = modifier) { node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) } }
+        is Node.Composable -> Box(modifier = modifier.clipToBounds()) {
+            node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) }
+        }
         // The artboard is never rendered as a node — the canvas lays out each
         // screen's frame itself (App.kt). Render nothing defensively.
         is Node.Artboard -> Unit
@@ -652,25 +643,25 @@ private fun Node.alignVertical(): VAlignment? =
 private fun Node.alignHorizontal(): HAlignment? =
     modifier.previewSpecs().firstNotNullOfOrNull { (it as? ModifierSpec.Align)?.horizontal }
 
-private fun IconKind.toVector() = when (this) {
-    IconKind.Menu -> Icons.Default.Menu
-    IconKind.Search -> Icons.Default.Search
-    IconKind.Home -> Icons.Default.Home
-    IconKind.Settings -> Icons.Default.Settings
-    IconKind.Favorite -> Icons.Default.Favorite
-    IconKind.Star -> Icons.Default.Star
-    IconKind.Add -> Icons.Default.Add
-    IconKind.Close -> Icons.Default.Close
-    IconKind.Check -> Icons.Default.Check
-    IconKind.Delete -> Icons.Default.Delete
-    IconKind.Edit -> Icons.Default.Edit
-    IconKind.Share -> Icons.Default.Share
-    IconKind.Notifications -> Icons.Default.Notifications
-    IconKind.Person -> Icons.Default.Person
-    IconKind.Info -> Icons.Default.Info
-    IconKind.MoreVert -> Icons.Default.MoreVert
-    IconKind.Email -> Icons.Default.Email
-    IconKind.Lock -> Icons.Default.Lock
+private fun IconKind.symbolName() = when (this) {
+    IconKind.Menu -> "menu"
+    IconKind.Search -> "search"
+    IconKind.Home -> "home"
+    IconKind.Settings -> "settings"
+    IconKind.Favorite -> "favorite"
+    IconKind.Star -> "star"
+    IconKind.Add -> "add"
+    IconKind.Close -> "close"
+    IconKind.Check -> "check"
+    IconKind.Delete -> "delete"
+    IconKind.Edit -> "edit"
+    IconKind.Share -> "share"
+    IconKind.Notifications -> "notifications"
+    IconKind.Person -> "person"
+    IconKind.Info -> "info"
+    IconKind.MoreVert -> "more_vert"
+    IconKind.Email -> "mail"
+    IconKind.Lock -> "lock"
 }
 
 private fun sourceIconName(expression: String): String =

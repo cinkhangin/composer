@@ -196,11 +196,11 @@ class ComposerAppService(private val project: Project) : Disposable {
         for (vf in candidateFiles()) {
             val doc = FileDocumentManager.getInstance().getCachedDocument(vf)
             val text = doc?.text ?: LoadTextUtil.loadText(vf).toString()
-            // Every supported declaration necessarily spells Composable in its
-            // annotation or import. Avoid parsing/stamping unrelated module files
-            // on every keystroke while document/VFS listeners still detect when a
-            // file gains its first composable.
-            if ("Composable" !in text) continue
+            // Theme extraction resolves ordinary top-level Color constants and
+            // color schemes across files. Keep non-composable Kotlin sources in
+            // the snapshot so a standard Color.kt can participate in that
+            // resolution; ModuleDesignParser itself filters the visual function
+            // set down to supported composables.
             sources += SourceFile(vf.path, text)
             stamps[vf.path] = doc?.modificationStamp ?: vf.modificationStamp
             byPath[vf.path] = vf

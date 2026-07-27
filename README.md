@@ -9,7 +9,7 @@ generator.
 
 Composer is built for source safety. Supported Compose code becomes an editable
 design tree, while code the designer cannot represent is preserved verbatim as
-`RawCode`. There is no AI-generated code, hidden backend, or JCEF-based IDE
+`RawCode`. Neither host requires a hidden backend or embeds a JCEF-based IDE
 frontend.
 
 ## Project status
@@ -34,10 +34,6 @@ In progress:
 - Whole-app modeling for screen identity, state, events, ViewModels, and
   Navigation 3 relationships.
 - Release hardening and expanded Android Studio and browser testing.
-
-The whole-app logic model described in [GOAL.md](GOAL.md) is the direction of
-the project, not a claim that arbitrary ViewModel or navigation code is already
-visually editable. See [ROADMAP.md](ROADMAP.md) for the remaining release work.
 
 ## Current capabilities
 
