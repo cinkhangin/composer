@@ -53,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
@@ -918,10 +919,9 @@ private fun ArtboardCanvas(
 
 /**
  * One composable's frame at its artboard position, with a clickable name label.
- * The frame is TRANSPARENT and HUGS its content: width/height are MAX constraints
- * (the device preset) — a fillMaxSize child grows to them, smaller content wraps.
- * No fixed size, no background paint, no canvas resize (the shared maximum is
- * picked in the toolbar); the label shows the generated function name.
+ * The transparent device viewport clips drawing to the selected screen size,
+ * while the registered/selected surface inside still hugs rendered content.
+ * The viewport paints no background; the label shows the generated function name.
  */
 @Composable
 private fun ScreenFrame(
@@ -944,8 +944,8 @@ private fun ScreenFrame(
             // can be larger than the island — Modifier.size would silently coerce)
             // and place it so the frozen content box is centered in the island.
             .layout { measurable, constraints ->
-                // MAX constraints (not fixed): the frame hugs its content; the
-                // preset size only caps it — fillMaxSize children expand to it.
+                // The viewport uses the screen maximum; its registered surface
+                // remains a separate content-hugging box inside the mask.
                 val w = screen.width.dp.roundToPx()
                 val h = screen.height.dp.roundToPx()
                 val placeable = measurable.measure(Constraints(maxWidth = w, maxHeight = h))
@@ -954,33 +954,36 @@ private fun ScreenFrame(
                 layout(0, 0) { placeable.place(ox, oy) }
             },
     ) {
-        // The design's own theme wraps the preview (WYSIWYG with the generated
-        // MaterialTheme). The frame paints NOTHING itself — a composable is
-        // transparent until the user adds a background; the canvas grid shows
-        // through, and the frame simply wraps whatever the content measures.
-        MaterialTheme(colorScheme = state.theme.toColorScheme()) {
-            // MaterialTheme alone does NOT set LocalContentColor (only Surface does) —
-            // default-colored Text/Icon follows the theme like a themed app surface.
-            CompositionLocalProvider(
-                LocalContentColor provides MaterialTheme.colorScheme.onBackground,
-                LocalDesignRoot provides state.root,
-            ) {
-                Box(
-                    modifier = Modifier
-                        // Register the measured surface, not the zero-sized
-                        // positioning wrapper. This is the selection outline:
-                        // full screen for fill/equal-size content, hug otherwise,
-                        // and exactly 0×0 when there is no renderable content.
-                        .onGloballyPositioned { register(screen.id, it) }
-                        // Per-pixel grid overlay on the measured content area (the
-                        // frame is transparent and hugs content, so this box IS the
-                        // visible screen surface); fades in past 2x zoom.
-                        .pixelGrid(scale)
-                        // A tap on a gap (no child consumed it) selects the composable.
-                        .pointerInput(screen.id) { detectTapGestures { state.select(screen.id) } },
+        // Keep the mask separate from the measured selection surface: the viewport
+        // is always the device maximum, while the surface still hugs its content.
+        Box(
+            modifier = Modifier
+                .size(screen.width.dp, screen.height.dp)
+                .clipToBounds(),
+        ) {
+            // The design's own theme wraps the preview (WYSIWYG with generated
+            // MaterialTheme). The viewport paints nothing, so the grid remains
+            // visible wherever the user did not add a background.
+            MaterialTheme(colorScheme = state.theme.toColorScheme()) {
+                // MaterialTheme alone does NOT set LocalContentColor (only Surface does) —
+                // default-colored Text/Icon follows the theme like a themed app surface.
+                CompositionLocalProvider(
+                    LocalContentColor provides MaterialTheme.colorScheme.onBackground,
+                    LocalDesignRoot provides state.root,
                 ) {
-                    screen.children.forEach { child ->
-                        RenderNode(child, state.selectedId, onSelect = state::selectAt, onBounds = ::register)
+                    Box(
+                        modifier = Modifier
+                            // Register the measured surface, not the fixed viewport.
+                            // This remains full screen for fill/equal-size content,
+                            // hugs smaller content, and is 0×0 when content is empty.
+                            .onGloballyPositioned { register(screen.id, it) }
+                            .pixelGrid(scale)
+                            // A tap on a gap (no child consumed it) selects the composable.
+                            .pointerInput(screen.id) { detectTapGestures { state.select(screen.id) } },
+                    ) {
+                        screen.children.forEach { child ->
+                            RenderNode(child, state.selectedId, onSelect = state::selectAt, onBounds = ::register)
+                        }
                     }
                 }
             }

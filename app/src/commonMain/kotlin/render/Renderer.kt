@@ -89,6 +89,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.RectangleShape
@@ -177,7 +178,7 @@ fun RenderNode(
             val designRoot = LocalDesignRoot.current
             val depth = LocalInstanceDepth.current
             val main = if (depth < 8) designRoot?.findById(node.refId) as? Node.Composable else null
-            Box(modifier = modifier) {
+            Box(modifier = modifier.clipToBounds()) {
                 if (main == null) {
                     Box(
                         Modifier
@@ -243,13 +244,13 @@ fun RenderNode(
         // Runtime/data wrappers are locked source, but their parsed descendants
         // form a useful static template in the designer.
         is Node.SourceContainer -> when (node.previewLayout) {
-            SourcePreviewLayout.Box -> Box(modifier = modifier) {
+            SourcePreviewLayout.Box -> Box(modifier = modifier.clipToBounds()) {
                 node.children.forEach { child ->
                     val sm = child.alignBox()?.let { Modifier.align(it.toCompose()) } ?: Modifier
                     RenderNode(child, selectedId, onSelect, onBounds, sm)
                 }
             }
-            SourcePreviewLayout.Column -> Column(modifier = modifier) {
+            SourcePreviewLayout.Column -> Column(modifier = modifier.clipToBounds()) {
                 node.children.forEach { child ->
                     var sm: Modifier = Modifier
                     child.weightValue()?.let { sm = sm.weight(it) }
@@ -257,7 +258,7 @@ fun RenderNode(
                     RenderNode(child, selectedId, onSelect, onBounds, sm)
                 }
             }
-            SourcePreviewLayout.Row -> Row(modifier = modifier) {
+            SourcePreviewLayout.Row -> Row(modifier = modifier.clipToBounds()) {
                 node.children.forEach { child ->
                     var sm: Modifier = Modifier
                     child.weightValue()?.let { sm = sm.weight(it) }
@@ -496,7 +497,7 @@ fun RenderNode(
         is Node.LinearProgress -> LinearProgressIndicator(modifier = modifier)
         // weight() is a Column/Row scope member, so it's applied here per child.
         is Node.Column -> Column(
-            modifier = modifier,
+            modifier = modifier.clipToBounds(),
             verticalArrangement = if (node.spacing > 0) Arrangement.spacedBy(node.spacing.dp) else node.verticalArrangement.toCompose(),
             horizontalAlignment = node.horizontalAlignment.toCompose(),
         ) {
@@ -508,7 +509,7 @@ fun RenderNode(
             }
         }
         is Node.Row -> Row(
-            modifier = modifier,
+            modifier = modifier.clipToBounds(),
             horizontalArrangement = if (node.spacing > 0) Arrangement.spacedBy(node.spacing.dp) else node.horizontalArrangement.toCompose(),
             verticalAlignment = node.verticalAlignment.toCompose(),
         ) {
@@ -519,7 +520,7 @@ fun RenderNode(
                 RenderNode(child, selectedId, onSelect, onBounds, sm)
             }
         }
-        is Node.Box -> Box(modifier = modifier, contentAlignment = node.contentAlignment.toCompose()) {
+        is Node.Box -> Box(modifier = modifier.clipToBounds(), contentAlignment = node.contentAlignment.toCompose()) {
             node.children.forEach { child ->
                 val sm = child.alignBox()?.let { Modifier.align(it.toCompose()) } ?: Modifier
                 RenderNode(child, selectedId, onSelect, onBounds, sm)
@@ -613,11 +614,15 @@ fun RenderNode(
         }
         // A Slot = a slot-argument scope; preview its children in a plain box (its
         // parent's slot lambda positions it). Selectable so users can target it.
-        is Node.Slot -> Box(modifier = modifier) { node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) } }
+        is Node.Slot -> Box(modifier = modifier.clipToBounds()) {
+            node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) }
+        }
         // A Composable = function scope; it hugs children unless one of them fills
         // the bounded preview surface. ScreenFrame normally renders its children
         // directly, but keep this defensive branch consistent with that behavior.
-        is Node.Composable -> Box(modifier = modifier) { node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) } }
+        is Node.Composable -> Box(modifier = modifier.clipToBounds()) {
+            node.children.forEach { RenderNode(it, selectedId, onSelect, onBounds) }
+        }
         // The artboard is never rendered as a node — the canvas lays out each
         // screen's frame itself (App.kt). Render nothing defensively.
         is Node.Artboard -> Unit
