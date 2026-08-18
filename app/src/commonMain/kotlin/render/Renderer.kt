@@ -18,10 +18,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.layout.ContentScale
 import composer.LocalFonts
@@ -766,49 +763,6 @@ private fun Node.isInteractive(): Boolean = this is Node.Button || this is Node.
     this is Node.RadioButton || this is Node.Slider || this is Node.TextField
 
 /**
- * Renders an interactive [node] with a transparent tap-capturing overlay on top, so
- * a single tap selects it and a double tap drills in — the component's own gesture
- * (which would otherwise swallow the pointer) is left visually intact but inert.
- * The node's real modifier chain (size, background, …) is applied to [content].
- */
-@Composable
-private fun InteractiveNode(
-    node: Node,
-    onSelect: (id: String, deep: Boolean) -> Unit,
-    onBounds: (String, LayoutCoordinates) -> Unit,
-    scopeModifier: Modifier,
-    content: @Composable (Modifier) -> Unit,
-) {
-    // Split the modifier: positional Offset goes on the wrapper Box (so the tap overlay
-    // and measured bounds move with the component), everything else (size, background, …)
-    // styles the inner component. Otherwise a moved component's hit-area lagged its visual.
-    val scheme = MaterialTheme.colorScheme
-    val previewModifiers = node.modifier.previewSpecs()
-    val offsetMod = previewModifiers.filterIsInstance<ModifierSpec.Offset>().toModifier(scheme)
-    val innerMod = previewModifiers.filterNot { it is ModifierSpec.Offset }.toModifier(scheme)
-    Box(modifier = scopeModifier.then(offsetMod).onGloballyPositioned { onBounds(node.id, it) }) {
-        content(innerMod)
-        Box(
-            Modifier.matchParentSize().pointerInput(node.id) {
-                awaitEachGesture {
-                    // Consume the DOWN immediately. The overlay is the top sibling, so it
-                    // processes the press first in the Main pass; consuming it here means the
-                    // component's own clickable/toggle/drag (a lower sibling) sees it already
-                    // consumed and never fires. detectTapGestures doesn't consume the down
-                    // early enough — that's why Buttons in particular swallowed the tap.
-                    awaitFirstDown().consume()
-                    val up = waitForUpOrCancellation()
-                    if (up != null) {
-                        up.consume()
-                        onSelect(node.id, false)
-                    }
-                }
-            },
-        )
-    }
-}
-
-/**
  * Map a [DesignTheme] to a real Material3 [ColorScheme] for the live preview.
  * Mirrors codegen: start from the light/dark builder, then override only the tokens
  * the user changed from the baseline-light default — so the preview matches the
@@ -936,10 +890,9 @@ fun List<ModifierSpec>.toModifier(scheme: ColorScheme, scaffoldPadding: PaddingV
     }
 
 /** Flatten safe static projections from opaque source chains for scope handling. */
-private fun List<ModifierSpec>.previewSpecs(): List<ModifierSpec> = flatMap { spec ->
+internal fun List<ModifierSpec>.previewSpecs(): List<ModifierSpec> = flatMap { spec ->
     if (spec is ModifierSpec.External && spec.opaque) spec.preview.previewSpecs() else listOf(spec)
 }
-
 
 /** A canvas shape's drawn extent in dp: (x, y, w, h); null for unknown nodes. */
 private fun shapeHitRect(shape: Node): ShapeRect? = when (shape) {

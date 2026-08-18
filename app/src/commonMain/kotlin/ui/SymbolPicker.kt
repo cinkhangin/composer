@@ -109,21 +109,3 @@ fun SymbolPickerField(label: String, current: String, fallbackLabel: String, onP
         }
     }
 }
-
-@Composable
-private fun SymbolCell(name: String, selected: Boolean, onClick: () -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    Box(
-        modifier = Modifier
-            .size(31.dp)
-            .clip(RoundedCornerShape(Tk.rXs))
-            .background(if (selected) Tk.accentSoft else if (hovered) Tk.elevated else Tk.panelAlt)
-            .border(1.dp, if (selected) Tk.accent else if (hovered) Tk.borderStrong else Tk.border, RoundedCornerShape(Tk.rXs))
-            .hoverable(interaction)
-            .clickable(interactionSource = interaction, indication = null) { onClick() },
-        contentAlignment = Alignment.Center,
-    ) {
-        SymbolIcon(name, Modifier.size(17.dp), tint = if (selected) Tk.accent else Tk.textPrimary)
-    }
-}
