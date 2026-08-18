@@ -230,6 +230,19 @@ internal fun Canvas(
                 fun toScreen(x: Float, y: Float) =
                     Offset(cw / 2f + panX + (x - cw / 2f) * scale, ch / 2f + panY + (y - ch / 2f) * scale)
 
+                // Screen names live outside the zoomed layer. Their anchors follow
+                // each transformed frame while the text and gap stay constant in px.
+                for (screen in screens) {
+                    val frameLeft = (cw - content.w * d) / 2f + (screen.x - content.minX) * d
+                    val frameTop = (ch - content.h * d) / 2f + (screen.y - content.minY) * d
+                    ScreenLabel(
+                        name = state.layerName(screen.id) ?: "Composable",
+                        selected = state.selectedId == screen.id,
+                        frameTopLeft = toScreen(frameLeft, frameTop),
+                        onClick = { state.select(screen.id) },
+                    )
+                }
+
                 // Corner rounding of a node's outline in screen px. Percent corners are
                 // relative to the node's smaller side (like the rendered
                 // RoundedCornerShape(percent)); dp corners scale with zoom.

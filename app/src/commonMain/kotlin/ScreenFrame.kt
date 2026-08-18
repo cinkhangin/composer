@@ -1,21 +1,12 @@
 package composer
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
@@ -24,26 +15,20 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
-import kotlin.math.roundToInt
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import composer.model.Node
 import composer.render.LocalDesignRoot
 import composer.render.RenderNode
 import composer.render.toColorScheme
-import composer.ui.Tk
-import androidx.compose.foundation.text.BasicText
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.rememberTextMeasurer
+import kotlin.math.roundToInt
 
 /**
- * One composable's frame at its artboard position, with a clickable name label.
+ * One composable's frame at its artboard position.
  * The transparent device viewport clips drawing to the selected screen size,
  * while the registered/selected surface inside still hugs rendered content.
- * The viewport paints no background; the label shows the generated function name.
+ * The viewport paints no background. Its name label is rendered in the unscaled
+ * screen-space overlay by [Canvas].
  */
 @Composable
 internal fun ScreenFrame(
@@ -110,39 +95,5 @@ internal fun ScreenFrame(
                 }
             }
         }
-
-        // Screen name label (also the generated @Composable function name).
-        // Keep it at a constant on-screen size while it fits above the frame.
-        // At overview scales (large modules can fit at ~0.05x), full /scale
-        // compensation makes the text wider than the frame and BasicText clips
-        // every name to its first couple of letters. Cap the compensation by
-        // the frame width so the complete name shrinks with very small frames.
-        val selectedHere = state.selectedId == screen.id
-        val screenName = state.layerName(screen.id) ?: "Composable"
-        val textMeasurer = rememberTextMeasurer()
-        val density = LocalDensity.current
-        val baseLabelWidthPx = textMeasurer.measure(
-            text = screenName,
-            style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium),
-            maxLines = 1,
-        ).size.width.coerceAtLeast(1)
-        val frameWidthPx = with(density) { (screen.width - 8).coerceAtLeast(1).dp.toPx() }
-        val labelCompensation = minOf(1f / scale, frameWidthPx / baseLabelWidthPx)
-        BasicText(
-            text = screenName,
-            style = TextStyle(
-                color = if (selectedHere) Tk.accent else Tk.textSecondary,
-                fontSize = (11f * labelCompensation).sp,
-                fontWeight = FontWeight.Medium,
-            ),
-            maxLines = 1,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .offset(y = -(20f * labelCompensation).dp)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) { state.select(screen.id) },
-        )
     }
 }
