@@ -4,7 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -13,6 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size as GeomSize
@@ -22,22 +24,23 @@ import composer.model.IconKind
 import composer.model.ModifierSpec
 import composer.model.Node
 import composer.model.TextWeight
-import composer.ui.Island
 import composer.ui.Tk
 
 /**
- * Figma-style floating component bar. Pinned to the bottom-center of the canvas;
- * clicking a tool inserts a new node relative to the current selection
- * (see [EditorState.insert]).
+ * Fixed component footer for the canvas workspace. Clicking a tool inserts a new
+ * node relative to the current selection (see [EditorState.insert]).
  */
 @Composable
-fun FloatingPalette(state: EditorState, modifier: Modifier = Modifier) {
+fun ComponentBar(state: EditorState, modifier: Modifier = Modifier) {
     val scroll = rememberScrollState()
-    Island(modifier) {
-        // Edge fades signal that the bar scrolls horizontally when tools overflow —
-        // without them, clipped icons at the island edge just look broken.
-        Box(
-            Modifier.drawWithContent {
+    // Edge fades signal horizontal overflow without returning to floating chrome.
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .clipToBounds()
+            .workspaceSurface(divider = WorkspaceDivider.Top)
+            .drawWithContent {
                 drawContent()
                 val w = 28.dp.toPx()
                 if (scroll.canScrollBackward) {
@@ -54,19 +57,20 @@ fun FloatingPalette(state: EditorState, modifier: Modifier = Modifier) {
                     )
                 }
             },
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(scroll)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier
-                    .horizontalScroll(scroll)
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                paletteGroups.forEachIndexed { i, group ->
-                    if (i > 0) Box(Modifier.size(width = 1.dp, height = 26.dp).padding(horizontal = 3.dp).background(Tk.border))
-                    for (item in group.items) {
-                        PaletteTool(item.type) { state.insert(item.factory) }
-                    }
+            paletteGroups.forEachIndexed { i, group ->
+                if (i > 0) Box(Modifier.size(width = 1.dp, height = 26.dp).padding(horizontal = 3.dp).background(Tk.border))
+                for (item in group.items) {
+                    PaletteTool(item.type) { state.insert(item.factory) }
                 }
             }
         }

@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.dp
 import composer.ui.Tk
 
 internal enum class WorkspaceDivider {
+    Top,
     Left,
     Right,
     Bottom,
@@ -22,6 +23,12 @@ internal fun Modifier.workspaceSurface(
     val stroke = 1.dp.toPx()
     val halfStroke = stroke / 2f
     when (divider) {
+        WorkspaceDivider.Top -> drawLine(
+            color = Tk.border,
+            start = Offset(0f, halfStroke),
+            end = Offset(size.width, halfStroke),
+            strokeWidth = stroke,
+        )
         WorkspaceDivider.Left -> drawLine(
             color = Tk.border,
             start = Offset(halfStroke, 0f),

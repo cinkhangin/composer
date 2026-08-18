@@ -4,7 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -116,230 +118,231 @@ internal fun Canvas(
         applyZoom(zoom * factor, ax, ay)
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        BoxWithConstraints(
-            Modifier
-                .fillMaxSize()
-                .onGloballyPositioned {
-                    viewportSize = Size(it.size.width.toFloat(), it.size.height.toFloat())
-                }
-                .onPointerEvent(PointerEventType.Scroll) { event ->
-                    val delta = event.changes.firstOrNull()?.scrollDelta ?: Offset.Zero
-                    val mods = event.keyboardModifiers
-                    if (mods.isCtrlPressed || mods.isMetaPressed) {
-                        // Explicit Ctrl/Cmd + wheel remains a zoom fallback. Native
-                        // plugin pinch is delivered through [magnification] instead.
-                        if (delta.y != 0f) {
-                            val pos = event.changes.firstOrNull()?.position
-                            val ax = (pos?.x ?: size.width / 2f) - size.width / 2f
-                            val ay = (pos?.y ?: size.height / 2f) - size.height / 2f
-                            applyZoom(zoom * (1f - delta.y.coerceIn(-12f, 12f) * 0.05f), ax, ay)
-                        }
-                    } else {
-                        // two-finger scroll → pan
-                        panX -= delta.x.coerceIn(-15f, 15f) * 6f
-                        panY -= delta.y.coerceIn(-15f, 15f) * 6f
-                    }
-                }
-                .onPointerEvent(PointerEventType.Move) { event ->
-                    hoverPos = if (event.buttons.isPrimaryPressed || event.buttons.isTertiaryPressed) null
-                    else event.changes.firstOrNull()?.position
-                }
-                .onPointerEvent(PointerEventType.Exit) { hoverPos = null }
-                // Middle-button drag pans — plain-mouse users have no two-finger scroll.
-                .pointerInput(Unit) {
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        if (!currentEvent.buttons.isTertiaryPressed) return@awaitEachGesture
-                        down.consume()
-                        setCanvasCursor("grabbing")
-                        var prev = down.position
-                        try {
-                            while (true) {
-                                val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                if (!change.pressed) { change.consume(); break }
-                                panX += change.position.x - prev.x
-                                panY += change.position.y - prev.y
-                                prev = change.position
-                                change.consume()
-                            }
-                        } finally {
-                            setCanvasCursor("default")
-                        }
-                    }
-                }
-                // A tap on empty canvas (nothing consumed it) selects the artboard.
-                .pointerInput(Unit) { detectTapGestures { state.select(state.root.id) } },
-        ) {
-            val density = LocalDensity.current
-            val screens = state.composables
-            // The content bounding box is frozen while screens MOVE, so dragging
-            // never re-fits the view. Shared screen-size changes do re-key it.
-            val screenSizeKey = screens.map { Triple(it.id, it.width, it.height) }
-            val content = remember(screenSizeKey) { contentBoxOf(screens) }
-            // Auto-fit scale (never up past 1:1), then apply the user's zoom. The
-            // vertical margin clears the FLOATING CHROME: the preset badge (top) and
-            // the palette (bottom) overlay the canvas and eat clicks — a frame fitted
-            // under them has unreachable name label, top handles, and bottom handles.
-            val marginH = 144f
-            val marginV = 320f
-            val fit = minOf(1f, (maxWidth.value - marginH) / content.w, (maxHeight.value - marginV) / content.h)
-                .coerceAtLeast(0.05f)
-            SideEffect { fitScale = fit }
-            val scale = (fit * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
-
-            // Shared measurement state: node bounds in the PRE-SCALE space + that
-            // space's coordinates. Hoisted here so the screen-space overlay below
-            // (outside the zoomed layer) can use them.
-            val bounds = remember { mutableStateMapOf<String, Rect>() }
-            var spaceCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
-            // Prune bounds of deleted nodes so ghost rects can't win drill hit-tests.
-            // One O(n) id sweep — a findById per key was O(n·m) on every edit keystroke.
-            LaunchedEffect(state.root) {
-                val ids = HashSet<String>().also { collectIds(state.root, it) }
-                val stale = bounds.keys.filter { it !in ids }
-                stale.forEach { bounds.remove(it) }
-            }
-
-            ArtboardCanvas(
-                state,
-                scale,
-                content,
-                bounds,
-                onSpaceCoords = { spaceCoords = it },
+    Column(modifier = modifier.fillMaxSize()) {
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            BoxWithConstraints(
                 Modifier
-                    .align(Alignment.Center)
-                    .offset { IntOffset(panX.roundToInt(), panY.roundToInt()) },
-            )
+                    .fillMaxSize()
+                    .onGloballyPositioned {
+                        viewportSize = Size(it.size.width.toFloat(), it.size.height.toFloat())
+                    }
+                    .onPointerEvent(PointerEventType.Scroll) { event ->
+                        val delta = event.changes.firstOrNull()?.scrollDelta ?: Offset.Zero
+                        val mods = event.keyboardModifiers
+                        if (mods.isCtrlPressed || mods.isMetaPressed) {
+                            // Explicit Ctrl/Cmd + wheel remains a zoom fallback. Native
+                            // plugin pinch is delivered through [magnification] instead.
+                            if (delta.y != 0f) {
+                                val pos = event.changes.firstOrNull()?.position
+                                val ax = (pos?.x ?: size.width / 2f) - size.width / 2f
+                                val ay = (pos?.y ?: size.height / 2f) - size.height / 2f
+                                applyZoom(zoom * (1f - delta.y.coerceIn(-12f, 12f) * 0.05f), ax, ay)
+                            }
+                        } else {
+                            // two-finger scroll → pan
+                            panX -= delta.x.coerceIn(-15f, 15f) * 6f
+                            panY -= delta.y.coerceIn(-15f, 15f) * 6f
+                        }
+                    }
+                    .onPointerEvent(PointerEventType.Move) { event ->
+                        hoverPos = if (event.buttons.isPrimaryPressed || event.buttons.isTertiaryPressed) null
+                        else event.changes.firstOrNull()?.position
+                    }
+                    .onPointerEvent(PointerEventType.Exit) { hoverPos = null }
+                    // Middle-button drag pans — plain-mouse users have no two-finger scroll.
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            if (!currentEvent.buttons.isTertiaryPressed) return@awaitEachGesture
+                            down.consume()
+                            setCanvasCursor("grabbing")
+                            var prev = down.position
+                            try {
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) { change.consume(); break }
+                                    panX += change.position.x - prev.x
+                                    panY += change.position.y - prev.y
+                                    prev = change.position
+                                    change.consume()
+                                }
+                            } finally {
+                                setCanvasCursor("default")
+                            }
+                        }
+                    }
+                    // A tap on empty canvas (nothing consumed it) selects the artboard.
+                    .pointerInput(Unit) { detectTapGestures { state.select(state.root.id) } },
+            ) {
+                val density = LocalDensity.current
+                val screens = state.composables
+                // The content bounding box is frozen while screens MOVE, so dragging
+                // never re-fits the view. Shared screen-size changes do re-key it.
+                val screenSizeKey = screens.map { Triple(it.id, it.width, it.height) }
+                val content = remember(screenSizeKey) { contentBoxOf(screens) }
+                // Auto-fit scale (never up past 1:1), then apply the user's zoom. The
+                // margin keeps names, handles, and the floating zoom controls reachable.
+                // The component bar is a real footer and no longer consumes canvas space.
+                val marginH = 144f
+                val marginV = 144f
+                val fit = minOf(1f, (maxWidth.value - marginH) / content.w, (maxHeight.value - marginV) / content.h)
+                    .coerceAtLeast(0.05f)
+                SideEffect { fitScale = fit }
+                val scale = (fit * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
 
-            // Overlays live in SCREEN space — siblings of the zoomed layer, so all
-            // chrome (outline, handles, edge zones, dims pill) is plain dp and stays
-            // crisp/hit-testable at ANY zoom. Inside the layer, /scale layout sizes
-            // round to 0 px past ~150x — dead handles, no cursor. The pre-scale→screen
-            // mapping mirrors the layer's transform (centered + pan + scale) and READS
-            // panX/panY/scale, so it recomposes with them. The layer is island-sized
-            // and scales around its center (= viewport center + pan); bounds are
-            // island-space px with the content-centering already baked in by
-            // ScreenFrame's placement.
-            val d = density.density
-            val cw = with(density) { maxWidth.toPx() }
-            val ch = with(density) { maxHeight.toPx() }
-            fun toScreen(x: Float, y: Float) =
-                Offset(cw / 2f + panX + (x - cw / 2f) * scale, ch / 2f + panY + (y - ch / 2f) * scale)
+                // Shared measurement state: node bounds in the PRE-SCALE space + that
+                // space's coordinates. Hoisted here so the screen-space overlay below
+                // (outside the zoomed layer) can use them.
+                val bounds = remember { mutableStateMapOf<String, Rect>() }
+                var spaceCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+                // Prune bounds of deleted nodes so ghost rects can't win drill hit-tests.
+                // One O(n) id sweep — a findById per key was O(n·m) on every edit keystroke.
+                LaunchedEffect(state.root) {
+                    val ids = HashSet<String>().also { collectIds(state.root, it) }
+                    val stale = bounds.keys.filter { it !in ids }
+                    stale.forEach { bounds.remove(it) }
+                }
 
-            // Corner rounding of a node's outline in screen px. Percent corners are
-            // relative to the node's smaller side (like the rendered
-            // RoundedCornerShape(percent)); dp corners scale with zoom.
-            fun outlineCornerPx(node: Node?, r: Rect): Float =
-                when (val c = if (node is Node.Composable) null else node?.backgroundCorner()) {
-                    null -> 0f
-                    else -> when (c.second) {
-                        CornerUnit.Percent -> minOf(r.width, r.height) * scale * (c.first.coerceAtMost(50) / 100f)
-                        CornerUnit.Dp -> c.first * d * scale
+                ArtboardCanvas(
+                    state,
+                    scale,
+                    content,
+                    bounds,
+                    onSpaceCoords = { spaceCoords = it },
+                    Modifier
+                        .align(Alignment.Center)
+                        .offset { IntOffset(panX.roundToInt(), panY.roundToInt()) },
+                )
+
+                // Overlays live in SCREEN space — siblings of the zoomed layer, so all
+                // chrome (outline, handles, edge zones, dims pill) is plain dp and stays
+                // crisp/hit-testable at ANY zoom. Inside the layer, /scale layout sizes
+                // round to 0 px past ~150x — dead handles, no cursor. The pre-scale→screen
+                // mapping mirrors the layer's transform (centered + pan + scale) and READS
+                // panX/panY/scale, so it recomposes with them. The layer is island-sized
+                // and scales around its center (= viewport center + pan); bounds are
+                // island-space px with the content-centering already baked in by
+                // ScreenFrame's placement.
+                val d = density.density
+                val cw = with(density) { maxWidth.toPx() }
+                val ch = with(density) { maxHeight.toPx() }
+                fun toScreen(x: Float, y: Float) =
+                    Offset(cw / 2f + panX + (x - cw / 2f) * scale, ch / 2f + panY + (y - ch / 2f) * scale)
+
+                // Corner rounding of a node's outline in screen px. Percent corners are
+                // relative to the node's smaller side (like the rendered
+                // RoundedCornerShape(percent)); dp corners scale with zoom.
+                fun outlineCornerPx(node: Node?, r: Rect): Float =
+                    when (val c = if (node is Node.Composable) null else node?.backgroundCorner()) {
+                        null -> 0f
+                        else -> when (c.second) {
+                            CornerUnit.Percent -> minOf(r.width, r.height) * scale * (c.first.coerceAtMost(50) / 100f)
+                            CornerUnit.Dp -> c.first * d * scale
+                        }
+                    }
+
+                val sel = state.selectedId
+                val b = sel?.let { bounds[it] }
+
+                // Hover preview: outline the DEEPEST node under the cursor — exactly
+                // what a click selects (see EditorState.selectAt). Hit-testing reuses
+                // the bounds map (smallest rect containing the point), so it works over
+                // interactive components too. Selection still happens only on click.
+                val hoverTarget = hoverPos?.let { p ->
+                    val px = (p.x - cw / 2f - panX) / scale + cw / 2f
+                    val py = (p.y - ch / 2f - panY) / scale + ch / 2f
+                    val deepest = bounds.entries
+                        .filter { (id, r) -> id != state.root.id && px >= r.left && px <= r.right && py >= r.top && py <= r.bottom }
+                        .minByOrNull { (_, r) -> r.width * r.height }?.key
+                    deepest?.let {
+                        val overSel = b != null && px >= b.left && px <= b.right && py >= b.top && py <= b.bottom
+                        // No preview in the resize-handle band just outside the selection —
+                        // an outline flashing under the handles reads as noise (Figma hides it).
+                        val margin = 16f * d / scale
+                        val nearSelEdge = b != null && !overSel &&
+                            px >= b.left - margin && px <= b.right + margin &&
+                            py >= b.top - margin && py <= b.bottom + margin
+                        if (nearSelEdge) null else it
                     }
                 }
-
-            val sel = state.selectedId
-            val b = sel?.let { bounds[it] }
-
-            // Hover preview: outline the DEEPEST node under the cursor — exactly
-            // what a click selects (see EditorState.selectAt). Hit-testing reuses
-            // the bounds map (smallest rect containing the point), so it works over
-            // interactive components too. Selection still happens only on click.
-            val hoverTarget = hoverPos?.let { p ->
-                val px = (p.x - cw / 2f - panX) / scale + cw / 2f
-                val py = (p.y - ch / 2f - panY) / scale + ch / 2f
-                val deepest = bounds.entries
-                    .filter { (id, r) -> id != state.root.id && px >= r.left && px <= r.right && py >= r.top && py <= r.bottom }
-                    .minByOrNull { (_, r) -> r.width * r.height }?.key
-                deepest?.let {
-                    val overSel = b != null && px >= b.left && px <= b.right && py >= b.top && py <= b.bottom
-                    // No preview in the resize-handle band just outside the selection —
-                    // an outline flashing under the handles reads as noise (Figma hides it).
-                    val margin = 16f * d / scale
-                    val nearSelEdge = b != null && !overSel &&
-                        px >= b.left - margin && px <= b.right + margin &&
-                        py >= b.top - margin && py <= b.bottom + margin
-                    if (nearSelEdge) null else it
+                val hb = hoverTarget?.takeIf { it != sel && it != state.root.id }?.let { bounds[it] }
+                if (hb != null) {
+                    val hoverNode = state.root.findById(hoverTarget)
+                    val hCorner = outlineCornerPx(hoverNode, hb)
+                    val htl = toScreen(hb.left, hb.top)
+                    val hbr = toScreen(hb.right, hb.bottom)
+                    HoverOutline(Rect(htl.x, htl.y, hbr.x, hbr.y), hCorner, density)
                 }
-            }
-            val hb = hoverTarget?.takeIf { it != sel && it != state.root.id }?.let { bounds[it] }
-            if (hb != null) {
-                val hoverNode = state.root.findById(hoverTarget)
-                val hCorner = outlineCornerPx(hoverNode, hb)
-                val htl = toScreen(hb.left, hb.top)
-                val hbr = toScreen(hb.right, hb.bottom)
-                HoverOutline(Rect(htl.x, htl.y, hbr.x, hbr.y), hCorner, density)
-            }
 
-            if (sel != null && b != null && sel != state.root.id) {
-                val tl = toScreen(b.left, b.top)
-                val br = toScreen(b.right, b.bottom)
-                // key(sel) recreates the whole overlay per selection — its pointerInputs
-                // capture callbacks at start, so a reused overlay would keep dragging
-                // the PREVIOUSLY selected node.
-                key(sel) {
-                    val isScreen = state.selected is Node.Composable
-                    val isShape = state.selected?.isShape() == true
-                    SelectionOverlay(
-                        screen = Rect(tl.x, tl.y, br.x, br.y),
-                        viewport = Size(cw, ch),
-                        dimsLabel = "${with(density) { b.width.toDp().value }.roundToInt()} × ${with(density) { b.height.toDp().value }.roundToInt()}",
-                        density = density,
-                        cornerPx = outlineCornerPx(state.selected, b),
-                        scale = scale,
-                        frameCoords = spaceCoords,
-                        // Screens float freely on the artboard: resizing from a top/left
-                        // handle moves them so the opposite edge stays pinned. Components
-                        // are LAYOUT children (their position is the parent's business,
-                        // like Figma auto-layout items) — corners/edges only resize.
-                        // Shapes float freely inside their Canvas (model coords), so
-                        // top/left handles move-compensate like screens once did.
-                        anchorMove = isShape,
-                        resizable = !isScreen && state.selected !is Node.Line,
-                        onMove = { dx, dy ->
-                            when {
-                                isScreen -> state.moveComposable(sel, dx, dy)
-                                isShape -> state.moveShape(sel, dx, dy)
-                                else -> state.offsetNode(sel, dx, dy)
-                            }
-                        },
-                        // ~8dp of SCREEN travel snaps at any zoom (threshold is in artboard dp).
-                        onBodyMove = { dx, dy ->
-                            when {
-                                isScreen ->
-                                    state.moveComposableSnapped(sel, dx, dy, threshold = (8f / scale).roundToInt().coerceAtLeast(2))
-                                isShape -> state.moveShape(sel, dx, dy)
-                                else -> state.offsetNode(sel, dx, dy)
-                            }
-                        },
-                        onBodyMoveEnd = { if (isScreen) state.endScreenDrag() },
-                        onResize = { dw, dh ->
-                            when {
-                                isShape -> state.resizeShape(sel, dw, dh)
-                                else -> {
-                                    val baseW = with(density) { b.width.toDp().value }.roundToInt()
-                                    val baseH = with(density) { b.height.toDp().value }.roundToInt()
-                                    state.resizeNode(sel, baseW, baseH, dw, dh)
+                if (sel != null && b != null && sel != state.root.id) {
+                    val tl = toScreen(b.left, b.top)
+                    val br = toScreen(b.right, b.bottom)
+                    // key(sel) recreates the whole overlay per selection — its pointerInputs
+                    // capture callbacks at start, so a reused overlay would keep dragging
+                    // the PREVIOUSLY selected node.
+                    key(sel) {
+                        val isScreen = state.selected is Node.Composable
+                        val isShape = state.selected?.isShape() == true
+                        SelectionOverlay(
+                            screen = Rect(tl.x, tl.y, br.x, br.y),
+                            viewport = Size(cw, ch),
+                            dimsLabel = "${with(density) { b.width.toDp().value }.roundToInt()} × ${with(density) { b.height.toDp().value }.roundToInt()}",
+                            density = density,
+                            cornerPx = outlineCornerPx(state.selected, b),
+                            scale = scale,
+                            frameCoords = spaceCoords,
+                            // Screens float freely on the artboard: resizing from a top/left
+                            // handle moves them so the opposite edge stays pinned. Components
+                            // are LAYOUT children (their position is the parent's business,
+                            // like Figma auto-layout items) — corners/edges only resize.
+                            // Shapes float freely inside their Canvas (model coords), so
+                            // top/left handles move-compensate like screens once did.
+                            anchorMove = isShape,
+                            resizable = !isScreen && state.selected !is Node.Line,
+                            onMove = { dx, dy ->
+                                when {
+                                    isScreen -> state.moveComposable(sel, dx, dy)
+                                    isShape -> state.moveShape(sel, dx, dy)
+                                    else -> state.offsetNode(sel, dx, dy)
                                 }
-                            }
-                        },
-                        onDrill = { frame ->
-                            // `frame` is in the pre-scale space (same space as the bounds
-                            // map); drill into the smallest (deepest) node containing it.
-                            val hit = bounds.entries
-                                .filter { (id, r) -> id != state.root.id && frame.x >= r.left && frame.x <= r.right && frame.y >= r.top && frame.y <= r.bottom }
-                                .minByOrNull { (_, r) -> r.width * r.height }
-                            if (hit != null) state.selectAt(hit.key, deep = true)
-                        },
-                    )
+                            },
+                            // ~8dp of SCREEN travel snaps at any zoom (threshold is in artboard dp).
+                            onBodyMove = { dx, dy ->
+                                when {
+                                    isScreen ->
+                                        state.moveComposableSnapped(sel, dx, dy, threshold = (8f / scale).roundToInt().coerceAtLeast(2))
+                                    isShape -> state.moveShape(sel, dx, dy)
+                                    else -> state.offsetNode(sel, dx, dy)
+                                }
+                            },
+                            onBodyMoveEnd = { if (isScreen) state.endScreenDrag() },
+                            onResize = { dw, dh ->
+                                when {
+                                    isShape -> state.resizeShape(sel, dw, dh)
+                                    else -> {
+                                        val baseW = with(density) { b.width.toDp().value }.roundToInt()
+                                        val baseH = with(density) { b.height.toDp().value }.roundToInt()
+                                        state.resizeNode(sel, baseW, baseH, dw, dh)
+                                    }
+                                }
+                            },
+                            onDrill = { frame ->
+                                // `frame` is in the pre-scale space (same space as the bounds
+                                // map); drill into the smallest (deepest) node containing it.
+                                val hit = bounds.entries
+                                    .filter { (id, r) -> id != state.root.id && frame.x >= r.left && frame.x <= r.right && frame.y >= r.top && frame.y <= r.bottom }
+                                    .minByOrNull { (_, r) -> r.width * r.height }
+                                if (hit != null) state.selectAt(hit.key, deep = true)
+                            },
+                        )
+                    }
                 }
             }
+            SizeBadge(state, appMode, Modifier.align(Alignment.TopStart).padding(12.dp))
+            // The badge shows/steps the EFFECTIVE scale; applyZoom takes the relative zoom.
+            ZoomBadge(fitScale * zoom, onZoom = { applyZoom(it / fitScale) }, onReset = ::resetView, Modifier.align(Alignment.TopEnd).padding(12.dp))
         }
-        SizeBadge(state, appMode, Modifier.align(Alignment.TopStart).padding(12.dp))
-        // The badge shows/steps the EFFECTIVE scale; applyZoom takes the relative zoom.
-        ZoomBadge(fitScale * zoom, onZoom = { applyZoom(it / fitScale) }, onReset = ::resetView, Modifier.align(Alignment.TopEnd).padding(12.dp))
-        FloatingPalette(state, Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp))
+        ComponentBar(state)
     }
 }
