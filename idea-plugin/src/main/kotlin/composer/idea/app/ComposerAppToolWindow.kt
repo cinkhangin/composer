@@ -302,7 +302,9 @@ class ComposerAppPanel(private val project: Project) : com.intellij.openapi.Disp
         teardownDesigner()
         service.pushDesign = null
         service.onStatus = null
-        service.stop()
+        // The project-scoped service outlives this tool-window panel. Keep its
+        // parsed design cache and source listeners alive so a reopened panel can
+        // replay the canonical project immediately instead of showing a blank tree.
     }
 
     private companion object {

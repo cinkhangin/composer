@@ -105,7 +105,7 @@ class ComposerAppService(private val project: Project) : Disposable {
         scheduleParse()
     }
 
-    fun stop() {
+    private fun stop() {
         pendingEdit?.cancel()
         pendingEdit = null
         queue.cancelAllUpdates()
@@ -379,7 +379,9 @@ class ComposerAppService(private val project: Project) : Disposable {
             .submit(AppExecutorUtil.getAppExecutorService())
     }
 
-    override fun dispose() {}
+    override fun dispose() {
+        stop()
+    }
 
     companion object {
         fun getInstance(project: Project): ComposerAppService = project.service()
