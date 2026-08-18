@@ -2,13 +2,11 @@ package composer
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -32,7 +30,6 @@ import androidx.compose.ui.unit.dp
 import composer.model.DesignTheme
 import composer.model.ThemeColorRef
 import composer.ui.AppIconKind
-import composer.ui.Island
 import composer.ui.LocalThemeSwatches
 import composer.ui.ThemeSwatch
 import composer.ui.Tk
@@ -69,12 +66,10 @@ internal fun WebEditorScreen(ws: Workspace) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Tk.appBg)
-                .padding(Tk.gap)
+                .background(Tk.panel)
                 .focusRequester(focusRequester)
                 .onKeyEvent { handleShortcut(it, state) }
                 .focusable(),
-            verticalArrangement = Arrangement.spacedBy(Tk.gap),
         ) {
             WebToolbar(state, ws)
             ws.saveError?.let { message ->
@@ -92,25 +87,32 @@ internal fun WebEditorScreen(ws: Workspace) {
             }
             Row(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Tk.gap),
             ) {
                 if (state.leftPanelOpen) {
-                    Island(Modifier.width(240.dp).fillMaxHeight()) {
+                    Column(Modifier.width(232.dp).fillMaxHeight().workspaceSurface(divider = WorkspaceDivider.Right)) {
                         TreeView(state, onCollapse = state::toggleLeftPanel)
                     }
                 } else {
-                    CollapsedPanelStrip(AppIconKind.ExpandLeft, "Show layers", state::toggleLeftPanel)
+                    CollapsedPanelStrip(
+                        AppIconKind.ExpandLeft,
+                        "Show layers",
+                        WorkspaceDivider.Right,
+                        state::toggleLeftPanel,
+                    )
                 }
-                Island(
-                    modifier = Modifier.weight(1f).fillMaxHeight().then(
-                        if (state.showCode) Modifier else Modifier.pointerInput(Unit) {
-                            awaitEachGesture {
-                                awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                                runCatching { focusRequester.requestFocus() }
-                            }
-                        },
-                    ),
-                    color = if (state.showCode) Tk.codeBg else Tk.canvasBg,
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .workspaceSurface(color = if (state.showCode) Tk.codeBg else Tk.canvasBg)
+                        .then(
+                            if (state.showCode) Modifier else Modifier.pointerInput(Unit) {
+                                awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                    runCatching { focusRequester.requestFocus() }
+                                }
+                            },
+                        ),
                 ) {
                     if (state.showCode) {
                         CodePanel(state, codeSync)
@@ -119,11 +121,16 @@ internal fun WebEditorScreen(ws: Workspace) {
                     }
                 }
                 if (state.rightPanelOpen) {
-                    Island(Modifier.width(240.dp).fillMaxHeight()) {
+                    Column(Modifier.width(232.dp).fillMaxHeight().workspaceSurface(divider = WorkspaceDivider.Left)) {
                         Inspector(state, onCollapse = state::toggleRightPanel)
                     }
                 } else {
-                    CollapsedPanelStrip(AppIconKind.ExpandRight, "Show inspector", state::toggleRightPanel)
+                    CollapsedPanelStrip(
+                        AppIconKind.ExpandRight,
+                        "Show inspector",
+                        WorkspaceDivider.Left,
+                        state::toggleRightPanel,
+                    )
                 }
             }
         }

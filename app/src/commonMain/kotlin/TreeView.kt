@@ -71,7 +71,7 @@ fun TreeView(state: EditorState, modifier: Modifier = Modifier, onCollapse: (() 
     }
     Column(modifier = modifier.fillMaxSize()) {
         Row(
-            Modifier.fillMaxWidth().height(46.dp).padding(start = 16.dp, end = 9.dp),
+            Modifier.fillMaxWidth().height(42.dp).padding(start = 12.dp, end = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SectionHeader("Layers", icon = AppIconKind.Layers, modifier = Modifier.weight(1f))
@@ -83,8 +83,8 @@ fun TreeView(state: EditorState, modifier: Modifier = Modifier, onCollapse: (() 
                     viewport = c.positionInWindow().y to c.size.height.toFloat()
                 }
                 .verticalScroll(scroll)
-                .padding(horizontal = 6.dp)
-                .padding(bottom = 8.dp),
+                .padding(horizontal = 4.dp)
+                .padding(bottom = 6.dp),
         ) {
             TreeRow(state.root, depth = 0, state = state, expanded = expanded, dnd = dnd)
         }

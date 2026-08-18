@@ -28,7 +28,13 @@ import composer.ui.Tk
 /** Website-only document toolbar. Android Studio keeps its smaller host-owned toolbar. */
 @Composable
 internal fun WebToolbar(state: EditorState, ws: Workspace) {
-    Box(Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 12.dp)) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .workspaceSurface(divider = WorkspaceDivider.Bottom)
+            .padding(horizontal = 12.dp),
+    ) {
         Row(
             modifier = Modifier.align(Alignment.CenterStart),
             verticalAlignment = Alignment.CenterVertically,

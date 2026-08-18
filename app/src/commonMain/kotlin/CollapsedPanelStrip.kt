@@ -11,16 +11,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import composer.ui.AppIconKind
 import composer.ui.SquareIconButton
-import composer.ui.Island
 
 /**
- * A collapsed side panel: a slim island with just the expand affordance, aligned
+ * A collapsed side panel: a slim rail with just the expand affordance, aligned
  * with the neighbors' headers (IntelliJ tool-window style).
  */
 @Composable
-internal fun CollapsedPanelStrip(icon: AppIconKind, tip: String, onExpand: () -> Unit) {
-    Island(Modifier.width(46.dp).fillMaxHeight()) {
-        Box(Modifier.fillMaxWidth().height(46.dp), contentAlignment = Alignment.Center) {
+internal fun CollapsedPanelStrip(
+    icon: AppIconKind,
+    tip: String,
+    divider: WorkspaceDivider,
+    onExpand: () -> Unit,
+) {
+    Box(Modifier.width(42.dp).fillMaxHeight().workspaceSurface(divider = divider)) {
+        Box(Modifier.fillMaxWidth().height(42.dp), contentAlignment = Alignment.Center) {
             SquareIconButton(icon, tip = tip, onClick = onExpand)
         }
     }

@@ -24,9 +24,14 @@ internal fun Toolbar(
     showNewComposable: Boolean,
     onNewComposable: () -> Unit,
 ) {
-    // 40dp: the tallest controls are 32dp, so this leaves 4dp of air above/below —
-    // a slim, Figma-like bar instead of the airy 52dp it started with.
-    Box(modifier = Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 12.dp)) {
+    // 44dp keeps 32dp controls compact while leaving enough breathing room.
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .workspaceSurface(divider = WorkspaceDivider.Bottom)
+            .padding(horizontal = 12.dp),
+    ) {
         if (showNewComposable) {
             Box(Modifier.align(Alignment.CenterStart)) {
                 ToolButton(

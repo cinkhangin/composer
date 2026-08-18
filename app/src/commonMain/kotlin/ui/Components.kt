@@ -12,8 +12,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 /**
- * A floating rounded "island" panel — the core of the island-style layout. Panes
- * are separate cards on the app background, separated by [Tk.gap], not dividers.
+ * A floating rounded surface for canvas overlays such as palettes and badges.
+ * The main workspace uses flat, edge-to-edge panes instead.
  */
 @Composable
 fun Island(

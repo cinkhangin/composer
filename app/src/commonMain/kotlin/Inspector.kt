@@ -59,7 +59,7 @@ fun Inspector(
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         Row(
-            Modifier.fillMaxWidth().height(46.dp).padding(start = 16.dp, end = 9.dp),
+            Modifier.fillMaxWidth().height(42.dp).padding(start = 12.dp, end = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SectionHeader("Inspector", icon = AppIconKind.Sliders, modifier = Modifier.weight(1f))
@@ -74,8 +74,8 @@ fun Inspector(
         }
 
         Column(
-            modifier = Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.verticalScroll(rememberScrollState()).padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             NodeBadge(
                 state,

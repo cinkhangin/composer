@@ -2,7 +2,6 @@ package composer
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -57,7 +56,6 @@ import composer.model.childNodes
 import composer.model.findById
 import composer.model.isShape
 import composer.ui.AppIconKind
-import composer.ui.Island
 import composer.ui.LocalThemeSwatches
 import composer.ui.ThemeSwatch
 import composer.ui.Tk
@@ -119,8 +117,7 @@ internal fun EditorScreen(session: DesignerSession) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Tk.appBg)
-            .padding(Tk.gap)
+            .background(Tk.panel)
             .focusRequester(focusRequester)
             .onKeyEvent {
                 handleShortcut(
@@ -130,7 +127,6 @@ internal fun EditorScreen(session: DesignerSession) {
                 )
             }
             .focusable(),
-        verticalArrangement = Arrangement.spacedBy(Tk.gap),
     ) {
         Toolbar(
             state,
@@ -139,15 +135,21 @@ internal fun EditorScreen(session: DesignerSession) {
         )
         Row(
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Tk.gap),
         ) {
             if (state.leftPanelOpen) {
-                Island(Modifier.width(240.dp).fillMaxHeight()) { TreeView(state, onCollapse = state::toggleLeftPanel) }
+                Column(Modifier.width(232.dp).fillMaxHeight().workspaceSurface(divider = WorkspaceDivider.Right)) {
+                    TreeView(state, onCollapse = state::toggleLeftPanel)
+                }
             } else {
-                CollapsedPanelStrip(AppIconKind.ExpandLeft, tip = "Show layers", onExpand = state::toggleLeftPanel)
+                CollapsedPanelStrip(
+                    AppIconKind.ExpandLeft,
+                    tip = "Show layers",
+                    divider = WorkspaceDivider.Right,
+                    onExpand = state::toggleLeftPanel,
+                )
             }
-            Island(
-                Modifier.weight(1f).fillMaxHeight().then(
+            Column(
+                Modifier.weight(1f).fillMaxHeight().workspaceSurface(color = Tk.canvasBg).then(
                     // On any canvas press, reclaim editor focus (Initial pass, no consume) so
                     // keyboard shortcuts work even after clicking the same already-selected node.
                     Modifier.pointerInput(Unit) {
@@ -157,7 +159,6 @@ internal fun EditorScreen(session: DesignerSession) {
                         }
                     }
                 ),
-                color = Tk.canvasBg,
             ) {
                 Canvas(
                     state = state,
@@ -166,7 +167,7 @@ internal fun EditorScreen(session: DesignerSession) {
                 )
             }
             if (state.rightPanelOpen) {
-                Island(Modifier.width(240.dp).fillMaxHeight()) {
+                Column(Modifier.width(232.dp).fillMaxHeight().workspaceSurface(divider = WorkspaceDivider.Left)) {
                     Inspector(
                         state,
                         onCollapse = state::toggleRightPanel,
@@ -174,7 +175,12 @@ internal fun EditorScreen(session: DesignerSession) {
                     )
                 }
             } else {
-                CollapsedPanelStrip(AppIconKind.ExpandRight, tip = "Show inspector", onExpand = state::toggleRightPanel)
+                CollapsedPanelStrip(
+                    AppIconKind.ExpandRight,
+                    tip = "Show inspector",
+                    divider = WorkspaceDivider.Left,
+                    onExpand = state::toggleRightPanel,
+                )
             }
         }
     }
