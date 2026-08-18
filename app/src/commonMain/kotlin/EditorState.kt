@@ -14,6 +14,8 @@ import composer.model.contentChildren
 import composer.model.dedupeIds
 import composer.model.DesignTheme
 import composer.model.IconKind
+import composer.model.LayoutKind
+import composer.model.convertLayout
 import composer.model.findById
 import composer.model.indexInParent
 import composer.model.insertChild
@@ -28,8 +30,6 @@ import composer.model.moveInto
 import composer.model.parentOf
 import composer.model.removeById
 import composer.model.replaceById
-import composer.model.toColumn
-import composer.model.toRow
 import composer.model.typeName
 import composer.model.validComponentIds
 import composer.model.withModifier
@@ -646,20 +646,9 @@ class EditorState(initial: Node) {
         update(ab.id, coalesceKey = "rename:$id") { (it as Node.Artboard).copy(layerNames = newMap) }
     }
 
-    /** Flip an auto-layout container between vertical ([Node.Column]) and horizontal ([Node.Row]). */
-    fun setContainerDirection(id: String, horizontal: Boolean) {
-        update(id) { node ->
-            when (node) {
-                is Node.Column -> if (horizontal) node.toRow() else node
-                is Node.Row -> if (horizontal) node else node.toColumn()
-                else -> node
-            }
-        }
-    }
-
-    /** Convert a plain [Node.Box] into an auto-layout [Node.Column] ("Use auto layout"). */
-    fun boxToAutoLayout(id: String) {
-        update(id) { node -> if (node is Node.Box) node.toColumn() else node }
+    /** Change a basic container between Box, Column, and Row. */
+    fun setContainerLayout(id: String, layout: LayoutKind) {
+        update(id) { node -> node.convertLayout(layout) }
     }
 
     /** Upsert the container's [ModifierSpec.Padding] (Figma frame padding). Coalesced per node. */

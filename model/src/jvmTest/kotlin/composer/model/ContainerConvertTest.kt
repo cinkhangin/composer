@@ -37,4 +37,41 @@ class ContainerConvertTest {
         val col = Node.Column("c", verticalArrangement = VArrangement.SpaceBetween)
         assertEquals(HArrangement.SpaceBetween, col.toRow().horizontalArrangement)
     }
+
+    @Test fun boxCanBecomeAnyLayoutWithoutLosingStructure() {
+        val child = Node.Text("t", "hi")
+        val box = Node.Box(
+            id = "b",
+            children = listOf(child),
+            contentAlignment = BoxAlignment.BottomEnd,
+            modifier = listOf(Padding(12)),
+        )
+
+        val row = box.convertLayout(LayoutKind.Row) as Node.Row
+        assertEquals("b", row.id)
+        assertEquals(listOf(child), row.children)
+        assertEquals(listOf(Padding(12)), row.modifier)
+        assertEquals(HArrangement.End, row.horizontalArrangement)
+        assertEquals(VAlignment.Bottom, row.verticalAlignment)
+
+        val column = box.convertLayout(LayoutKind.Column) as Node.Column
+        assertEquals(VArrangement.Bottom, column.verticalArrangement)
+        assertEquals(HAlignment.End, column.horizontalAlignment)
+    }
+
+    @Test fun rowAndColumnCanBecomeBoxWithAlignmentIntent() {
+        val fromRow = Node.Row(
+            id = "r",
+            horizontalArrangement = HArrangement.Center,
+            verticalAlignment = VAlignment.Bottom,
+        ).convertLayout(LayoutKind.Box) as Node.Box
+        assertEquals(BoxAlignment.BottomCenter, fromRow.contentAlignment)
+
+        val fromColumn = Node.Column(
+            id = "c",
+            verticalArrangement = VArrangement.Center,
+            horizontalAlignment = HAlignment.End,
+        ).convertLayout(LayoutKind.Box) as Node.Box
+        assertEquals(BoxAlignment.CenterEnd, fromColumn.contentAlignment)
+    }
 }

@@ -504,12 +504,10 @@ fun Inspector(
                     NavActionEditor(state, selected, action)
                 }
               }
-              // Non-modifier composable parameters (arrangement/alignment/spacing) —
-              // these are call-site arguments, not Modifier calls, so they sit in
-              // their own section above the modifier chain.
+              // Basic container type and its non-modifier layout parameters.
               if (selected is Node.Column || selected is Node.Row || selected is Node.Box) {
-                InspectorSection("Parameters") {
-                    ParamsEditor(state, selected)
+                InspectorSection("Layout") {
+                    LayoutEditor(state, selected)
                 }
               }
               // Modifier-first editing: the ordered chain is the primary surface,

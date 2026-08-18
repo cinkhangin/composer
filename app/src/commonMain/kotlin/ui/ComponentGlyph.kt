@@ -22,6 +22,7 @@ private fun glyphIconName(type: String): String = when (type) {
     "Column" -> "table_rows"       // rows stacked = vertical
     "Row" -> "view_column"         // columns side-by-side = horizontal
     "Box" -> "square"
+    "Layout" -> "square"
     "Artboard" -> "space_dashboard"
     "Instance" -> "widgets"
     "Composable" -> "function"     // one generated @Composable function

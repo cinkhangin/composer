@@ -1,27 +1,24 @@
 package composer
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import composer.model.BoxAlignment
 import composer.model.HAlignment
 import composer.model.HArrangement
+import composer.model.LayoutKind
 import composer.model.Node
 import composer.model.VAlignment
 import composer.model.VArrangement
+import composer.model.layoutKind
 
-/**
- * Non-modifier composable parameters — call-site arguments like arrangement,
- * alignment, and spacing that aren't part of the Modifier chain. Shown above the
- * Modifiers section for Column/Row/Box.
- */
+/** Basic container type plus the parameters specific to that layout. */
 @Composable
-internal fun ParamsEditor(state: EditorState, node: Node) {
+internal fun LayoutEditor(state: EditorState, node: Node) {
+    val kind = node.layoutKind() ?: return
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        EnumDropdown("Type", kind, LayoutKind.entries) { state.setContainerLayout(node.id, it) }
         when (node) {
             is Node.Column -> {
                 EnumDropdown("verticalArrangement", node.verticalArrangement, VArrangement.entries, itemLabel = { it.name }) { v ->

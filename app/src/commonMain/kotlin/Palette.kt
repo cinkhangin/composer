@@ -92,9 +92,7 @@ private val paletteGroups: List<PaletteGroup> = listOf(
         PaletteItem("Spacer") { id -> Node.Spacer(id) },
     )),
     PaletteGroup("Layout", listOf(
-        PaletteItem("Column") { id -> Node.Column(id) },
-        PaletteItem("Row") { id -> Node.Row(id) },
-        PaletteItem("Box") { id -> Node.Box(id) },
+        PaletteItem("Layout") { id -> Node.Box(id) },
         PaletteItem("Card") { id -> Node.Card(id) },
     )),
     PaletteGroup("Navigation", listOf(
