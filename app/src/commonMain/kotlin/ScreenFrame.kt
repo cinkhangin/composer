@@ -84,8 +84,8 @@ internal fun ScreenFrame(
                 .clipToBounds(),
         ) {
             // The design's own theme wraps the preview (WYSIWYG with generated
-            // MaterialTheme). The viewport paints nothing, so the grid remains
-            // visible wherever the user did not add a background.
+            // MaterialTheme). The viewport paints nothing, so unfilled areas show
+            // the neutral canvas surface.
             MaterialTheme(colorScheme = state.theme.toColorScheme()) {
                 // MaterialTheme alone does NOT set LocalContentColor (only Surface does) —
                 // default-colored Text/Icon follows the theme like a themed app surface.

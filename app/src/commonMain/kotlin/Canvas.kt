@@ -202,8 +202,6 @@ internal fun Canvas(
                 stale.forEach { bounds.remove(it) }
             }
 
-            // Always-on background grid behind the frames; the per-pixel grid layers on top at high zoom.
-            Box(Modifier.matchParentSize().editorGrid())
             ArtboardCanvas(
                 state,
                 scale,

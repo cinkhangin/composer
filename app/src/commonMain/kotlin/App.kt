@@ -22,7 +22,6 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -291,26 +290,6 @@ internal fun Modifier.windowAnchoredDrag(
 // the grid at near-zero alpha across the whole working range — "invisible grid".)
 private const val GRID_PIXEL_FADE_START = 2f  // per-pixel grid begins fading in
 private const val GRID_PIXEL_FULL = 3f        // per-pixel grid fully visible
-
-/**
- * Subtle 12dp line grid behind the canvas for a design-surface feel. Drawn on the
- * static container (not the zoomed frame), so its spacing never scales with zoom.
- */
-internal fun Modifier.editorGrid(): Modifier = drawBehind {
-    val step = 12.dp.toPx()
-    val sw = 1f // hairline, constant
-    val color = Tk.canvasDot
-    var x = step
-    while (x < size.width) {
-        drawLine(color, Offset(x, 0f), Offset(x, size.height), strokeWidth = sw)
-        x += step
-    }
-    var y = step
-    while (y < size.height) {
-        drawLine(color, Offset(0f, y), Offset(size.width, y), strokeWidth = sw)
-        y += step
-    }
-}
 
 /**
  * Per-pixel grid: one cell = one design unit (1.dp), drawn in the frame's local space so

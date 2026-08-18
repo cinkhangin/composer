@@ -33,7 +33,6 @@ data class Palette(
     val dangerSoft: Color,
     val snapGuide: Color,
     val canvasBg: Color,
-    val canvasDot: Color,
     val canvasFrame: Color,
     val frameBg: Color,
     val codeBg: Color,
@@ -58,7 +57,6 @@ private val DarkPalette = Palette(
     dangerSoft = Color(0x22E5605A),
     snapGuide = Color(0xFFFF4D8D),
     canvasBg = Color(0xFF0E1116),
-    canvasDot = Color(0xFF1F2631),
     canvasFrame = Color(0xFF2A313C),
     frameBg = Color(0xFF191E27),
     codeBg = Color(0xFF0F1217),
@@ -83,7 +81,6 @@ private val LightPalette = Palette(
     snapGuide = Color(0xFFE0316E),
     dangerSoft = Color(0x16D9433D),
     canvasBg = Color(0xFFE7EAEF),
-    canvasDot = Color(0xFFCFD5DE),
     canvasFrame = Color(0xFFE3E6EB),
     frameBg = Color(0xFFFFFFFF),
     codeBg = Color(0xFFF3F5F8),
@@ -134,7 +131,6 @@ object Tk {
     val snapGuide get() = Theme.palette.snapGuide
     val dangerSoft get() = Theme.palette.dangerSoft
     val canvasBg get() = Theme.palette.canvasBg
-    val canvasDot get() = Theme.palette.canvasDot
     val canvasFrame get() = Theme.palette.canvasFrame
     val frameBg get() = Theme.palette.frameBg
     val codeBg get() = Theme.palette.codeBg
