@@ -4,10 +4,13 @@ import composer.codegen.CodeGen
 import composer.model.Node
 import composer.model.findById
 
-/** Safely append one blank, renderable composable to an existing Kotlin file. */
+/** Create source for one blank, renderable composable in a dedicated Kotlin file. */
 object NewComposableSource {
-    fun append(text: String, functionName: String): String {
+    fun create(text: String, functionName: String): String {
         require(CodeGen.sanitizeName(functionName) == functionName) { "Invalid composable function name: $functionName" }
+        require(DesignParser.nonPreviewComposableFunctions(text).isEmpty()) {
+            "The Kotlin file already contains a non-preview composable function."
+        }
         val previous = DesignParser.parse(text) ?: DesignParser.skeleton(text)
         require(functionName !in previous.topLevelFunctionNames) { "A top-level function named $functionName already exists." }
 

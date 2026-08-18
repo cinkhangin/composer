@@ -94,8 +94,10 @@ object CodeGen {
     private fun onClickArg(node: Node): String = resolvedNavArg(node) ?: "onClick = {}"
 
     /**
-     * Generate a complete Kotlin source file for [root]: one `@Composable fun` per
-     * [Node.Composable] screen under the [Node.Artboard]. Function names come from
+     * Generate the combined Kotlin projection used by parser round trips and the
+     * in-app code editor: one `@Composable fun` per [Node.Composable] screen under
+     * the [Node.Artboard]. Exported source should use [generateFiles] so each
+     * non-preview composable is placed in its own Kotlin file. Function names come from
      * the artboard's layer names (sanitized to PascalCase identifiers, deduped);
      * an unnamed screen falls back to `Screen<n>`. A customized artboard theme is
      * emitted once as a shared `AppTheme(content)` wrapper — the screen functions
@@ -156,6 +158,51 @@ object CodeGen {
                 if (i != fns.lastIndex) appendLine()
             }
         }
+    }
+
+    /**
+     * Generate export-ready Kotlin files with at most one non-preview
+     * composable function in each file. Cross-file component and navigation
+     * calls use the same deduped names as the combined code projection.
+     */
+    fun generateFiles(root: Node): List<GeneratedFile> {
+        val artboard = root.migrateToArtboard()
+        val (themed, schemeVals, screenNames) = namePlan(artboard)
+        val screens = artboard.composables.filterIsInstance<Node.Composable>()
+        val componentIds = artboard.validComponentIds().toSet()
+        val componentFunctions = screens.indices
+            .filter { screens[it].id in componentIds }
+            .associate { screens[it].id to screenNames[it] }
+        val functionNames = screens.indices.associate { screens[it].id to screenNames[it] }
+        val files = screens.mapIndexedTo(mutableListOf()) { index, screen ->
+            val code = screenFunction(
+                screen = screen,
+                name = screenNames[index],
+                componentFns = componentFunctions,
+                navFns = functionNames,
+            )
+            GeneratedFile(
+                path = "${screenNames[index]}.kt",
+                text = buildString {
+                    for (imp in code.imports.sorted()) appendLine("import $imp")
+                    appendLine()
+                    appendLine(code.text)
+                },
+            )
+        }
+        if (themed) {
+            val imports = mutableSetOf("androidx.compose.runtime.Composable")
+            val theme = themeBlock(artboard.themes, schemeVals, artboard.activeTheme, imports)
+            files += GeneratedFile(
+                path = "AppTheme.kt",
+                text = buildString {
+                    for (imp in imports.sorted()) appendLine("import $imp")
+                    appendLine()
+                    append(theme)
+                },
+            )
+        }
+        return files
     }
 
     /** Material3 composables that need `@OptIn(ExperimentalMaterial3Api::class)`. */
@@ -239,9 +286,9 @@ object CodeGen {
     fun screenFunctionNames(root: Node): List<String> = namePlan(root.migrateToArtboard()).third
 
     /**
-     * Names shared by one generated file: whether a theme block is emitted, the
+     * Names shared by one generation run: whether a theme block is emitted, the
      * scheme val names, and the per-screen function names — all drawn from one
-     * dedupe set so nothing in the file can collide.
+     * dedupe set so declarations remain unique across the generated files.
      */
     private fun namePlan(artboard: Node.Artboard): Triple<Boolean, List<String>, List<String>> {
         // Emit the theme block when there are several themes or the single one is

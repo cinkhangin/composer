@@ -190,9 +190,11 @@ private fun WebExportMenu(state: EditorState) {
     Box {
         ToolButton("Export", primary = true, icon = AppIconKind.Share) { open = true }
         TkMenu(expanded = open, onDismissRequest = { open = false }) {
-            TkMenuItem("Export .kt") {
+            TkMenuItem("Export Kotlin files") {
                 open = false
-                downloadText("Screens.kt", CodeGen.generate(state.root), "text/plain")
+                CodeGen.generateFiles(state.root).forEach { file ->
+                    downloadText(file.path, file.text, "text/plain")
+                }
             }
             TkMenuItem("Export JSON") {
                 open = false

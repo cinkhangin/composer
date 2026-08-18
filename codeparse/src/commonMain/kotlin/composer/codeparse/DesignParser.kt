@@ -71,6 +71,13 @@ object DesignParser {
             .filter { isScreenFunction(it) && !isAppThemeWrapper(it) }
             .mapNotNull { fn -> fn.name?.let { ComposableFunctionRef(it, fn.range.first) } }
 
+    /** Discover every top-level non-preview composable, including unsupported shapes and AppTheme. */
+    fun nonPreviewComposableFunctions(text: String): List<ComposableFunctionRef> =
+        scanSource(text).declarations
+            .filterIsInstance<KFunctionDecl>()
+            .filter { "Composable" in it.annotationNames && "Preview" !in it.annotationNames }
+            .mapNotNull { fn -> fn.name?.let { ComposableFunctionRef(it, fn.range.first) } }
+
     /**
      * Parse [text], or null when it has no screen-shaped `@Composable` function.
      */

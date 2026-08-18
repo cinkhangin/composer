@@ -1,6 +1,8 @@
 package composer.codeparse
 
 import composer.codegen.AppCodeGen
+import composer.model.DesignTheme
+import composer.model.NamedTheme
 import composer.model.NavAction
 import composer.model.Node
 import composer.model.childNodes
@@ -47,6 +49,21 @@ class AppWriteBackTest {
         val plan = AppWriteBackPlanner.plan(f.parsed, f.files, f.parsed.artboard)
         assertEquals(emptyList(), plan.files)
         assertEquals(emptyList(), plan.warnings)
+    }
+
+    @Test
+    fun adding_a_custom_theme_creates_a_dedicated_theme_file() {
+        val f = fixture()
+        val edited = f.parsed.artboard.copy(
+            themes = listOf(NamedTheme("Brand", DesignTheme(primary = 0xFF123456))),
+        )
+
+        val plan = AppWriteBackPlanner.plan(f.parsed, f.files, edited)
+
+        val theme = plan.files.single { it.path == "AppTheme.kt" }
+        assertTrue(theme.createText?.contains("fun AppTheme(") == true)
+        assertEquals(1, Regex("(?m)^@Composable\\s*$").findAll(theme.createText.orEmpty()).count())
+        assertTrue(plan.files.any { it.path == "MainActivity.kt" && it.edits.isNotEmpty() })
     }
 
     @Test

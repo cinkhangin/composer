@@ -29,12 +29,14 @@ data class AppNamePlan(
  * (the designed stateless UI — the file the designer regenerates on edit),
  * `<Base>ViewModel.kt` (ViewModel + UiState skeleton) — plus `MainActivity.kt`
  * with Navigation 3 (`rememberNavBackStack` + `NavDisplay` + `entryProvider`,
- * `@Serializable data object <Base> : NavKey` routes) and the theme block.
+ * `@Serializable data object <Base> : NavKey` routes). A customized theme is
+ * emitted separately as `AppTheme.kt`, keeping every generated Kotlin file to
+ * at most one non-preview composable function.
  *
  * All files live in ONE package: same-package top-level declarations resolve
  * without imports, so cross-file instance calls and the wiring→UI→VM
  * references need zero import logic. Templates are canonical and comment-free
- * — AppParser byte-compares wiring/VM/MainActivity against regeneration to
+ * — AppParser byte-compares wiring/VM/theme/MainActivity against regeneration to
  * decide whether a file is still designer-owned.
  */
 object AppCodeGen {
@@ -58,6 +60,7 @@ object AppCodeGen {
             files += GeneratedFile("${base}Screen.kt", wiringFile(screen, base, packageName, artboard, baseById))
             files += GeneratedFile("${base}ViewModel.kt", viewModelFile(base, packageName))
         }
+        if (plan.themed) files += GeneratedFile("AppTheme.kt", themeFile(artboard, plan, packageName))
         files += GeneratedFile("MainActivity.kt", mainActivityFile(artboard, plan, packageName, baseById))
         return files
     }
@@ -181,8 +184,7 @@ object AppCodeGen {
         baseById: Map<String, String>,
     ): String {
         val screens = artboard.composables.filterIsInstance<Node.Composable>()
-        val imports = sortedImports(plan)
-        val theme = if (plan.themed) CodeGen.themeBlock(artboard.themes, plan.schemeVals, artboard.activeTheme, imports) else null
+        val imports = mainActivityImports()
         return buildString {
             appendPackage(packageName)
             for (imp in imports.sorted()) appendLine("import $imp")
@@ -192,15 +194,11 @@ object AppCodeGen {
                 appendLine("data object $base : NavKey")
                 appendLine()
             }
-            if (theme != null) {
-                append(theme)
-                appendLine()
-            }
             appendLine("class MainActivity : ComponentActivity() {")
             appendLine("    override fun onCreate(savedInstanceState: Bundle?) {")
             appendLine("        super.onCreate(savedInstanceState)")
             appendLine("        setContent {")
-            if (theme != null) {
+            if (plan.themed) {
                 appendLine("            AppTheme {")
                 appendLine("                App()")
                 appendLine("            }")
@@ -241,6 +239,17 @@ object AppCodeGen {
         }
     }
 
+    private fun themeFile(artboard: Node.Artboard, plan: AppNamePlan, packageName: String): String {
+        val imports = mutableSetOf("androidx.compose.runtime.Composable")
+        val theme = CodeGen.themeBlock(artboard.themes, plan.schemeVals, artboard.activeTheme, imports)
+        return buildString {
+            appendPackage(packageName)
+            for (imp in imports.sorted()) appendLine("import $imp")
+            appendLine()
+            append(theme)
+        }
+    }
+
     /** Kotlin's default package has no package directive. */
     private fun StringBuilder.appendPackage(packageName: String) {
         if (packageName.isNotBlank()) {
@@ -249,7 +258,7 @@ object AppCodeGen {
         }
     }
 
-    private fun sortedImports(plan: AppNamePlan): MutableSet<String> = mutableSetOf(
+    private fun mainActivityImports(): Set<String> = setOf(
         "android.os.Bundle",
         "androidx.activity.ComponentActivity",
         "androidx.activity.compose.setContent",

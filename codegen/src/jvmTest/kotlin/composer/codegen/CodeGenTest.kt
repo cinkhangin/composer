@@ -949,6 +949,27 @@ class CodeGenTest {
     }
 
     @Test
+    fun file_export_emits_one_non_preview_composable_per_file() {
+        val artboard = Node.Artboard(
+            id = "ab",
+            composables = listOf(
+                Node.Composable("s1", listOf(Node.Text("t1", "A"))),
+                Node.Composable("s2", listOf(Node.Text("t2", "B"))),
+            ),
+            layerNames = mapOf("s1" to "Home", "s2" to "Details"),
+            theme = composer.model.DesignTheme(dark = true),
+        )
+
+        val files = CodeGen.generateFiles(artboard)
+
+        assertEquals(listOf("Home.kt", "Details.kt", "AppTheme.kt"), files.map { it.path })
+        files.forEach { file ->
+            assertEquals(1, Regex("(?m)^@Composable\\s*$").findAll(file.text).count(), file.path)
+            assertLexicallyValid(file.text)
+        }
+    }
+
+    @Test
     fun unnamed_screens_fall_back_to_indexed_names_and_duplicates_dedupe() {
         val ab = Node.Artboard(
             id = "ab",

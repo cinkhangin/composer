@@ -69,8 +69,10 @@ In progress:
 - Automatic refresh after relevant editor and project-file changes.
 - Selection synchronization between the Composer tree and Kotlin source.
 - One undoable IDE command for designer edits, including multi-file writes.
-- `New Composable` flow that can append to the active module file or create a
-  new Kotlin file.
+- `New Composable` flow that always creates a dedicated Kotlin file, keeping at
+  most one non-preview composable in each generated file.
+- Website Kotlin export downloads one file per screen and keeps the theme
+  wrapper in its own file.
 - Optional app scaffolding for a first screen, ViewModel, and Navigation 3
   source layout. Composer reports required Gradle dependencies but does not edit
   build files automatically.

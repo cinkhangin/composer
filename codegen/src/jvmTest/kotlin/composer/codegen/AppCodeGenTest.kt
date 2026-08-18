@@ -60,12 +60,17 @@ class AppCodeGenTest {
                 "LoginScreenUI.kt", "LoginScreen.kt", "LoginViewModel.kt",
                 "HomeScreenUI.kt", "HomeScreen.kt", "HomeViewModel.kt",
                 "StatCardScreenUI.kt", "StatCardScreen.kt", "StatCardViewModel.kt",
+                "AppTheme.kt",
                 "MainActivity.kt",
             ),
             files.map { it.path },
         )
         for (f in files) {
             assertTrue(f.text.startsWith("package com.example.app\n"), f.path)
+            assertTrue(
+                Regex("(?m)^@Composable\\s*$").findAll(f.text).count() <= 1,
+                "${f.path} contains multiple non-preview composable functions",
+            )
             CodeGenTest().assertLexicallyValid(f.text)
         }
     }

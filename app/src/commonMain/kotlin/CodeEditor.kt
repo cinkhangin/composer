@@ -188,7 +188,7 @@ fun CodePanel(state: EditorState, sync: CodeSyncState, modifier: Modifier = Modi
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BasicText(
-                "Screens.kt",
+                "Combined source",
                 style = TextStyle(color = Tk.textSecondary, fontSize = 12.sp, fontFamily = codeFont),
                 modifier = Modifier.weight(1f),
             )

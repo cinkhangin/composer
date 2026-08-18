@@ -6,7 +6,7 @@ import composer.model.Node
 /** One project source file handed to [AppParser]. */
 data class SourceFile(val path: String, val text: String)
 
-enum class AppFileRole { ScreenUi, ScreenWiring, ViewModel, MainActivity, Other }
+enum class AppFileRole { ScreenUi, ScreenWiring, ViewModel, Theme, MainActivity, Other }
 
 data class ParsedAppFile(
     val path: String,
@@ -168,6 +168,7 @@ object AppParser {
             if (file.path in claimed) continue
             val role = when {
                 mainEntry?.first === file -> AppFileRole.MainActivity
+                file.path.substringAfterLast('/') == "AppTheme.kt" -> AppFileRole.Theme
                 file.path.substringAfterLast('/').removeSuffix(".kt").endsWith("Screen") -> AppFileRole.ScreenWiring
                 file.path.substringAfterLast('/').removeSuffix(".kt").endsWith("ViewModel") -> AppFileRole.ViewModel
                 else -> AppFileRole.Other
@@ -181,7 +182,9 @@ object AppParser {
             val canonical = regenerated[file.path.substringAfterLast('/')]?.text == file.text
             parsedFiles += ParsedAppFile(
                 file.path,
-                if (role != AppFileRole.Other && (role == AppFileRole.MainActivity || sid != null)) role else AppFileRole.Other,
+                if (role != AppFileRole.Other &&
+                    (role == AppFileRole.MainActivity || role == AppFileRole.Theme || sid != null)
+                ) role else AppFileRole.Other,
                 screenId = sid,
                 canonical = canonical,
             )

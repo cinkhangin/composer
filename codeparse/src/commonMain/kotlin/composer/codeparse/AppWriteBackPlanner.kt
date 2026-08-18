@@ -47,12 +47,13 @@ object AppWriteBackPlanner {
         val prevUiByScreen = previous.files.filter { it.role == AppFileRole.ScreenUi }.associateBy { it.screenId }
         val prevWiringByScreen = previous.files.filter { it.role == AppFileRole.ScreenWiring }.associateBy { it.screenId }
         val prevVmByScreen = previous.files.filter { it.role == AppFileRole.ViewModel }.associateBy { it.screenId }
+        val prevTheme = previous.files.firstOrNull { it.role == AppFileRole.Theme }
         val prevMain = previous.files.firstOrNull { it.role == AppFileRole.MainActivity }
         val prevBaseById = previous.artboard.composables.filterIsInstance<Node.Composable>().let { prevScreens ->
             val prevPlan = AppCodeGen.appNamePlan(previous.artboard)
             prevScreens.indices.associate { prevScreens[it].id to prevPlan.bases[it] }
         }
-        val dirPrefix = (prevMain?.path ?: prevUiByScreen.values.firstOrNull()?.path ?: "MainActivity.kt")
+        val dirPrefix = (prevMain?.path ?: prevTheme?.path ?: prevUiByScreen.values.firstOrNull()?.path ?: "MainActivity.kt")
             .substringBeforeLast('/', "")
             .let { if (it.isEmpty()) "" else "$it/" }
 
@@ -194,6 +195,24 @@ object AppWriteBackPlanner {
         for (sid in deletedIds) {
             listOfNotNull(prevUiByScreen[sid], prevWiringByScreen[sid], prevVmByScreen[sid]).forEach {
                 plans += AppFilePlan(it.path, delete = true)
+            }
+        }
+
+        // ---- AppTheme ----------------------------------------------------------
+        val newTheme = newFiles["AppTheme.kt"]?.text
+        when {
+            newTheme == null && prevTheme != null -> plans += AppFilePlan(prevTheme.path, delete = true)
+            newTheme != null && prevTheme == null ->
+                plans += AppFilePlan("${dirPrefix}AppTheme.kt", createText = newTheme)
+            newTheme != null && prevTheme != null -> {
+                val nowText = filesNow[prevTheme.path]
+                if (nowText != null && newTheme != nowText) {
+                    if (prevTheme.canonical) {
+                        plans += AppFilePlan(prevTheme.path, edits = listOf(TextEdit(0, nowText.length, newTheme)))
+                    } else if (prevCanonicalFiles["AppTheme.kt"]?.text != newTheme) {
+                        warnings += "${prevTheme.path} was hand-edited — theme changes were not written into it."
+                    }
+                }
             }
         }
 
