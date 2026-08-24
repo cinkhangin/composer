@@ -72,7 +72,7 @@ class PreviewRenderingTest {
         assertEquals("email", textParameterReference("${'$'}email", parameters))
         assertEquals(null, textParameterReference("${'$'}count", parameters))
         assertEquals(null, textParameterReference("${'$'}missing", parameters))
-        assertEquals("${'$'}email", textValueForDisplay(bound, parameters))
+        assertEquals("email", textValueForDisplay(bound))
         assertEquals(
             "${'$'}email",
             parameterBoundValueForDisplay("fallback", "email", parameters),
@@ -81,6 +81,25 @@ class PreviewRenderingTest {
             "hello@example.com",
             previewText(bound.text, bound.textExpression, parameters.associate { it.name to it.expression }),
         )
+    }
+
+    @Test
+    fun text_inspector_uses_one_value_with_literal_or_parameter_mode() {
+        val parameters = listOf(PreviewParameter("email", "String", "\"person@example.com\""))
+        val literal = Node.Text("text", "Hello")
+
+        val checked = literal.withParameterMode(enabled = true, parameters)
+        assertEquals("email", checked.textExpression)
+        assertEquals("email", textValueForDisplay(checked))
+
+        val unchecked = checked.withParameterMode(enabled = false, parameters)
+        assertEquals("", unchecked.textExpression)
+        assertEquals("person@example.com", unchecked.text)
+        assertEquals("person@example.com", textValueForDisplay(unchecked))
+
+        val shorthand = literal.withInspectorValue("${'$'}email", parameterMode = false, parameters)
+        assertEquals("email", shorthand.textExpression)
+        assertEquals("email", textValueForDisplay(shorthand))
     }
 
     @Test

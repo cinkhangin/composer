@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -165,32 +166,40 @@ fun Inspector(
                 when (selected) {
                     is Node.Text -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         val parameters = state.screenOf(selected.id)?.preview?.parameters.orEmpty()
+                        val stringParameters = parameters.filter { isStringParameterType(it.type) }
+                        val parameterMode = selected.textExpression.isNotBlank()
                         Field(
-                            value = textValueForDisplay(selected, parameters),
-                            onValueChange = { v ->
-                                val reference = textParameterReference(v, parameters)
+                            value = textValueForDisplay(selected),
+                            onValueChange = { value ->
                                 state.update(selected.id, coalesceKey = "text:${selected.id}") {
-                                    (it as Node.Text).copy(text = v, textExpression = reference.orEmpty())
+                                    (it as Node.Text).withInspectorValue(value, parameterMode, parameters)
                                 }
                             },
-                            label = "Text",
+                            label = "Value",
+                            placeholder = if (parameterMode) {
+                                stringParameters.joinToString(" or ") { it.name }
+                            } else {
+                                "Text"
+                            },
                             modifier = Modifier.fillMaxWidth(),
                         )
-                        if (parameters.isNotEmpty()) {
-                            Field(
-                                value = selected.textExpression,
-                                onValueChange = { expression ->
-                                    state.update(selected.id, coalesceKey = "textexpr:${selected.id}") {
-                                        (it as Node.Text).copy(textExpression = expression)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Checkbox(
+                                checked = parameterMode,
+                                enabled = parameterMode || stringParameters.isNotEmpty(),
+                                onCheckedChange = { enabled ->
+                                    state.update(selected.id) {
+                                        (it as Node.Text).withParameterMode(enabled, parameters)
                                     }
                                 },
-                                label = "Parameter / Kotlin expression",
-                                placeholder = parameters.joinToString(" or ") { it.name },
-                                modifier = Modifier.fillMaxWidth(),
                             )
                             BasicText(
-                                "Enter ${'$'}name in Text to use a String parameter, or enter a Kotlin expression here.",
-                                style = TextStyle(color = Tk.textMuted, fontSize = 11.sp),
+                                "Parameter value",
+                                style = TextStyle(color = Tk.textSecondary, fontSize = 12.sp),
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

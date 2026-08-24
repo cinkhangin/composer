@@ -47,8 +47,50 @@ internal fun parameterBoundValueForDisplay(
     return if (parameter != null && isStringParameterType(parameter.type)) "${'$'}$expression" else fallback
 }
 
-internal fun textValueForDisplay(node: Node.Text, parameters: List<PreviewParameter>): String =
-    parameterBoundValueForDisplay(node.text, node.textExpression, parameters)
+/** The inspector has one Text value field; expression mode shows its source value. */
+internal fun textValueForDisplay(node: Node.Text): String =
+    node.textExpression.ifBlank { node.text }
+
+/** Apply an edit from the Text inspector's single value field. */
+internal fun Node.Text.withInspectorValue(
+    value: String,
+    parameterMode: Boolean,
+    parameters: List<PreviewParameter>,
+): Node.Text {
+    if (!parameterMode) {
+        val reference = textParameterReference(value, parameters)
+        return if (reference == null) {
+            copy(text = value, textExpression = "")
+        } else {
+            copy(text = "${'$'}$reference", textExpression = reference)
+        }
+    }
+    val expression = value.trim().removePrefix("${'$'}")
+    val fallback = expression.takeIf { candidate ->
+        parameters.any { it.name == candidate && isStringParameterType(it.type) }
+    }?.let { "${'$'}$it" } ?: text
+    return copy(text = fallback, textExpression = expression)
+}
+
+/** Toggle between a literal String and a parameter-backed Text value. */
+internal fun Node.Text.withParameterMode(
+    enabled: Boolean,
+    parameters: List<PreviewParameter>,
+): Node.Text {
+    if (enabled) {
+        if (textExpression.isNotBlank()) return this
+        val current = text.trim().removePrefix("${'$'}")
+        val parameter = parameters.firstOrNull {
+            it.name == current && isStringParameterType(it.type)
+        } ?: parameters.firstOrNull { isStringParameterType(it.type) }
+        return parameter?.let {
+            copy(text = "${'$'}${it.name}", textExpression = it.name)
+        } ?: this
+    }
+    val parameter = parameters.firstOrNull { it.name == textExpression.trim() }
+    val literal = parameter?.let { parameterValueForDisplay(it.type, it.expression) } ?: text
+    return copy(text = literal, textExpression = "")
+}
 
 private fun kotlinStringLiteral(value: String): String = buildString {
     append('"')
