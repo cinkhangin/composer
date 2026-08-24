@@ -475,7 +475,7 @@ fun RenderNode(
 
         is Node.TextField -> InteractiveNode(node, onSelect, onBounds, scopeModifier) { m ->
             OutlinedTextField(
-                value = node.value,
+                value = previewText(node.value, node.valueExpression, LocalPreviewParameters.current),
                 onValueChange = {},
                 label = if (node.placeholder.isNotEmpty()) ({ Text(node.placeholder) }) else null,
                 modifier = m,

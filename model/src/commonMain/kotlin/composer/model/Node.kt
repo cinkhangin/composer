@@ -310,6 +310,9 @@ sealed interface Node {
         val value: String = "",
         val placeholder: String = "Label",
         override val modifier: List<ModifierSpec> = emptyList(),
+        // Exact Kotlin expression used to initialize the editable value. Empty
+        // means [value] is a literal; the renderer uses [value] as its fallback.
+        val valueExpression: String = "",
     ) : Node
 
     @Serializable

@@ -847,7 +847,11 @@ object CodeGen {
                 imports += "androidx.compose.material3.Text"
                 stateImports(imports)
                 val v = "state${++seq[0]}"
-                out.appendLine("${pad}var $v by remember { mutableStateOf(\"${esc(node.value)}\") }")
+                val initialValue = node.valueExpression.ifEmpty { "\"${esc(node.value)}\"" }
+                val rememberCall = node.valueExpression.takeIf { it.isNotEmpty() }
+                    ?.let { "remember($it)" }
+                    ?: "remember"
+                out.appendLine("${pad}var $v by $rememberCall { mutableStateOf($initialValue) }")
                 val mod = modifierExpr(mods, imports, scopeModifier, indent)
                 val args = mutableListOf("value = $v", "onValueChange = { $v = it }")
                 mod?.let { args += "modifier = $it" }

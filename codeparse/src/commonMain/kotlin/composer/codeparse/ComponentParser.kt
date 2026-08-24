@@ -171,6 +171,7 @@ internal class PendingState(
     val name: String,
     val bool: Boolean? = null,
     val str: String? = null,
+    val strExpression: String? = null,
     val float: Float? = null,
     val int: Int? = null,
     val stmt: KStatement,
@@ -182,14 +183,27 @@ private fun matchStateDecl(stmt: KStatement): PendingState? {
     val name = p.name ?: return null
     val remember = p.delegate?.unparen() as? KCall ?: return null
     if (callName(remember) != "remember") return null
-    if (remember.args.isNotEmpty()) return null
+    if (remember.args.size > 1 || remember.args.any { it.name != null }) return null
+    val rememberKey = remember.args.singleOrNull()?.expr?.let(::nameOf)
+    if (remember.args.isNotEmpty() && rememberKey == null) return null
     val lambda = remember.trailingLambdas.singleOrNull() ?: return null
     if (lambda.params.isNotEmpty()) return null
     val only = lambda.body.singleExprStatement() as? KCall ?: return null
     if (callName(only) != "mutableStateOf") return null
     val arg = only.singlePositionalArg() ?: return null
+    if (rememberKey != null) {
+        val expression = nameOf(arg) ?: return null
+        return if (rememberKey == expression) {
+            PendingState(name, strExpression = expression, stmt = p)
+        } else {
+            null
+        }
+    }
     boolLit(arg)?.let { return PendingState(name, bool = it, stmt = p) }
     stringLit(arg)?.let { return PendingState(name, str = it, stmt = p) }
+    nameOf(arg)?.let { expression ->
+        return PendingState(name, strExpression = expression, stmt = p)
+    }
     floatLit(arg)?.let { return PendingState(name, float = it, stmt = p) }
     intLit(arg)?.let { return PendingState(name, int = it, stmt = p) }
     return null
@@ -684,7 +698,7 @@ private fun sourceIconName(expression: String): String =
         .lowercase()
 
 private fun parseTextField(shape: CallShape, pending: PendingState?, ctx: ParseCtx, scopeParam: String?): Parsed? {
-    val v = pending?.takeIf { it.str != null } ?: return null
+    val v = pending?.takeIf { it.str != null || it.strExpression != null } ?: return null
     if (shape.trailingLambda != null || shape.positional.isNotEmpty()) return null
     if (!shape.named.keys.all { it in setOf("value", "onValueChange", "modifier", "label") }) return null
     if (nameOf(shape.named["value"]) != v.name) return null
@@ -697,7 +711,16 @@ private fun parseTextField(shape: CallShape, pending: PendingState?, ctx: ParseC
         if (inner.name != "Text" || inner.named.isNotEmpty() || inner.trailingLambda != null) return null
         placeholder = stringLit(inner.positional.singleOrNull()) ?: return null
     }
-    return Parsed(Node.TextField(ctx.newId(), v.str!!, placeholder, m), usedPending = true)
+    return Parsed(
+        Node.TextField(
+            id = ctx.newId(),
+            value = v.str ?: v.strExpression.orEmpty(),
+            placeholder = placeholder,
+            modifier = m,
+            valueExpression = v.strExpression.orEmpty(),
+        ),
+        usedPending = true,
+    )
 }
 
 private inline fun parseChecked(

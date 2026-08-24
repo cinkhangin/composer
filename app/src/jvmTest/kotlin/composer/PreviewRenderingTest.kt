@@ -74,20 +74,32 @@ class PreviewRenderingTest {
         assertEquals(null, textParameterReference("${'$'}missing", parameters))
         assertEquals("${'$'}email", textValueForDisplay(bound, parameters))
         assertEquals(
+            "${'$'}email",
+            parameterBoundValueForDisplay("fallback", "email", parameters),
+        )
+        assertEquals(
             "hello@example.com",
             previewText(bound.text, bound.textExpression, parameters.associate { it.name to it.expression }),
         )
     }
 
     @Test
-    fun text_parameter_bindings_follow_rename_and_detach_on_removal() {
+    fun string_parameter_bindings_follow_rename_and_detach_on_removal() {
         val state = EditorState(
             Node.Artboard(
                 id = "artboard",
                 composables = listOf(
                     Node.Composable(
                         id = "screen",
-                        children = listOf(Node.Text("text", "${'$'}email", textExpression = "email")),
+                        children = listOf(
+                            Node.Text("text", "${'$'}email", textExpression = "email"),
+                            Node.TextField(
+                                id = "field",
+                                value = "${'$'}email",
+                                placeholder = "Email",
+                                valueExpression = "email",
+                            ),
+                        ),
                         preview = ComposablePreview(
                             parameters = listOf(
                                 PreviewParameter("email", "String", "\"hello@example.com\""),
@@ -104,17 +116,27 @@ class PreviewRenderingTest {
 
         state.setComposableParameter("screen", 0, parameter.copy(name = "contactEmail"))
 
-        val renamed = state.composables.single().children.single() as Node.Text
-        assertEquals("contactEmail", renamed.textExpression)
-        assertEquals("${'$'}contactEmail", renamed.text)
-        assertTrue("Text(contactEmail)" in CodeGen.generate(state.root))
+        val renamedText = state.composables.single().children.filterIsInstance<Node.Text>().single()
+        val renamedField = state.composables.single().children.filterIsInstance<Node.TextField>().single()
+        assertEquals("contactEmail", renamedText.textExpression)
+        assertEquals("${'$'}contactEmail", renamedText.text)
+        assertEquals("contactEmail", renamedField.valueExpression)
+        assertEquals("${'$'}contactEmail", renamedField.value)
+        val renamedCode = CodeGen.generate(state.root)
+        assertTrue("Text(contactEmail)" in renamedCode)
+        assertTrue("remember(contactEmail) { mutableStateOf(contactEmail) }" in renamedCode)
 
         state.removeComposableParameter("screen", 0)
 
-        val detached = state.composables.single().children.single() as Node.Text
-        assertEquals("", detached.textExpression)
-        assertEquals("${'$'}contactEmail", detached.text)
-        assertTrue("Text(\"\\${'$'}contactEmail\")" in CodeGen.generate(state.root))
+        val detachedText = state.composables.single().children.filterIsInstance<Node.Text>().single()
+        val detachedField = state.composables.single().children.filterIsInstance<Node.TextField>().single()
+        assertEquals("", detachedText.textExpression)
+        assertEquals("${'$'}contactEmail", detachedText.text)
+        assertEquals("", detachedField.valueExpression)
+        assertEquals("${'$'}contactEmail", detachedField.value)
+        val detachedCode = CodeGen.generate(state.root)
+        assertTrue("Text(\"\\${'$'}contactEmail\")" in detachedCode)
+        assertTrue("mutableStateOf(\"\\${'$'}contactEmail\")" in detachedCode)
     }
 
     @Test

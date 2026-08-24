@@ -50,6 +50,35 @@ class PreviewContractTest {
     }
 
     @Test
+    fun parameter_backed_text_field_value_round_trips() {
+        val source = """
+            @Composable
+            fun EmailForm(email: String) {
+                var emailState by remember(email) { mutableStateOf(email) }
+                OutlinedTextField(
+                    value = emailState,
+                    onValueChange = { emailState = it },
+                    label = { Text("Email") },
+                )
+            }
+
+            @Preview
+            @Composable
+            fun EmailFormPreview() {
+                EmailForm(email = "person@example.com")
+            }
+        """.trimIndent()
+
+        val parsed = assertNotNull(DesignParser.parse(source))
+        val screen = parsed.artboard.composables.single() as Node.Composable
+        val field = screen.children.single() as Node.TextField
+
+        assertEquals("email", field.valueExpression)
+        val generated = CodeGen.generate(parsed.artboard)
+        assertTrue("remember(email) { mutableStateOf(email) }" in generated, generated)
+    }
+
+    @Test
     fun editing_preview_value_rewrites_only_the_invocation() {
         val source = """
             @Composable

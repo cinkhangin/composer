@@ -823,6 +823,21 @@ class CodeGenTest {
     }
 
     @Test
+    fun text_field_can_initialize_its_value_from_a_parameter() {
+        val code = CodeGen.generate(
+            Node.TextField(
+                id = "email-field",
+                value = "${'$'}email",
+                placeholder = "Email",
+                valueExpression = "email",
+            ),
+        )
+
+        assertTrue("var state1 by remember(email) { mutableStateOf(email) }" in code, code)
+        assertTrue("OutlinedTextField(value = state1" in code, code)
+    }
+
+    @Test
     fun icon_and_icon_button_emit_with_imports() {
         val icon = CodeGen.generate(Node.Icon("i", composer.model.IconKind.Search, "find"))
         assertTrue("Icon(Icons.Default.Search, contentDescription = \"find\")" in icon, icon)

@@ -223,7 +223,7 @@ class EditorState(initial: Node) {
             ) {
                 updated
             } else {
-                updated.rewriteTextParameter(
+                updated.rewriteStringParameter(
                     previous.name,
                     parameter.name.takeIf { isStringParameterType(parameter.type) },
                 ) as Node.Composable
@@ -238,7 +238,7 @@ class EditorState(initial: Node) {
             val preview = screen.preview ?: return@update node
             if (index !in preview.parameters.indices) return@update node
             screen.withParameters(preview.parameters.filterIndexed { i, _ -> i != index })
-                .rewriteTextParameter(preview.parameters[index].name, replacement = null)
+                .rewriteStringParameter(preview.parameters[index].name, replacement = null)
         }
     }
 
@@ -260,17 +260,20 @@ class EditorState(initial: Node) {
         parametersManagedByEditor = true,
     )
 
-    /** Keep inspector-authored `$name` Text bindings valid as parameters change. */
-    private fun Node.rewriteTextParameter(name: String, replacement: String?): Node {
-        val updated = if (this is Node.Text && textExpression.trim() == name) {
-            copy(
+    /** Keep inspector-authored `$name` String bindings valid as parameters change. */
+    private fun Node.rewriteStringParameter(name: String, replacement: String?): Node {
+        val updated = when {
+            this is Node.Text && textExpression.trim() == name -> copy(
                 text = replacement?.let { "${'$'}$it" } ?: text,
                 textExpression = replacement.orEmpty(),
             )
-        } else {
-            this
+            this is Node.TextField && valueExpression.trim() == name -> copy(
+                value = replacement?.let { "${'$'}$it" } ?: value,
+                valueExpression = replacement.orEmpty(),
+            )
+            else -> this
         }
-        return updated.mapChildren { it.rewriteTextParameter(name, replacement) }
+        return updated.mapChildren { it.rewriteStringParameter(name, replacement) }
     }
 
     private fun nextScreenX(): Int =

@@ -300,12 +300,31 @@ fun Inspector(
                     }
 
                     is Node.TextField -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        val parameters = state.screenOf(selected.id)?.preview?.parameters.orEmpty()
                         Field(
-                            value = selected.value,
-                            onValueChange = { v -> state.update(selected.id, coalesceKey = "tfval:${selected.id}") { (it as Node.TextField).copy(value = v) } },
+                            value = parameterBoundValueForDisplay(
+                                selected.value,
+                                selected.valueExpression,
+                                parameters,
+                            ),
+                            onValueChange = { value ->
+                                val reference = textParameterReference(value, parameters)
+                                state.update(selected.id, coalesceKey = "tfval:${selected.id}") {
+                                    (it as Node.TextField).copy(
+                                        value = value,
+                                        valueExpression = reference.orEmpty(),
+                                    )
+                                }
+                            },
                             label = "Value",
                             modifier = Modifier.fillMaxWidth(),
                         )
+                        if (parameters.isNotEmpty()) {
+                            BasicText(
+                                "Enter ${'$'}name to initialize this field from a String parameter.",
+                                style = TextStyle(color = Tk.textMuted, fontSize = 11.sp),
+                            )
+                        }
                         Field(
                             value = selected.placeholder,
                             onValueChange = { v -> state.update(selected.id, coalesceKey = "tfph:${selected.id}") { (it as Node.TextField).copy(placeholder = v) } },

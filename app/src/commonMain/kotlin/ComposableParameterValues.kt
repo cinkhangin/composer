@@ -27,7 +27,7 @@ internal fun parameterValueForSource(type: String, value: String): String {
     return kotlinStringLiteral(value)
 }
 
-/** `$name` binds Text to a String parameter declared by the current composable. */
+/** `$name` binds a String property to a parameter declared by the current composable. */
 internal fun textParameterReference(value: String, parameters: List<PreviewParameter>): String? {
     val match = parameterReference.matchEntire(value) ?: return null
     val name = match.groupValues[1]
@@ -36,12 +36,19 @@ internal fun textParameterReference(value: String, parameters: List<PreviewParam
     }
 }
 
-/** Show a bound Text expression using the inspector's `$name` shorthand. */
-internal fun textValueForDisplay(node: Node.Text, parameters: List<PreviewParameter>): String {
-    val expression = node.textExpression.trim()
+/** Show a bound String expression using the inspector's `$name` shorthand. */
+internal fun parameterBoundValueForDisplay(
+    fallback: String,
+    sourceExpression: String,
+    parameters: List<PreviewParameter>,
+): String {
+    val expression = sourceExpression.trim()
     val parameter = parameters.singleOrNull { it.name == expression }
-    return if (parameter != null && isStringParameterType(parameter.type)) "${'$'}$expression" else node.text
+    return if (parameter != null && isStringParameterType(parameter.type)) "${'$'}$expression" else fallback
 }
+
+internal fun textValueForDisplay(node: Node.Text, parameters: List<PreviewParameter>): String =
+    parameterBoundValueForDisplay(node.text, node.textExpression, parameters)
 
 private fun kotlinStringLiteral(value: String): String = buildString {
     append('"')
