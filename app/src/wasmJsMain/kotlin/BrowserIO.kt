@@ -2,7 +2,6 @@ package composer
 
 import kotlinx.browser.document
 import kotlinx.browser.window
-import kotlinx.browser.localStorage
 import org.w3c.dom.HTMLAnchorElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.events.Event
@@ -13,9 +12,20 @@ import org.w3c.files.FileReader
  * download/import, clipboard, URL routing, and boot-loader chrome.
  */
 
-actual fun prefGet(key: String): String? = localStorage.getItem(key)
+actual fun prefGet(key: String): String? = prefGetSafe(key)
 
-actual fun prefSet(key: String, value: String) = localStorage.setItem(key, value)
+actual fun prefSet(key: String, value: String) = prefSetSafe(key, value)
+
+/**
+ * Preferences share localStorage with design files. A large inline-image
+ * design can fill that store, and some privacy modes deny storage entirely.
+ * Preference failures must never abort a toolbar click or app composition.
+ */
+private fun prefGetSafe(key: String): String? =
+    js("(function(k){ try { return localStorage.getItem(k); } catch (e) { return null; } })(key)")
+
+private fun prefSetSafe(key: String, value: String): Unit =
+    js("(function(k,v){ try { localStorage.setItem(k,v); } catch (e) {} })(key,value)")
 
 /** Trigger a browser download of [content] as [filename] via a data URL. */
 actual fun downloadText(filename: String, content: String, mime: String) {

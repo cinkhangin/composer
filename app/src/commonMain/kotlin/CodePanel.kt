@@ -31,8 +31,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
@@ -95,19 +93,6 @@ fun CodePanel(state: EditorState, sync: CodeSyncState, modifier: Modifier = Modi
             .drop(1)
             .debounce(500)
             .collect { text -> parseAndApply(state, sync, text) }
-    }
-
-    // Entering the code view focuses the editor — type immediately, no click
-    // needed. On a fresh page load the canvas has no DOM focus yet and the first
-    // request can fizzle, so grab browser focus and retry briefly until it sticks.
-    val fieldFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
-        repeat(10) {
-            focusComposeCanvas()
-            runCatching { fieldFocus.requestFocus() }
-            if (state.codeEditorFocused) return@LaunchedEffect
-            delay(50)
-        }
     }
 
     // Leaving the code view within the debounce window still lands the edit.
@@ -184,8 +169,11 @@ fun CodePanel(state: EditorState, sync: CodeSyncState, modifier: Modifier = Modi
                 // the field's top edge. Disable it and follow the caret manually.
                 val density = LocalDensity.current
                 LaunchedEffect(sync, vScroll) {
-                    snapshotFlow { sync.field.selection to sync.field.text.length }
-                        .collect {
+                    snapshotFlow { Triple(sync.field.selection, sync.field.text.length, state.codeEditorFocused) }
+                        .collect { (_, _, focused) ->
+                            // Mounting Code view must not force a full-text caret
+                            // layout and scroll before the user interacts with it.
+                            if (!focused) return@collect
                             val f = sync.field
                             val line = f.text.take(f.selection.end.coerceIn(0, f.text.length)).count { c -> c == '\n' }
                             val lineHeightPx = with(density) { 19.sp.toPx() }
@@ -214,7 +202,6 @@ fun CodePanel(state: EditorState, sync: CodeSyncState, modifier: Modifier = Modi
                             // no soft wrap); min = viewport so empty-area clicks focus.
                             .defaultMinSize(minWidth = minW, minHeight = minH)
                             .padding(horizontal = 14.dp, vertical = 16.dp)
-                            .focusRequester(fieldFocus)
                             .onFocusChanged { state.codeEditorFocused = it.isFocused }
                             .onPreviewKeyEvent { e ->
                                 // Tab indents instead of moving focus.
