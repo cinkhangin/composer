@@ -41,10 +41,13 @@ internal fun WebEditorScreen(ws: Workspace) {
     val state = remember(ws.openToken) { EditorState(ws.initialDesign) }
     val codeSync = remember(ws.openToken) { CodeSyncState() }
     val focusRequester = remember { FocusRequester() }
+
     LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
+
     LaunchedEffect(state.selectedId) {
         if (state.selectedId != null && !state.showCode) runCatching { focusRequester.requestFocus() }
     }
+
     LaunchedEffect(state, ws) {
         snapshotFlow { state.root to ws.currentName }
             .drop(1)
@@ -52,6 +55,7 @@ internal fun WebEditorScreen(ws: Workspace) {
             .debounce(700)
             .collect { ws.save(state.root) }
     }
+
     DisposableEffect(state, ws) {
         val unregister = registerUnloadFlush {
             if (state.root != ws.initialDesign) ws.save(state.root)
@@ -62,6 +66,7 @@ internal fun WebEditorScreen(ws: Workspace) {
     val themeSwatches = DesignTheme.TOKENS.map { token ->
         ThemeSwatch(token, ThemeColorRef.token(token)!!, state.theme.effective(token))
     }
+
     CompositionLocalProvider(LocalThemeSwatches provides themeSwatches) {
         Column(
             modifier = Modifier
