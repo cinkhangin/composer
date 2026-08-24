@@ -24,6 +24,7 @@ import composer.model.insertChild
 import composer.model.insertOrdered
 import composer.model.isContainer
 import composer.model.migrateToArtboard
+import composer.model.mapChildren
 import composer.model.NamedTheme
 import composer.model.moveAfter
 import composer.model.moveBefore
@@ -215,7 +216,18 @@ class EditorState(initial: Node) {
             val screen = node as? Node.Composable ?: return@update node
             val preview = screen.preview ?: return@update node
             if (index !in preview.parameters.indices) return@update node
-            screen.withParameters(preview.parameters.toMutableList().apply { this[index] = parameter })
+            val previous = preview.parameters[index]
+            val updated = screen.withParameters(preview.parameters.toMutableList().apply { this[index] = parameter })
+            if (previous.name == parameter.name &&
+                isStringParameterType(previous.type) == isStringParameterType(parameter.type)
+            ) {
+                updated
+            } else {
+                updated.rewriteTextParameter(
+                    previous.name,
+                    parameter.name.takeIf { isStringParameterType(parameter.type) },
+                ) as Node.Composable
+            }
         }
     }
 
@@ -226,6 +238,7 @@ class EditorState(initial: Node) {
             val preview = screen.preview ?: return@update node
             if (index !in preview.parameters.indices) return@update node
             screen.withParameters(preview.parameters.filterIndexed { i, _ -> i != index })
+                .rewriteTextParameter(preview.parameters[index].name, replacement = null)
         }
     }
 
@@ -246,6 +259,19 @@ class EditorState(initial: Node) {
         },
         parametersManagedByEditor = true,
     )
+
+    /** Keep inspector-authored `$name` Text bindings valid as parameters change. */
+    private fun Node.rewriteTextParameter(name: String, replacement: String?): Node {
+        val updated = if (this is Node.Text && textExpression.trim() == name) {
+            copy(
+                text = replacement?.let { "${'$'}$it" } ?: text,
+                textExpression = replacement.orEmpty(),
+            )
+        } else {
+            this
+        }
+        return updated.mapChildren { it.rewriteTextParameter(name, replacement) }
+    }
 
     private fun nextScreenX(): Int =
         composables.maxOfOrNull { it.x + it.width + SCREEN_GAP } ?: 0

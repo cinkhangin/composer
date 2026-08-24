@@ -85,7 +85,19 @@ internal fun ComposableEditor(state: EditorState, screen: Node.Composable) {
                         )
                         Field(
                             value = parameter.type,
-                            onValueChange = { state.setComposableParameter(screen.id, index, parameter.copy(type = it)) },
+                            onValueChange = { type ->
+                                state.setComposableParameter(
+                                    screen.id,
+                                    index,
+                                    parameter.copy(
+                                        type = type,
+                                        expression = parameterValueForSource(
+                                            type,
+                                            parameterValueForDisplay(parameter.type, parameter.expression),
+                                        ),
+                                    ),
+                                )
+                            },
                             label = "Type",
                             isError = !validType,
                             placeholder = "String",
@@ -93,11 +105,17 @@ internal fun ComposableEditor(state: EditorState, screen: Node.Composable) {
                         )
                     }
                     Field(
-                        value = parameter.expression,
-                        onValueChange = { state.setComposableParameter(screen.id, index, parameter.copy(expression = it)) },
+                        value = parameterValueForDisplay(parameter.type, parameter.expression),
+                        onValueChange = { value ->
+                            state.setComposableParameter(
+                                screen.id,
+                                index,
+                                parameter.copy(expression = parameterValueForSource(parameter.type, value)),
+                            )
+                        },
                         label = "Default / preview value",
                         isError = !validValue,
-                        placeholder = "\"Value\"",
+                        placeholder = "Value",
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Row(

@@ -164,17 +164,18 @@ fun Inspector(
               if (selected.hasContentProps()) InspectorSection("Content") {
                 when (selected) {
                     is Node.Text -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        val parameters = state.screenOf(selected.id)?.preview?.parameters.orEmpty()
                         Field(
-                            value = selected.text,
+                            value = textValueForDisplay(selected, parameters),
                             onValueChange = { v ->
+                                val reference = textParameterReference(v, parameters)
                                 state.update(selected.id, coalesceKey = "text:${selected.id}") {
-                                    (it as Node.Text).copy(text = v, textExpression = "")
+                                    (it as Node.Text).copy(text = v, textExpression = reference.orEmpty())
                                 }
                             },
                             label = "Text",
                             modifier = Modifier.fillMaxWidth(),
                         )
-                        val parameters = state.screenOf(selected.id)?.preview?.parameters.orEmpty()
                         if (parameters.isNotEmpty()) {
                             Field(
                                 value = selected.textExpression,
@@ -188,7 +189,7 @@ fun Inspector(
                                 modifier = Modifier.fillMaxWidth(),
                             )
                             BasicText(
-                                "Use a parameter name here to render its preview value and emit it directly in Text(…).",
+                                "Enter ${'$'}name in Text to use a String parameter, or enter a Kotlin expression here.",
                                 style = TextStyle(color = Tk.textMuted, fontSize = 11.sp),
                             )
                         }

@@ -4,6 +4,7 @@ import composer.codegen.CodeGen
 import composer.model.ComposablePreview
 import composer.model.NavAction
 import composer.model.Node
+import composer.model.PreviewParameter
 import composer.render.previewText
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -46,6 +47,74 @@ class PreviewRenderingTest {
             "Hello Desktop: 4",
             previewText("fallback", "\"Hello ${'$'}name: ${'$'}count\"", values),
         )
+    }
+
+    @Test
+    fun string_parameter_values_are_quoted_and_escaped_automatically() {
+        assertEquals("\"Desktop\"", parameterValueForSource("String", "Desktop"))
+        assertEquals("Desktop", parameterValueForDisplay("String", "\"Desktop\""))
+        assertEquals(
+            "\"A \\\"quoted\\\" \\\\ value\\n\"",
+            parameterValueForSource("kotlin.String", "A \"quoted\" \\ value\n"),
+        )
+        assertEquals("null", parameterValueForSource("String?", "null"))
+        assertEquals("42", parameterValueForSource("Int", " 42 "))
+    }
+
+    @Test
+    fun dollar_prefixed_text_binds_to_a_string_parameter() {
+        val parameters = listOf(
+            PreviewParameter("email", "String", "\"hello@example.com\""),
+            PreviewParameter("count", "Int", "3"),
+        )
+        val bound = Node.Text("text", "${'$'}email", textExpression = "email")
+
+        assertEquals("email", textParameterReference("${'$'}email", parameters))
+        assertEquals(null, textParameterReference("${'$'}count", parameters))
+        assertEquals(null, textParameterReference("${'$'}missing", parameters))
+        assertEquals("${'$'}email", textValueForDisplay(bound, parameters))
+        assertEquals(
+            "hello@example.com",
+            previewText(bound.text, bound.textExpression, parameters.associate { it.name to it.expression }),
+        )
+    }
+
+    @Test
+    fun text_parameter_bindings_follow_rename_and_detach_on_removal() {
+        val state = EditorState(
+            Node.Artboard(
+                id = "artboard",
+                composables = listOf(
+                    Node.Composable(
+                        id = "screen",
+                        children = listOf(Node.Text("text", "${'$'}email", textExpression = "email")),
+                        preview = ComposablePreview(
+                            parameters = listOf(
+                                PreviewParameter("email", "String", "\"hello@example.com\""),
+                            ),
+                        ),
+                        sourceParameterList = "(email: String)",
+                        parametersManagedByEditor = true,
+                    ),
+                ),
+                layerNames = mapOf("screen" to "Profile"),
+            ),
+        )
+        val parameter = state.composables.single().preview!!.parameters.single()
+
+        state.setComposableParameter("screen", 0, parameter.copy(name = "contactEmail"))
+
+        val renamed = state.composables.single().children.single() as Node.Text
+        assertEquals("contactEmail", renamed.textExpression)
+        assertEquals("${'$'}contactEmail", renamed.text)
+        assertTrue("Text(contactEmail)" in CodeGen.generate(state.root))
+
+        state.removeComposableParameter("screen", 0)
+
+        val detached = state.composables.single().children.single() as Node.Text
+        assertEquals("", detached.textExpression)
+        assertEquals("${'$'}contactEmail", detached.text)
+        assertTrue("Text(\"\\${'$'}contactEmail\")" in CodeGen.generate(state.root))
     }
 
     @Test
