@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import composer.model.ModifierSpec
 import composer.model.Node
+import composer.model.ComposablePreview
 import composer.model.childNodes
 import composer.model.canInstantiate
 import composer.model.cloneWithNewIds
@@ -80,8 +81,9 @@ class EditorState(initial: Node) {
     /** The design root — always an [Node.Artboard] (see the migration in the constructor). */
     val artboard: Node.Artboard get() = root as Node.Artboard
 
-    /** The artboard's screens, in order. */
-    val composables: List<Node.Composable> get() = artboard.composables.filterIsInstance<Node.Composable>()
+    /** Only source functions with a paired preview are designer-visible. */
+    val composables: List<Node.Composable> get() =
+        artboard.composables.filterIsInstance<Node.Composable>().filter { it.preview != null }
 
     /** Designer-wide maximum screen size. Existing mixed-size files use the first composable until changed. */
     val screenWidth: Int get() = composables.firstOrNull()?.width ?: DEFAULT_SCREEN_WIDTH
@@ -168,12 +170,15 @@ class EditorState(initial: Node) {
      */
     fun addComposable() {
         val id = nextId()
+        val boxId = nextId()
         val screen = Node.Composable(
             id = id,
+            children = listOf(Node.Box(boxId)),
             x = nextScreenX(),
             y = 0,
             width = screenWidth,
             height = screenHeight,
+            preview = ComposablePreview(),
         )
         val name = "Composable ${composables.size + 1}"
         commit(
@@ -181,6 +186,21 @@ class EditorState(initial: Node) {
                 .let { (it as Node.Artboard).copy(layerNames = it.layerNames + (id to name)) },
         )
         select(id)
+    }
+
+    /** Update one preview invocation expression without changing the real function body. */
+    fun setPreviewParameter(screenId: String, parameterName: String, expression: String) {
+        update(screenId, coalesceKey = "preview:$screenId:$parameterName") { node ->
+            val screen = node as? Node.Composable ?: return@update node
+            val preview = screen.preview ?: return@update node
+            screen.copy(
+                preview = preview.copy(
+                    parameters = preview.parameters.map { parameter ->
+                        if (parameter.name == parameterName) parameter.copy(expression = expression) else parameter
+                    },
+                ),
+            )
+        }
     }
 
     private fun nextScreenX(): Int =
@@ -408,7 +428,12 @@ class EditorState(initial: Node) {
         var (parentId, index) = resolveInsertTarget()
         if (parentId == null) {
             // No screen to insert into yet — create one, then insert into it.
-            val screen = Node.Composable(id = nextId(), x = nextScreenX(), y = 0)
+            val screen = Node.Composable(
+                id = nextId(),
+                x = nextScreenX(),
+                y = 0,
+                preview = ComposablePreview(),
+            )
             tree = tree.insertChild(tree.id, screen, Int.MAX_VALUE)
             parentId = screen.id
             index = Int.MAX_VALUE

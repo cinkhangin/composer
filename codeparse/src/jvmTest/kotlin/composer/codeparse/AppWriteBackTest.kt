@@ -1,6 +1,7 @@
 package composer.codeparse
 
 import composer.codegen.AppCodeGen
+import composer.model.ComposablePreview
 import composer.model.DesignTheme
 import composer.model.NamedTheme
 import composer.model.NavAction
@@ -23,8 +24,13 @@ class AppWriteBackTest {
                     Node.Text("t1", "Welcome"),
                     Node.Button("b1", children = listOf(Node.Text("bt", "Go")), navAction = NavAction.Navigate("s2")),
                 ),
+                preview = ComposablePreview(),
             ),
-            Node.Composable("s2", children = listOf(Node.Text("t2", "Home sweet home"))),
+            Node.Composable(
+                "s2",
+                children = listOf(Node.Text("t2", "Home sweet home")),
+                preview = ComposablePreview(),
+            ),
         ),
         layerNames = mapOf("s1" to "Login", "s2" to "Home"),
     )

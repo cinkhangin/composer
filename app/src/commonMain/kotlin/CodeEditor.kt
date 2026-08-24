@@ -62,11 +62,15 @@ internal object NoBringIntoView : BringIntoViewSpec {
 /** Parse the buffer and apply it to the design; keeps the last good tree on failure. */
 internal fun parseAndApply(state: EditorState, sync: CodeSyncState, text: String) {
     if (text == sync.lastSynced) return // canonical text of the current root — no-op
-    val parsed = DesignParser.parse(text)
-    if (parsed == null) {
+    val parsed = DesignParser.parse(text) ?: if (DesignParser.nonPreviewComposableFunctions(text).isNotEmpty()) {
+        // Valid source with real composables but no @Preview functions is an
+        // intentionally empty canvas, not a parse failure. Keep the source in
+        // the buffer while clearing every previously rendered composable.
+        DesignParser.skeleton(text).copy(hasNonScreenDeclarations = true)
+    } else {
         sync.parseError =
             if (text.isBlank()) "Empty file — the design was kept. Add a @Composable function to define a screen."
-            else "No screens found — the design was kept. A screen is a top-level @Composable fun with a { } body."
+            else "No previews found — the design was kept. Add a @Preview @Composable that invokes the function to render it."
         return
     }
     val merged = mergeParsed(state.artboard, parsed)

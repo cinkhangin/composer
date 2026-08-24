@@ -113,12 +113,25 @@ object AppCodeGen {
         baseById: Map<String, String>,
     ): String {
         // navFns = target BASE names, so params read onNavigateToHome (not …ScreenUI).
-        val code = CodeGen.screenFunction(screen, "${base}ScreenUI", componentFns, params = null, navFns = baseById)
+        val code = CodeGen.screenFunction(
+            screen,
+            "${base}ScreenUI",
+            componentFns,
+            params = screen.sourceParameterList.takeIf { it.isNotBlank() },
+            navFns = baseById,
+        )
         return buildString {
             appendPackage(packageName)
-            for (imp in code.imports.sorted()) appendLine("import $imp")
+            val imports = code.imports + if (screen.preview != null) {
+                setOf("androidx.compose.ui.tooling.preview.Preview")
+            } else emptySet()
+            for (imp in imports.sorted()) appendLine("import $imp")
             appendLine()
             appendLine(code.text)
+            screen.preview?.let { preview ->
+                appendLine()
+                appendLine(CodeGen.previewFunctionText(screen, "${base}ScreenUI", preview.functionName))
+            }
         }
     }
 

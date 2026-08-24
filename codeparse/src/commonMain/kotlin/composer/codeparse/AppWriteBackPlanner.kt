@@ -129,20 +129,37 @@ object AppWriteBackPlanner {
             val prevFn = design.functions.firstOrNull { it.screenId == screen.id }
             val text = filesNow[prevUi.path]
             if (prevFn != null && text != null) {
-                val changed = prevFn.treeHash != ParsedFunction.hashOf(screen) ||
+                val bodyChanged = prevFn.treeHash != ParsedFunction.hashOf(screen) ||
                     prevFn.functionName != "${base}ScreenUI" ||
                     referencesChanged(screen)
-                if (changed) {
+                val previewChanged = screen.preview != null && (
+                    prevFn.previewHash != ParsedFunction.previewHashOf(screen) ||
+                        prevFn.functionName != "${base}ScreenUI"
+                    )
+                if (bodyChanged || previewChanged) {
                     val verbatimParams = prevFn.takeIf { !it.paramsCanonical }?.paramList
                     if (verbatimParams != null && hasNavActions(screen)) {
                         warnings += "\"${base}ScreenUI\" has navigation actions but a custom signature — undeclared callbacks were not wired."
                     }
-                    val code = CodeGen.screenFunction(screen, "${base}ScreenUI", uiFns, params = verbatimParams, navFns = baseById)
                     val edits = mutableListOf<TextEdit>()
-                    val original = text.substring(prevFn.fnRange.first, prevFn.fnRange.last + 1)
-                    if (original != code.text) edits += TextEdit(prevFn.fnRange.first, prevFn.fnRange.last + 1, code.text)
+                    var imports = emptySet<String>()
+                    if (bodyChanged) {
+                        val code = CodeGen.screenFunction(screen, "${base}ScreenUI", uiFns, params = verbatimParams, navFns = baseById)
+                        imports = code.imports
+                        val original = text.substring(prevFn.fnRange.first, prevFn.fnRange.last + 1)
+                        if (original != code.text) edits += TextEdit(prevFn.fnRange.first, prevFn.fnRange.last + 1, code.text)
+                    }
+                    if (previewChanged) {
+                        prevFn.previewCallRange?.let { range ->
+                            edits += TextEdit(
+                                range.first,
+                                range.last + 1,
+                                CodeGen.previewCall(screen, "${base}ScreenUI"),
+                            )
+                        }
+                    }
                     if (edits.isNotEmpty()) {
-                        WriteBackPlanner.planImportMerge(design, code.imports)?.let { edits += it }
+                        WriteBackPlanner.planImportMerge(design, imports)?.let { edits += it }
                         // A renamed screen moves its file alongside the fn. Keeping
                         // the move explicit prevents the host from leaving the old UI
                         // file behind, where the next app parse would resurrect it as

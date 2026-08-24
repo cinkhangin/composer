@@ -13,6 +13,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.ui.FormBuilder
 import composer.codegen.AppCodeGen
 import composer.idea.ComposerNotifications
+import composer.model.ComposablePreview
 import composer.model.Node
 import javax.swing.JComponent
 import javax.swing.JTextField
@@ -80,7 +81,13 @@ object ComposerAppScaffold {
 
         val artboard = Node.Artboard(
             id = "artboard",
-            composables = listOf(Node.Composable("s1", children = listOf(Node.Text("t1", "Hello, $screenName")))),
+            composables = listOf(
+                Node.Composable(
+                    "s1",
+                    children = listOf(Node.Text("t1", "Hello, $screenName")),
+                    preview = ComposablePreview(functionName = "${screenName}ScreenUIPreview"),
+                ),
+            ),
             layerNames = mapOf("s1" to screenName),
         )
         val files = AppCodeGen.generate(artboard, pkg)

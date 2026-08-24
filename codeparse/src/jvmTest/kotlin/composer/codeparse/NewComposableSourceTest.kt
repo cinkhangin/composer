@@ -30,6 +30,9 @@ class NewComposableSourceTest {
         val created = NewComposableSource.create("package demo\n", "Settings")
         assertTrue(created.startsWith("package demo\n"))
         assertTrue("fun Settings()" in created)
+        assertTrue("@Preview" in created)
+        assertTrue("import androidx.compose.ui.tooling.preview.Preview" in created)
+        assertTrue("fun SettingsPreview()" in created)
         val parsed = assertNotNull(DesignParser.parse(created))
         assertEquals(listOf("Settings"), parsed.artboard.composables.map { parsed.artboard.layerNames[it.id] })
         val added = parsed.artboard.composables.single() as Node.Composable
@@ -53,6 +56,7 @@ class NewComposableSourceTest {
         val created = NewComposableSource.create(previewOnly, "Settings")
 
         assertTrue("fun SettingsPreview()" in created)
+        assertTrue("fun SettingsPreview2()" in created)
         assertEquals(listOf("Settings"), DesignParser.nonPreviewComposableFunctions(created).map { it.name })
     }
 }

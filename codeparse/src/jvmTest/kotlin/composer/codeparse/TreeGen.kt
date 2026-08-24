@@ -1,6 +1,7 @@
 package composer.codeparse
 
 import composer.model.BoxAlignment
+import composer.model.ComposablePreview
 import composer.model.ButtonVariant
 import composer.model.ChipVariant
 import composer.model.CornerUnit
@@ -269,7 +270,13 @@ internal class TreeGen(seed: Int) {
         val screens = mutableListOf<Node.Composable>()
         val names = mutableMapOf<String, String>()
         val referenced = mutableSetOf<String>()
-        val first = Node.Composable(id = nid(), children = withConcreteUi(children(2, weightScope = false)), x = 0, y = 0)
+        val first = Node.Composable(
+            id = nid(),
+            children = withConcreteUi(children(2, weightScope = false)),
+            x = 0,
+            y = 0,
+            preview = ComposablePreview(),
+        )
         screens += first
         names[first.id] = "CardWidget"
         repeat(rnd.nextInt(0, 3)) { i ->
@@ -283,7 +290,13 @@ internal class TreeGen(seed: Int) {
                 referenced += first.id
             }
             if (rnd.nextInt(3) == 0) kids += scaffold(2)
-            val s = Node.Composable(id = nid(), children = withConcreteUi(kids), x = (i + 1) * 470, y = 0)
+            val s = Node.Composable(
+                id = nid(),
+                children = withConcreteUi(kids),
+                x = (i + 1) * 470,
+                y = 0,
+                preview = ComposablePreview(),
+            )
             screens += s
             names[s.id] = "Screen${i + 2}"
         }

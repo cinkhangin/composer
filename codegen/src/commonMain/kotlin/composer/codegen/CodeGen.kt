@@ -124,14 +124,24 @@ object CodeGen {
         val fnNameById = screens.indices.associate { screens[it].id to screenNames[it] }
         val fns = screens.mapIndexed { i, screen ->
             val nav = navParams(screen, fnNameById)
-            navEnv = nav.byTarget
-            backParam = nav.back
+            val sourceParams = screen.sourceParameterList
+            if (sourceParams.isBlank()) {
+                navEnv = nav.byTarget
+                backParam = nav.back
+            } else {
+                val declared = identifiersIn(sourceParams)
+                navEnv = nav.byTarget.filterValues { it in declared }
+                backParam = nav.back?.takeIf { it in declared }
+            }
             val body = StringBuilder()
             // Per-FUNCTION state counter (state1 restarts in each fun): stateN vars
             // are function-local, and the IDE plugin's write-back regenerates
             // functions in isolation — their text must match full-file output.
             emit(screen, indent = 1, out = body, imports = imports, seq = intArrayOf(0))
-            Triple(screenNames[i], nav.paramsText, body.toString())
+            Triple(screenNames[i], sourceParams.ifBlank { nav.paramsText }, body.toString())
+        }
+        if (screens.any { it.preview != null }) {
+            imports += "org.jetbrains.compose.ui.tooling.preview.Preview"
         }
         componentFns = emptyMap()
         navEnv = emptyMap()
@@ -155,6 +165,11 @@ object CodeGen {
                 appendLine("fun $name$params {")
                 append(body)
                 appendLine("}")
+                screens[i].preview?.let { preview ->
+                    appendLine()
+                    append(previewFunctionText(screens[i], name, preview.functionName))
+                    appendLine()
+                }
                 if (i != fns.lastIndex) appendLine()
             }
         }
@@ -179,14 +194,22 @@ object CodeGen {
                 screen = screen,
                 name = screenNames[index],
                 componentFns = componentFunctions,
+                params = screen.sourceParameterList.takeIf { it.isNotBlank() },
                 navFns = functionNames,
             )
             GeneratedFile(
                 path = "${screenNames[index]}.kt",
                 text = buildString {
-                    for (imp in code.imports.sorted()) appendLine("import $imp")
+                    val imports = code.imports + if (screen.preview != null) {
+                        setOf("org.jetbrains.compose.ui.tooling.preview.Preview")
+                    } else emptySet()
+                    for (imp in imports.sorted()) appendLine("import $imp")
                     appendLine()
                     appendLine(code.text)
+                    screen.preview?.let { preview ->
+                        appendLine()
+                        appendLine(previewFunctionText(screen, screenNames[index], preview.functionName))
+                    }
                 },
             )
         }
@@ -210,6 +233,31 @@ object CodeGen {
 
     /** One complete generated function declaration + the imports its body needs. */
     data class ScreenCode(val text: String, val imports: Set<String>)
+
+    /** Canonical invocation used by generated and inspector-edited previews. */
+    fun previewCall(screen: Node.Composable, functionName: String): String {
+        val values = screen.preview?.parameters.orEmpty().filter { it.expression.isNotBlank() }
+        if (values.isEmpty()) return "$functionName()"
+        if (values.size == 1) return "$functionName(${values.single().name} = ${values.single().expression})"
+        return buildString {
+            appendLine("$functionName(")
+            values.forEach { appendLine("    ${it.name} = ${it.expression},") }
+            append(")")
+        }
+    }
+
+    /** One source preview declaration for [screen], without trailing newline. */
+    fun previewFunctionText(screen: Node.Composable, functionName: String, sourceName: String = ""): String {
+        val previewName = sourceName.takeIf { sanitizeName(it) == it } ?: "${functionName}Preview"
+        val call = previewCall(screen, functionName)
+        return buildString {
+            appendLine("@Preview")
+            appendLine("@Composable")
+            appendLine("fun $previewName() {")
+            call.lines().forEach { appendLine("    $it") }
+            append("}")
+        }
+    }
 
     /**
      * Partial generation for the IDE plugin's write-back: ONE complete

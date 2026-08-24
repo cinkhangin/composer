@@ -19,8 +19,8 @@ Composer is under active development and is not yet a stable release.
 Available today:
 
 - Android Studio tool window backed by an in-process `ComposePanel`.
-- Module-wide discovery of renderable top-level `@Composable` functions in
-  production Kotlin source roots; `@Preview` functions are excluded.
+- Module-wide discovery pairs real top-level `@Composable` functions with their
+  `@Preview` invocations. Functions without a preview stay out of the designer.
 - Two-way synchronization between Kotlin source and the visual design for the
   supported syntax subset.
 - Standalone, local-first Kotlin/Wasm editor with browser persistence and
@@ -61,8 +61,10 @@ In progress:
   light/dark Material color schemes.
 - Unsupported statements, callbacks, arguments, and runtime-dependent modifier
   expressions are retained conservatively instead of being discarded.
-- Composables containing only non-renderable source are omitted from the design;
-  hidden `RawCode` remains attached when mixed with renderable content.
+- Preview arguments are editable from the inspector and drive parameter-backed
+  canvas content while edits continue to update the real composable body.
+- Preview-backed composables containing only non-renderable source remain as
+  empty `0x0` canvas items; hidden `RawCode` is preserved for write-back.
 
 ### Android Studio integration
 

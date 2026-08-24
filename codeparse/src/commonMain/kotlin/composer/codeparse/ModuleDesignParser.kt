@@ -2,7 +2,7 @@ package composer.codeparse
 
 import composer.model.Node
 
-/** One Kotlin source file containing at least one renderable composable. */
+/** One Kotlin source file containing at least one preview-backed composable. */
 data class ParsedModuleFile(
     val path: String,
     val design: ParsedDesign,
@@ -26,7 +26,8 @@ data class ModuleWriteBackPlan(
 )
 
 /**
- * Aggregates every parseable top-level `@Composable` function in a module.
+ * Aggregates every parseable top-level `@Composable` function with a paired
+ * `@Preview` invocation in a module.
  * Source files are sorted by path and declarations keep source order, making
  * the projection deterministic. IDs are path + declaration-ordinal based until
  * explicit Composer annotations provide durable identity.
@@ -47,7 +48,22 @@ object ModuleDesignParser {
                 Decl(file, ref, index, "m${fileKey}_${index + 1}")
             }
         }
-        if (declarations.isEmpty()) return null
+        if (declarations.isEmpty()) {
+            val hasRealComposables = sorted.any { file ->
+                DesignParser.nonPreviewComposableFunctions(file.text).isNotEmpty()
+            }
+            if (!hasRealComposables) return null
+            val extractedThemes = ThemeParser.parse(sorted)
+            return ParsedModuleDesign(
+                artboard = Node.Artboard(
+                    id = "artboard",
+                    themes = extractedThemes.themes,
+                    activeTheme = extractedThemes.active,
+                ),
+                files = emptyList(),
+                functionNamesById = emptyMap(),
+            )
+        }
 
         // Simple-name calls can be linked across files only when unambiguous.
         val byName = declarations.groupBy { it.ref.name }
@@ -87,11 +103,8 @@ object ModuleDesignParser {
         }
         if (allScreens.isEmpty()) return null
 
-        // RawCode is preservation metadata, not visual content. Resolve this
-        // module-wide so a screen containing only a cross-file instance still
-        // survives when that instance eventually reaches real UI.
-        val renderableIds = renderableScreenIds(allScreens)
-        if (renderableIds.isEmpty()) return null
+        // A source preview, rather than body contents, is the visibility gate.
+        val renderableIds = allScreens.mapTo(linkedSetOf()) { it.id }
         val skippedIds = allScreens.mapTo(linkedSetOf()) { it.id } - renderableIds
         val renderedOrder = allScreens
             .filter { it.id in renderableIds }

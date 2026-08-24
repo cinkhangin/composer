@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import composer.model.Node
 import composer.render.LocalDesignRoot
+import composer.render.LocalPreviewParameters
 import composer.render.RenderNode
 import composer.render.toColorScheme
 import kotlin.math.roundToInt
@@ -77,6 +78,8 @@ internal fun ScreenFrame(
                 CompositionLocalProvider(
                     LocalContentColor provides MaterialTheme.colorScheme.onBackground,
                     LocalDesignRoot provides state.root,
+                    LocalPreviewParameters provides screen.preview?.parameters.orEmpty()
+                        .associate { it.name to it.expression },
                 ) {
                     Box(
                         modifier = Modifier

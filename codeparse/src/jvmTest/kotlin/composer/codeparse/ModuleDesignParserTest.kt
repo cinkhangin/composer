@@ -40,10 +40,35 @@ class ModuleDesignParserTest {
         @Composable
         fun SharedCard() { Text("Card") }
 
+        @Preview
+        @Composable
+        fun SharedCardPreview() { SharedCard() }
+
         @Composable
         fun WithParameter(label: String) { Text(label) }
+
+        @Preview
+        @Composable
+        fun WithParameterPreview() { WithParameter(label = "Preview") }
         """.trimIndent(),
     )
+
+    @Test
+    fun module_with_composables_but_no_previews_produces_an_empty_canvas() {
+        val parsed = assertNotNull(
+            ModuleDesignParser.parse(
+                listOf(
+                    SourceFile(
+                        "/module/Hidden.kt",
+                        "@Composable fun Hidden() { Text(\"source only\") }",
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(parsed.artboard.composables.isEmpty())
+        assertTrue(parsed.functionNamesById.isEmpty())
+    }
 
     @Test
     fun renders_every_parseable_top_level_composable_across_files() {
@@ -70,6 +95,10 @@ class ModuleDesignParserTest {
                     onClick = { println("clicked") },
                 )
             }
+
+            @Preview
+            @Composable
+            fun HomePreview() { Home() }
             """.trimIndent(),
         )
         val component = SourceFile(
@@ -79,6 +108,10 @@ class ModuleDesignParserTest {
             fun SharedCard(title: String, onClick: () -> Unit) {
                 Text(title)
             }
+
+            @Preview
+            @Composable
+            fun SharedCardPreview() { SharedCard(title = "Card", onClick = {}) }
             """.trimIndent(),
         )
 
@@ -119,22 +152,22 @@ class ModuleDesignParserTest {
     }
 
     @Test
-    fun overloads_render_with_distinct_ids() {
+    fun overloaded_targets_stay_hidden_when_preview_pairing_is_ambiguous() {
         val file = SourceFile(
             "/module/Overloads.kt",
             """
             @Composable fun Chip() { Text("one") }
             @Composable fun Chip(label: String) { Text(label) }
+            @Preview @Composable fun ChipPreview() { Chip() }
             """.trimIndent(),
         )
         val parsed = assertNotNull(ModuleDesignParser.parse(listOf(file)))
-        assertEquals(2, parsed.artboard.composables.size)
-        assertEquals(2, parsed.artboard.composables.map { it.id }.toSet().size)
-        assertTrue(parsed.warnings.single().contains("Chip"))
+        assertTrue(parsed.artboard.composables.isEmpty())
+        assertTrue(parsed.functionNamesById.isEmpty())
     }
 
     @Test
-    fun renders_android_studio_greeting_and_excludes_its_preview() {
+    fun renders_android_studio_greeting_through_its_preview() {
         val file = SourceFile(
             "/module/src/main/kotlin/demo/MainActivity.kt",
             """
@@ -178,6 +211,10 @@ class ModuleDesignParserTest {
                 CustomSideEffect()
                 Text("Visible")
             }
+
+            @Preview
+            @Composable
+            fun MixedPreview() { Mixed() }
             """.trimIndent(),
         )
         val theme = SourceFile(
@@ -206,6 +243,10 @@ class ModuleDesignParserTest {
             """
             @Composable
             fun Greeting() { Text("Hello") }
+
+            @Preview
+            @Composable
+            fun GreetingPreview() { Greeting() }
             """.trimIndent(),
         )
         val colors = SourceFile(

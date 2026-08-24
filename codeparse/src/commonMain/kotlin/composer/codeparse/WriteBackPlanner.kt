@@ -46,6 +46,8 @@ object WriteBackPlanner {
         externalFunctionNames: Map<String, String> = emptyMap(),
         /** Cross-file composables referenced as instances in this file. */
         externalComponentIds: Set<String> = emptySet(),
+        /** Host-appropriate preview annotation import for newly appended functions. */
+        previewImport: String = "org.jetbrains.compose.ui.tooling.preview.Preview",
     ): WriteBackPlan {
         val prevById = previous.functions.associateBy { it.screenId }
         val editedScreens = edited.composables.filterIsInstance<Node.Composable>()
@@ -112,11 +114,15 @@ object WriteBackPlanner {
 
         for (screen in editedScreens) {
             val prev = prevById[screen.id]
-            val changed = prev == null ||
+            val bodyChanged = prev == null ||
                 prev.treeHash != ParsedFunction.hashOf(screen) ||
                 prev.functionName != names.getValue(screen.id) ||
                 referencesRenamed(screen)
-            if (!changed) continue
+            val previewChanged = prev != null && screen.preview != null && (
+                prev.previewHash != ParsedFunction.previewHashOf(screen) ||
+                    prev.functionName != names.getValue(screen.id)
+                )
+            if (!bodyChanged && !previewChanged) continue
             // New/canonical screens get a synthesized nav-callback signature;
             // user-authored ones keep theirs verbatim (nav actions whose params
             // aren't declared there degrade to onClick = {}).
@@ -124,8 +130,10 @@ object WriteBackPlanner {
             if (verbatimParams != null && hasNavActions(screen)) {
                 warnings += "\"${names.getValue(screen.id)}\" has navigation actions but a custom signature — callbacks that aren't declared in it were not wired."
             }
-            val code = CodeGen.screenFunction(screen, names.getValue(screen.id), componentFns, params = verbatimParams, navFns = allNames)
-            newImports += code.imports
+            val code = if (bodyChanged) {
+                CodeGen.screenFunction(screen, names.getValue(screen.id), componentFns, params = verbatimParams, navFns = allNames)
+            } else null
+            code?.let { newImports += it.imports }
             if (prev == null) {
                 // Append at EOF, separated by exactly one blank line.
                 val prefix = when {
@@ -134,12 +142,26 @@ object WriteBackPlanner {
                     text.endsWith("\n") -> "\n"
                     else -> "\n\n"
                 }
-                edits += TextEdit(text.length, text.length, prefix + code.text + "\n")
-            } else {
+                val previewText = screen.preview?.let {
+                    newImports += previewImport
+                    "\n\n" + CodeGen.previewFunctionText(screen, names.getValue(screen.id), it.functionName)
+                }.orEmpty()
+                edits += TextEdit(text.length, text.length, prefix + code!!.text + previewText + "\n")
+            } else if (bodyChanged) {
                 // Skip no-op rewrites (e.g. only editor geometry moved).
                 val original = text.substring(prev.fnRange.first, prev.fnRange.last + 1)
-                if (original != code.text) {
+                if (original != code!!.text) {
                     edits += TextEdit(prev.fnRange.first, prev.fnRange.last + 1, code.text)
+                }
+            }
+            if (previewChanged) {
+                val callRange = prev.previewCallRange
+                if (callRange != null) {
+                    edits += TextEdit(
+                        callRange.first,
+                        callRange.last + 1,
+                        CodeGen.previewCall(screen, names.getValue(screen.id)),
+                    )
                 }
             }
         }
@@ -147,9 +169,11 @@ object WriteBackPlanner {
         // Deleted screens: remove the declaration plus its trailing blank separator.
         for (prev in previous.functions) {
             if (prev.screenId in editedIds) continue
-            var end = prev.fnRange.last + 1
-            while (end < text.length && text[end] == '\n') end++
-            edits += TextEdit(prev.fnRange.first, end, "")
+            listOfNotNull(prev.fnRange, prev.previewFnRange).forEach { range ->
+                var end = range.last + 1
+                while (end < text.length && text[end] == '\n') end++
+                edits += TextEdit(range.first, end, "")
+            }
         }
 
         // ---- import merge (append-only) --------------------------------------

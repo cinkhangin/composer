@@ -142,6 +142,9 @@ val LocalDesignRoot = compositionLocalOf<Node?> { null }
 /** Instance nesting depth — hard stop against pathological reference chains. */
 val LocalInstanceDepth = compositionLocalOf { 0 }
 
+/** Source parameter name → Kotlin expression supplied by the active preview. */
+val LocalPreviewParameters = compositionLocalOf<Map<String, String>> { emptyMap() }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RenderNode(
@@ -203,7 +206,7 @@ fun RenderNode(
             val custom = node.customFont.takeIf { it.isNotEmpty() }
             if (custom != null) LaunchedEffect(custom) { LocalFonts.load(custom) }
             Text(
-                text = node.text,
+                text = previewText(node.text, node.textExpression, LocalPreviewParameters.current),
                 modifier = modifier,
                 color = node.color?.let { themeColor(it, MaterialTheme.colorScheme) } ?: Color.Unspecified,
                 fontSize = if (node.fontSize > 0) node.fontSize.sp else TextUnit.Unspecified,
@@ -624,6 +627,36 @@ fun RenderNode(
         // screen's frame itself (App.kt). Render nothing defensively.
         is Node.Artboard -> Unit
     }
+}
+
+internal fun previewText(fallback: String, source: String, parameters: Map<String, String>): String {
+    if (source.isBlank() || parameters.isEmpty()) return fallback
+    parameters[source.trim()]?.let { return previewValue(it) }
+    if (!(source.startsWith('"') && source.endsWith('"'))) return fallback
+    var rendered = source.substring(1, source.length - 1)
+    for ((name, expression) in parameters) {
+        val value = previewValue(expression)
+        rendered = rendered
+            .replace("${'$'}{$name}", value)
+            .replace("${'$'}$name", value)
+    }
+    return rendered
+        .replace("\\n", "\n")
+        .replace("\\t", "\t")
+        .replace("\\\"", "\"")
+        .replace("\\\\", "\\")
+}
+
+private fun previewValue(expression: String): String {
+    val value = expression.trim()
+    if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+        return value.substring(1, value.length - 1)
+            .replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace("\\\"", "\"")
+            .replace("\\\\", "\\")
+    }
+    return value
 }
 
 private fun Node.weightValue(): Float? =

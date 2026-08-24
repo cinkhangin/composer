@@ -24,6 +24,10 @@ class ParserCasesTest {
             appendLine("fun Screen() {")
             body.trimEnd().lines().forEach { appendLine(if (it.isBlank()) "" else "    $it") }
             appendLine("}")
+            appendLine()
+            appendLine("@Preview")
+            appendLine("@Composable")
+            appendLine("fun ScreenPreview() { Screen() }")
         }
         val parsed = DesignParser.parse(text) ?: error("no screen parsed")
         return parsed.artboard.composables.single() as Node.Composable
@@ -407,6 +411,10 @@ class ParserCasesTest {
                     Text("x", modifier = Modifier.padding(padding))
                 }
             }
+
+            @Preview
+            @Composable
+            fun ScreenPreview() { Screen() }
             """.trimIndent()
         val parsed = assertNotNull(DesignParser.parse(file))
         val scaffold = (parsed.artboard.composables.single() as Node.Composable).children.single() as Node.Scaffold
@@ -466,6 +474,14 @@ class ParserCasesTest {
                 Text(label)
                 Text("static")
             }
+
+            @Preview
+            @Composable
+            fun ScreenPreview() { Screen() }
+
+            @Preview
+            @Composable
+            fun HelperPreview() { Helper(label = "Preview") }
             """.trimIndent()
         val parsed = DesignParser.parse(file)!!
         assertEquals(listOf("Screen", "Helper"), parsed.functions.map { it.functionName })
@@ -499,7 +515,13 @@ class ParserCasesTest {
     fun generated_theme_block_is_not_a_screen_and_not_foreign() {
         val themed = composer.model.Node.Artboard(
             id = "a",
-            composables = listOf(Node.Composable("s1", children = listOf(Node.Text("t1", "hi")))),
+            composables = listOf(
+                Node.Composable(
+                    "s1",
+                    children = listOf(Node.Text("t1", "hi")),
+                    preview = composer.model.ComposablePreview(),
+                ),
+            ),
             themes = listOf(
                 composer.model.NamedTheme("Light", composer.model.DesignTheme(primary = 0xFF112233)),
             ),
@@ -524,6 +546,10 @@ class ParserCasesTest {
             fun Screen() {
                 Text("a")
             }
+
+            @Preview
+            @Composable
+            fun ScreenPreview() { Screen() }
             """.trimIndent(),
         )!!
         assertTrue(parsed.hasNonScreenDeclarations)
@@ -555,7 +581,7 @@ class ParserCasesTest {
         )!!
 
         assertEquals(listOf("Home"), parsed.artboard.composables.map { parsed.artboard.layerNames[it.id] })
-        assertTrue(parsed.hasNonScreenDeclarations)
+        assertTrue(!parsed.hasNonScreenDeclarations)
     }
 
     @Test
@@ -573,6 +599,14 @@ class ParserCasesTest {
             fun Home() {
                 CardWidget()
             }
+
+            @Preview
+            @Composable
+            fun CardWidgetPreview() { CardWidget() }
+
+            @Preview
+            @Composable
+            fun HomePreview() { Home() }
             """.trimIndent()
         val parsed = DesignParser.parse(file)!!
         val home = parsed.artboard.composables[1] as Node.Composable

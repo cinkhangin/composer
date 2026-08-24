@@ -1,6 +1,7 @@
 package composer
 
 import composer.model.DesignTheme
+import composer.model.ComposablePreview
 import composer.model.NamedTheme
 import composer.model.Node
 
@@ -28,6 +29,7 @@ val emptyDesign: Node = Node.Artboard(
             y = 0,
             width = 390,
             height = 844,
+            preview = ComposablePreview(),
         ),
     ),
     layerNames = mapOf("screen1" to "Composable 1"),

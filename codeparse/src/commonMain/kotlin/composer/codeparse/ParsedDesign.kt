@@ -11,7 +11,7 @@ import composer.model.Node
  * screen matching survive the parse → edit → re-parse loop within a session.
  */
 data class ParsedDesign(
-    /** Artboard with one [Node.Composable] screen per top-level `@Composable` fun. */
+    /** Artboard with one [Node.Composable] per preview-backed top-level function. */
     val artboard: Node.Artboard,
     /** Per-screen source bookkeeping, parallel to `artboard.composables`. */
     val functions: List<ParsedFunction>,
@@ -60,9 +60,17 @@ data class ParsedFunction(
      * write-back may re-synthesize it; false = user-authored, spliced verbatim.
      */
     val paramsCanonical: Boolean = false,
+    /** Whole declaration range of the paired `@Preview` function. */
+    val previewFnRange: IntRange? = null,
+    /** Exact range of the target invocation inside [previewFnRange]. */
+    val previewCallRange: IntRange? = null,
+    /** Structural hash of the parsed preview invocation values. */
+    val previewHash: Int = 0,
 ) {
     companion object {
         fun hashOf(screen: composer.model.Node.Composable): Int =
-            screen.copy(x = 0, y = 0, width = 390, height = 844).hashCode()
+            screen.copy(x = 0, y = 0, width = 390, height = 844, preview = null).hashCode()
+
+        fun previewHashOf(screen: composer.model.Node.Composable): Int = screen.preview.hashCode()
     }
 }

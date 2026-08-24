@@ -4,8 +4,9 @@ import composer.model.NavAction
 import composer.model.Node
 
 /**
- * Kotlin source → Composer design tree: one [Node.Composable] screen per parseable
- * top-level `@Composable` function; everything the model can't represent inside a
+ * Kotlin source → Composer design tree: one [Node.Composable] per parseable
+ * top-level `@Composable` function that has a paired `@Preview` invocation;
+ * everything the model can't represent inside a
  * body becomes a locked [Node.RawCode]. Purely syntactic (no resolve, no PSI —
  * the hand-rolled scanner in Lexer/FileScanner/StatementParser is common
  * Kotlin) — fast on JVM and Wasm, dumb-mode-safe, and honest: the failure
@@ -64,12 +65,17 @@ object DesignParser {
         val idPrefix: String = "",
     )
 
-    /** Discover every function shape [parse] can render, excluding AppTheme. */
-    fun composableFunctions(text: String): List<ComposableFunctionRef> =
-        scanSource(text).declarations
-            .filterIsInstance<KFunctionDecl>()
+    /** Discover every real composable that has a source preview, excluding AppTheme. */
+    fun composableFunctions(text: String): List<ComposableFunctionRef> {
+        val file = scanSource(text)
+        val candidates = file.declarations.filterIsInstance<KFunctionDecl>()
             .filter { isScreenFunction(it) && !isAppThemeWrapper(it) }
+        val uniqueNames = candidates.mapNotNull { it.name }.groupingBy { it }.eachCount()
+            .filterValues { it == 1 }.keys
+        val previewed = previewBindings(file, uniqueNames).keys
+        return candidates.filter { it.name in previewed }
             .mapNotNull { fn -> fn.name?.let { ComposableFunctionRef(it, fn.range.first) } }
+    }
 
     /** Discover every top-level non-preview composable, including unsupported shapes and AppTheme. */
     fun nonPreviewComposableFunctions(text: String): List<ComposableFunctionRef> =
@@ -83,9 +89,14 @@ object DesignParser {
      */
     fun parse(text: String, external: ExternalNames? = null): ParsedDesign? {
         val file = scanSource(text)
-        val functions = file.declarations
+        val candidates = file.declarations
             .filterIsInstance<KFunctionDecl>()
             .filter { isScreenFunction(it) && !isAppThemeWrapper(it) }
+        val uniqueNames = candidates.mapNotNull { it.name }.groupingBy { it }.eachCount()
+            .filterValues { it == 1 }.keys
+        val bindings = previewBindings(file, uniqueNames)
+        val functions = candidates
+            .filter { it.name in bindings }
             .filter {
                 external == null ||
                     it.range.first in external.fixedScreenIdsByOffset ||
@@ -115,6 +126,7 @@ object DesignParser {
                 ?: fixedIds?.getValue(name)
                 ?: ctx.screenIdsByName.getValue(name)
             val body = fn.bodyBlock ?: return@forEachIndexed
+            val previewBinding = bindings.getValue(name)
             val navParams = parseNavParamList(fn.paramListText, navNames)
             ctx.navParams = navParams ?: emptyMap()
             val children = parseBlock(body, ctx)
@@ -124,6 +136,8 @@ object DesignParser {
                 children = children,
                 x = i * 470,
                 y = 0,
+                preview = previewBinding.toModelPreview(text, fn.paramListText),
+                sourceParameterList = if (navParams == null) fn.paramListText else "",
             )
             screens += screen
             layerNames[screenId] = name
@@ -135,17 +149,18 @@ object DesignParser {
                 treeHash = ParsedFunction.hashOf(screen),
                 paramList = fn.paramListText,
                 paramsCanonical = navParams != null,
+                previewFnRange = previewBinding.previewFunctionRange,
+                previewCallRange = previewBinding.callRange,
+                previewHash = ParsedFunction.previewHashOf(screen),
             )
         }
         if (screens.isEmpty()) return null
 
         // In module mode the caller performs this after every file has been
         // parsed, so cross-file instances can participate in reachability.
-        val renderableIds = if (external == null) {
-            renderableScreenIds(screens)
-        } else {
-            screens.mapTo(linkedSetOf()) { it.id }
-        }
+        // Preview ownership is the visibility contract. A paired preview keeps
+        // even an empty or source-only function present as a 0x0 canvas item.
+        val renderableIds = screens.mapTo(linkedSetOf()) { it.id }
         if (renderableIds.isEmpty()) return null
         val skippedIds = screens.mapTo(linkedSetOf()) { it.id } - renderableIds
         val retainedScreens = screens
@@ -180,6 +195,7 @@ object DesignParser {
             sourceRanges = ctx.sourceRanges.toMap(),
             hasNonScreenDeclarations = skippedIds.isNotEmpty() || file.declarations.any {
                 isForeignDeclaration(it) ||
+                    (it is KFunctionDecl && isScreenFunction(it) && !isAppThemeWrapper(it) && it.name !in bindings) ||
                     (external != null && it is KFunctionDecl && isScreenFunction(it) &&
                         !isAppThemeWrapper(it) &&
                         it.range.first !in external.fixedScreenIdsByOffset &&
@@ -214,7 +230,9 @@ object DesignParser {
 
     /** Top-level code regeneration would NOT reproduce (helpers, classes, user vals). */
     private fun isForeignDeclaration(d: KDeclaration): Boolean = when (d) {
-        is KFunctionDecl -> !isScreenFunction(d) && !isAppThemeWrapper(d)
+        is KFunctionDecl ->
+            !isScreenFunction(d) && !isAppThemeWrapper(d) &&
+                !("Preview" in d.annotationNames && "Composable" in d.annotationNames)
         is KOtherDecl -> !d.themeArtifact
     }
 

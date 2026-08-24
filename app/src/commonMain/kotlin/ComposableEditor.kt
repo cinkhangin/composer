@@ -13,13 +13,14 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.ui.text.TextStyle
 import composer.model.Node
 import composer.ui.Tk
+import composer.ui.Field
 
 /** Artboard position editor for a screen (a [Node.Composable]) + its function-name note. */
 @Composable
 internal fun ComposableEditor(state: EditorState, screen: Node.Composable) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         BasicText(
-            "One @Composable function. Its layer name becomes the generated function name.",
+            "Edits change the real @Composable function. The canvas renders its paired @Preview invocation.",
             style = TextStyle(color = Tk.textMuted, fontSize = 12.sp),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -30,5 +31,20 @@ internal fun ComposableEditor(state: EditorState, screen: Node.Composable) {
             "Screen size is shared by all composables and controlled from the designer toolbar.",
             style = TextStyle(color = Tk.textMuted, fontSize = 11.sp),
         )
+        val preview = screen.preview
+        if (preview != null) {
+            BasicText(
+                "Preview: ${preview.functionName.ifBlank { "generated preview" }}",
+                style = TextStyle(color = Tk.textMuted, fontSize = 11.sp),
+            )
+            preview.parameters.forEach { parameter ->
+                Field(
+                    value = parameter.expression,
+                    onValueChange = { state.setPreviewParameter(screen.id, parameter.name, it) },
+                    label = if (parameter.type.isBlank()) parameter.name else "${parameter.name}: ${parameter.type}",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
     }
 }

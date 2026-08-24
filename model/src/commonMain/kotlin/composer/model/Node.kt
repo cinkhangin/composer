@@ -524,6 +524,20 @@ sealed interface Node {
         val y: Int = 0,
         val width: Int = 390, // screen size (dp)
         val height: Int = 844,
+        /**
+         * The source preview that makes this function visible in the designer.
+         * The function body remains the editable tree; [preview] supplies the
+         * invocation values used to render parameter-backed source. A null value
+         * means the source function has no preview and must not appear on canvas.
+         */
+        val preview: ComposablePreview? = null,
+        /**
+         * Verbatim user-authored value-parameter list, parentheses included.
+         * Empty means Composer owns/synthesizes the signature. Keeping this on
+         * the model lets whole-file website regeneration preserve real function
+         * parameters while the preview invocation changes independently.
+         */
+        val sourceParameterList: String = "",
     ) : Node
 
     /**
@@ -558,6 +572,21 @@ sealed interface Node {
 
 @Serializable
 enum class SourcePreviewLayout { Box, Column, Row }
+
+/** One `@Preview @Composable` function that invokes its owning composable. */
+@Serializable
+data class ComposablePreview(
+    val functionName: String = "",
+    val parameters: List<PreviewParameter> = emptyList(),
+)
+
+/** A real composable parameter and the Kotlin expression passed by its preview. */
+@Serializable
+data class PreviewParameter(
+    val name: String,
+    val type: String = "",
+    val expression: String = "",
+)
 
 /** A user-named Material theme (e.g. "Light", "Dark", "Brand"). */
 @Serializable

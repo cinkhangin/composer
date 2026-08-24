@@ -48,6 +48,14 @@ internal fun canon(root: Node): Node {
             is Node.Composable -> renamed.copy(
                 x = 0, y = 0, width = 390, height = 844,
                 theme = composer.model.DesignTheme(), layerNames = emptyMap(),
+                preview = renamed.preview?.let { preview ->
+                    preview.copy(
+                        functionName = "",
+                        parameters = preview.parameters.filterNot {
+                            it.name == "onBack" || it.name.startsWith("onNavigateTo")
+                        },
+                    )
+                },
             )
             is Node.Instance -> renamed.copy(refId = idMap[renamed.refId] ?: renamed.refId)
             is Node.Text -> renamed.copy(

@@ -14,6 +14,7 @@ import composer.model.ModifierSpec.Padding
 import composer.model.ModifierSpec.Size
 import composer.model.ModifierSpec.Weight
 import composer.model.CornerUnit
+import composer.model.ComposablePreview
 import composer.model.Node
 import composer.model.TextAlignment
 import composer.model.TextWeight
@@ -44,6 +45,7 @@ private fun loginTemplate(): Node = Node.Artboard(
     composables = listOf(
         Node.Composable(
             id = "lg-screen", width = 390, height = 844,
+            preview = ComposablePreview(),
             children = listOf(
                 Node.Column(
                     id = "lg-col",
@@ -79,6 +81,7 @@ private fun onboardingTemplate(): Node = Node.Artboard(
     composables = listOf(
         Node.Composable(
             id = "ob-screen", width = 390, height = 844,
+            preview = ComposablePreview(),
             children = listOf(
                 Node.Column(
                     id = "ob-col",
@@ -130,6 +133,7 @@ private fun profileTemplate(): Node = Node.Artboard(
     composables = listOf(
         Node.Composable(
             id = "pf-screen", width = 390, height = 844,
+            preview = ComposablePreview(),
             children = listOf(
                 Node.Scaffold(
                     id = "pf-scaffold",
@@ -199,6 +203,7 @@ private fun dashboardTemplate(): Node = Node.Artboard(
     composables = listOf(
         Node.Composable(
             id = "db-screen", width = 390, height = 844,
+            preview = ComposablePreview(),
             children = listOf(
                 Node.Column(
                     id = "db-col",

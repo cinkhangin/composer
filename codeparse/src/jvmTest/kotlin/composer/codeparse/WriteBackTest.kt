@@ -1,6 +1,7 @@
 package composer.codeparse
 
 import composer.codegen.CodeGen
+import composer.model.ComposablePreview
 import composer.model.Node
 import composer.model.childNodes
 import composer.model.replaceById
@@ -13,13 +14,14 @@ class WriteBackTest {
     private fun twoScreens(): Node.Artboard = Node.Artboard(
         id = "artboard",
         composables = listOf(
-            Node.Composable("s1", children = listOf(Node.Text("t1", "One"))),
+            Node.Composable("s1", children = listOf(Node.Text("t1", "One")), preview = ComposablePreview()),
             Node.Composable(
                 "s2",
                 children = listOf(
                     Node.Text("t2", "Two"),
                     Node.RawCode("r1", "if (loading) {\n    SpinnerWidget()\n}"),
                 ),
+                preview = ComposablePreview(),
             ),
         ),
         layerNames = mapOf("s1" to "FirstScreen", "s2" to "SecondScreen"),
@@ -38,6 +40,10 @@ class WriteBackTest {
             appendLine("    Text(label)")
             appendLine("    Text(\"static\")")
             appendLine("}")
+            appendLine()
+            appendLine("@Preview")
+            appendLine("@Composable")
+            appendLine("fun HelperPreview() { Helper(label = \"Preview\") }")
         }
         val prev = parse(text)
         // Designer edits the static Text; the parameter-backed Text remains source-aware.
@@ -70,6 +76,10 @@ class WriteBackTest {
             appendLine("        modifier = modifier")
             appendLine("    )")
             appendLine("}")
+            appendLine()
+            appendLine("@Preview")
+            appendLine("@Composable")
+            appendLine("fun GreetingPreview() { Greeting(name = \"World\") }")
         }
         val prev = parse(text)
         val node = (prev.artboard.composables.single() as Node.Composable).children.single() as Node.Text
@@ -139,7 +149,13 @@ class WriteBackTest {
         val text = CodeGen.generate(
             Node.Artboard(
                 id = "artboard",
-                composables = listOf(Node.Composable("s1", children = listOf(Node.Text("t1", "One")))),
+                composables = listOf(
+                    Node.Composable(
+                        "s1",
+                        children = listOf(Node.Text("t1", "One")),
+                        preview = ComposablePreview(),
+                    ),
+                ),
                 layerNames = mapOf("s1" to "FirstScreen"),
             ),
         )
@@ -148,6 +164,7 @@ class WriteBackTest {
             composables = prev.artboard.composables + Node.Composable(
                 "new1",
                 children = listOf(Node.Switch("sw1", checked = true)),
+                preview = ComposablePreview(),
             ),
             layerNames = prev.artboard.layerNames + ("new1" to "Screen 2"),
         )
@@ -178,8 +195,16 @@ class WriteBackTest {
         val design = Node.Artboard(
             id = "artboard",
             composables = listOf(
-                Node.Composable("s1", children = listOf(Node.Text("t1", "Card"))),
-                Node.Composable("s2", children = listOf(Node.Instance("i1", "s1"))),
+                Node.Composable(
+                    "s1",
+                    children = listOf(Node.Text("t1", "Card")),
+                    preview = ComposablePreview(),
+                ),
+                Node.Composable(
+                    "s2",
+                    children = listOf(Node.Instance("i1", "s1")),
+                    preview = ComposablePreview(),
+                ),
             ),
             layerNames = mapOf("s1" to "CardWidget", "s2" to "Home"),
             componentIds = listOf("s1"),
@@ -194,7 +219,7 @@ class WriteBackTest {
         val result = WriteBackPlanner.apply(text, WriteBackPlanner.plan(text, prev, renamed))
         assertTrue("fun FancyCard()" in result, result)
         assertTrue("FancyCard()" in result, "caller must call the new name:\n$result")
-        assertTrue("CardWidget" !in result, result)
+        assertTrue("fun CardWidgetPreview()" in result, "the source preview name stays stable:\n$result")
     }
 
     @Test
@@ -213,6 +238,10 @@ class WriteBackTest {
             appendLine("fun Screen() {")
             appendLine("    Text(\"One\")")
             appendLine("}")
+            appendLine()
+            appendLine("@Preview")
+            appendLine("@Composable")
+            appendLine("fun ScreenPreview() { Screen() }")
         }
         val prev = parse(text)
         val edited = prev.artboard.replaceById(prev.artboard.composables[0].childNodes()[0].id) {
