@@ -53,6 +53,7 @@ internal fun PreviewBinding.toModelPreview(source: String, paramList: String): C
             type = parameter.type,
             expression = argument?.expr?.let { source.substring(it.range.first, it.range.last + 1) }
                 ?: parameter.defaultExpression,
+            hasDefault = parameter.defaultExpression.isNotBlank(),
         )
     }
     return ComposablePreview(previewFunctionName, parameters)

@@ -125,7 +125,12 @@ object CodeGen {
         val fns = screens.mapIndexed { i, screen ->
             val nav = navParams(screen, fnNameById)
             val sourceParams = screen.sourceParameterList
-            if (sourceParams.isBlank()) {
+            val params = when {
+                screen.parametersManagedByEditor -> mergeParameterLists(sourceParams, nav.paramsText)
+                sourceParams.isBlank() -> nav.paramsText
+                else -> sourceParams
+            }
+            if (sourceParams.isBlank() || screen.parametersManagedByEditor) {
                 navEnv = nav.byTarget
                 backParam = nav.back
             } else {
@@ -138,7 +143,7 @@ object CodeGen {
             // are function-local, and the IDE plugin's write-back regenerates
             // functions in isolation — their text must match full-file output.
             emit(screen, indent = 1, out = body, imports = imports, seq = intArrayOf(0))
-            Triple(screenNames[i], sourceParams.ifBlank { nav.paramsText }, body.toString())
+            Triple(screenNames[i], params, body.toString())
         }
         if (screens.any { it.preview != null }) {
             imports += "org.jetbrains.compose.ui.tooling.preview.Preview"
@@ -284,6 +289,10 @@ object CodeGen {
             paramsText = nav.paramsText
             navEnv = nav.byTarget
             backParam = nav.back
+        } else if (screen.parametersManagedByEditor) {
+            paramsText = mergeParameterLists(params, nav.paramsText)
+            navEnv = nav.byTarget
+            backParam = nav.back
         } else {
             // A preserved user signature can't receive new callbacks: wire only
             // the nav params whose names already appear in it; the rest emit {}.
@@ -307,6 +316,13 @@ object CodeGen {
             append("}")
         }
         return ScreenCode(text, imports)
+    }
+
+    /** Combine two parenthesized parameter lists without changing their entries. */
+    private fun mergeParameterLists(first: String, second: String): String {
+        val left = first.trim().removePrefix("(").removeSuffix(")").trim()
+        val right = second.trim().removePrefix("(").removeSuffix(")").trim()
+        return listOf(left, right).filter { it.isNotBlank() }.joinToString(", ", "(", ")")
     }
 
     /** All identifier-shaped tokens in a signature text (cheap lexical scan). */

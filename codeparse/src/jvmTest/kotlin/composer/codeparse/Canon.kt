@@ -48,6 +48,7 @@ internal fun canon(root: Node): Node {
             is Node.Composable -> renamed.copy(
                 x = 0, y = 0, width = 390, height = 844,
                 theme = composer.model.DesignTheme(), layerNames = emptyMap(),
+                parametersManagedByEditor = false,
                 preview = renamed.preview?.let { preview ->
                     preview.copy(
                         functionName = "",

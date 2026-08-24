@@ -137,7 +137,8 @@ object AppWriteBackPlanner {
                         prevFn.functionName != "${base}ScreenUI"
                     )
                 if (bodyChanged || previewChanged) {
-                    val verbatimParams = prevFn.takeIf { !it.paramsCanonical }?.paramList
+                    val verbatimParams = screen.sourceParameterList.takeIf { it.isNotBlank() }
+                        ?: prevFn.takeIf { !it.paramsCanonical }?.paramList
                     if (verbatimParams != null && hasNavActions(screen)) {
                         warnings += "\"${base}ScreenUI\" has navigation actions but a custom signature — undeclared callbacks were not wired."
                     }

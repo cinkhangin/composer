@@ -6,6 +6,7 @@ import composer.model.DesignTheme
 import composer.model.NamedTheme
 import composer.model.NavAction
 import composer.model.Node
+import composer.model.PreviewParameter
 import composer.model.childNodes
 import composer.model.replaceById
 import composer.model.withNavAction
@@ -104,6 +105,30 @@ class AppWriteBackTest {
         val main = plan.files.first { it.path == "MainActivity.kt" }
         assertTrue(main.edits.single().replacement.contains("onBack = { backStack.removeLastOrNull() }"))
         assertTrue(plan.files.none { it.path == "HomeViewModel.kt" })
+    }
+
+    @Test
+    fun inspector_parameter_updates_ui_signature_without_dropping_navigation() {
+        val f = fixture()
+        val login = f.parsed.artboard.composables.first() as Node.Composable
+        val editedLogin = login.copy(
+            preview = login.preview!!.copy(
+                parameters = listOf(PreviewParameter("title", "String", "\"Welcome\"", hasDefault = true)),
+            ),
+            sourceParameterList = "(title: String = \"Welcome\")",
+            parametersManagedByEditor = true,
+        )
+        val edited = f.parsed.artboard.replaceById(login.id) { editedLogin } as Node.Artboard
+
+        val plan = AppWriteBackPlanner.plan(f.parsed, f.files, edited)
+        val ui = plan.files.single { it.path == "LoginScreenUI.kt" }
+        val applied = WriteBackPlanner.apply(f.files.getValue(ui.path), WriteBackPlan(ui.edits))
+
+        assertTrue(
+            "fun LoginScreenUI(title: String = \"Welcome\", onNavigateToHome: () -> Unit = {})" in applied,
+            applied,
+        )
+        assertTrue("LoginScreenUI(title = \"Welcome\")" in applied, applied)
     }
 
     @Test

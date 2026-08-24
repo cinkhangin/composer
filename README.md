@@ -61,8 +61,10 @@ In progress:
   light/dark Material color schemes.
 - Unsupported statements, callbacks, arguments, and runtime-dependent modifier
   expressions are retained conservatively instead of being discarded.
-- Preview arguments are editable from the inspector and drive parameter-backed
-  canvas content while edits continue to update the real composable body.
+- Composable parameters are editable from the inspector with a name, Kotlin
+  type, preview value, and optional real-function default. Text expressions can
+  reference those parameters while body edits continue to target the real
+  composable.
 - Preview-backed composables containing only non-renderable source remain as
   empty `0x0` canvas items; hidden `RawCode` is preserved for write-back.
 

@@ -126,7 +126,8 @@ object WriteBackPlanner {
             // New/canonical screens get a synthesized nav-callback signature;
             // user-authored ones keep theirs verbatim (nav actions whose params
             // aren't declared there degrade to onClick = {}).
-            val verbatimParams = prev?.takeIf { !it.paramsCanonical }?.paramList
+            val verbatimParams = screen.sourceParameterList.takeIf { it.isNotBlank() }
+                ?: prev?.takeIf { !it.paramsCanonical }?.paramList
             if (verbatimParams != null && hasNavActions(screen)) {
                 warnings += "\"${names.getValue(screen.id)}\" has navigation actions but a custom signature — callbacks that aren't declared in it were not wired."
             }

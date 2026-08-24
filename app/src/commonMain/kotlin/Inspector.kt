@@ -174,6 +174,24 @@ fun Inspector(
                             label = "Text",
                             modifier = Modifier.fillMaxWidth(),
                         )
+                        val parameters = state.screenOf(selected.id)?.preview?.parameters.orEmpty()
+                        if (parameters.isNotEmpty()) {
+                            Field(
+                                value = selected.textExpression,
+                                onValueChange = { expression ->
+                                    state.update(selected.id, coalesceKey = "textexpr:${selected.id}") {
+                                        (it as Node.Text).copy(textExpression = expression)
+                                    }
+                                },
+                                label = "Parameter / Kotlin expression",
+                                placeholder = parameters.joinToString(" or ") { it.name },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            BasicText(
+                                "Use a parameter name here to render its preview value and emit it directly in Text(…).",
+                                style = TextStyle(color = Tk.textMuted, fontSize = 11.sp),
+                            )
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             NumField("Size", selected.fontSize, Modifier.weight(1f), autoLabel = "Auto") { v ->
                                 state.update(selected.id) { (it as Node.Text).copy(fontSize = v) }

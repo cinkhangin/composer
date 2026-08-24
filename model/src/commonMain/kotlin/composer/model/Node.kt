@@ -533,11 +533,14 @@ sealed interface Node {
         val preview: ComposablePreview? = null,
         /**
          * Verbatim user-authored value-parameter list, parentheses included.
+         * Inspector-managed parameters use the same field in canonical form.
          * Empty means Composer owns/synthesizes the signature. Keeping this on
          * the model lets whole-file website regeneration preserve real function
          * parameters while the preview invocation changes independently.
          */
         val sourceParameterList: String = "",
+        /** True after the inspector takes ownership of [sourceParameterList]. */
+        val parametersManagedByEditor: Boolean = false,
     ) : Node
 
     /**
@@ -580,12 +583,17 @@ data class ComposablePreview(
     val parameters: List<PreviewParameter> = emptyList(),
 )
 
-/** A real composable parameter and the Kotlin expression passed by its preview. */
+/**
+ * A real composable parameter and the Kotlin expression passed by its preview.
+ * When [hasDefault] is true the same expression is also emitted as the
+ * parameter's default value in the real function declaration.
+ */
 @Serializable
 data class PreviewParameter(
     val name: String,
     val type: String = "",
     val expression: String = "",
+    val hasDefault: Boolean = false,
 )
 
 /** A user-named Material theme (e.g. "Light", "Dark", "Brand"). */

@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import composer.model.ModifierSpec
 import composer.model.Node
 import composer.model.ComposablePreview
+import composer.model.PreviewParameter
 import composer.model.childNodes
 import composer.model.canInstantiate
 import composer.model.cloneWithNewIds
@@ -188,20 +189,63 @@ class EditorState(initial: Node) {
         select(id)
     }
 
-    /** Update one preview invocation expression without changing the real function body. */
-    fun setPreviewParameter(screenId: String, parameterName: String, expression: String) {
-        update(screenId, coalesceKey = "preview:$screenId:$parameterName") { node ->
+    /** Add one editable value parameter to the real function and its preview call. */
+    fun addComposableParameter(screenId: String) {
+        update(screenId) { node ->
             val screen = node as? Node.Composable ?: return@update node
             val preview = screen.preview ?: return@update node
-            screen.copy(
-                preview = preview.copy(
-                    parameters = preview.parameters.map { parameter ->
-                        if (parameter.name == parameterName) parameter.copy(expression = expression) else parameter
-                    },
+            val used = preview.parameters.mapTo(mutableSetOf()) { it.name }
+            var suffix = 1
+            var name = "parameter"
+            while (name in used) name = "parameter${++suffix}"
+            screen.withParameters(
+                preview.parameters + PreviewParameter(
+                    name = name,
+                    type = "String",
+                    expression = "\"Value\"",
+                    hasDefault = true,
                 ),
             )
         }
     }
+
+    /** Replace one parameter declaration and keep the preview invocation synchronized. */
+    fun setComposableParameter(screenId: String, index: Int, parameter: PreviewParameter) {
+        update(screenId, coalesceKey = "parameter:$screenId:$index") { node ->
+            val screen = node as? Node.Composable ?: return@update node
+            val preview = screen.preview ?: return@update node
+            if (index !in preview.parameters.indices) return@update node
+            screen.withParameters(preview.parameters.toMutableList().apply { this[index] = parameter })
+        }
+    }
+
+    /** Remove one real function parameter and its preview argument. */
+    fun removeComposableParameter(screenId: String, index: Int) {
+        update(screenId) { node ->
+            val screen = node as? Node.Composable ?: return@update node
+            val preview = screen.preview ?: return@update node
+            if (index !in preview.parameters.indices) return@update node
+            screen.withParameters(preview.parameters.filterIndexed { i, _ -> i != index })
+        }
+    }
+
+    private fun Node.Composable.withParameters(parameters: List<PreviewParameter>): Node.Composable = copy(
+        preview = preview?.copy(parameters = parameters),
+        // `()` deliberately marks an inspector-owned empty signature. A blank
+        // sourceParameterList means codegen may synthesize navigation callbacks.
+        sourceParameterList = parameters.joinToString(prefix = "(", postfix = ")") { parameter ->
+            buildString {
+                append(parameter.name.trim())
+                append(": ")
+                append(parameter.type.trim())
+                if (parameter.hasDefault) {
+                    append(" = ")
+                    append(parameter.expression.trim())
+                }
+            }
+        },
+        parametersManagedByEditor = true,
+    )
 
     private fun nextScreenX(): Int =
         composables.maxOfOrNull { it.x + it.width + SCREEN_GAP } ?: 0
